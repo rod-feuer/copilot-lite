@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { MonthPicker, CleanupNamesButtons } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -508,6 +508,19 @@ function BillList({
   const shelfActive = useShelfActive();
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize && onMute);
+
+  // Convey paid status by grouping rather than a cryptic per-row ✓/○: split an
+  // active list into Upcoming (due, unpaid) and Paid. Only group when both exist
+  // (the mid-current-month case); single-state or inactive lists render flat.
+  const up = recs.filter((r) => !r.paid);
+  const pd = recs.filter((r) => r.paid);
+  const sections =
+    dim || up.length === 0 || pd.length === 0
+      ? [{ key: "all", label: "", recs }]
+      : [
+          { key: "up", label: "Upcoming", recs: up },
+          { key: "pd", label: "Paid this month", recs: pd },
+        ];
   return (
     <div>
       {title && (
@@ -516,7 +529,14 @@ function BillList({
         </h3>
       )}
       <div className="card divide-y divide-[var(--border)]">
-        {recs.map((r) => {
+        {sections.map((section) => (
+          <Fragment key={section.key}>
+            {section.label && (
+              <div className="bg-[var(--background)] px-4 py-1.5 text-xs font-semibold text-[var(--muted)]">
+                {section.label}
+              </div>
+            )}
+            {section.recs.map((r) => {
           const amount = r.paid ? r.paidAmount ?? 0 : r.expectedAmount;
           const color = r.categoryColor ?? "#94a3b8";
           return (
@@ -584,7 +604,13 @@ function BillList({
                   onChange={(e) =>
                     onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
                   }
-                  className="hidden max-w-36 shrink-0 rounded-lg border border-[var(--border)] bg-card px-2 py-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)] sm:block"
+                  title="Category"
+                  className={`hidden max-w-36 shrink-0 cursor-pointer appearance-none truncate rounded-full px-2.5 py-1 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
+                    r.categoryId != null
+                      ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
+                      : "border border-dashed border-[var(--border)] text-[var(--muted)]"
+                  }`}
+                  style={r.categoryId != null ? { background: color + "22" } : undefined}
                 >
                   <option value="">Uncategorized</option>
                   {cats.map((c) => (
@@ -610,17 +636,6 @@ function BillList({
               >
                 {usd(amount)}
               </div>
-              <div className="w-4 shrink-0 text-center text-sm">
-                {r.paid ? (
-                  <span style={{ color }} title="paid">
-                    ✓
-                  </span>
-                ) : (
-                  <span className="text-[var(--muted)]" title="upcoming">
-                    ○
-                  </span>
-                )}
-              </div>
             </div>
             {editable && onSaveSettings && matchEditId === r.id && (
               <SettingsEditor
@@ -636,7 +651,9 @@ function BillList({
             )}
             </div>
           );
-        })}
+            })}
+          </Fragment>
+        ))}
       </div>
     </div>
   );
