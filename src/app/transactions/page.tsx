@@ -229,6 +229,35 @@ export default function TransactionsPage() {
     return out;
   }, [txs, grouping]);
 
+  // Statement mode: when the vendor filter is active, every row is the same
+  // merchant — and usually the same category/account. Collapse that constant
+  // identity into one header and let the rows read like a statement (date ·
+  // amount), surfacing category/account only on the charges that break the
+  // pattern. `modal` holds the vendor's most-common values (null = normal mode).
+  const modal = useMemo(() => {
+    if (vendor === "" || txs.length === 0) return null;
+    const catCount = new Map<string, number>();
+    const acctCount = new Map<string, number>();
+    for (const t of txs) {
+      const ck = String(t.categoryId ?? "none");
+      catCount.set(ck, (catCount.get(ck) ?? 0) + 1);
+      acctCount.set(t.account, (acctCount.get(t.account) ?? 0) + 1);
+    }
+    const topCat = [...catCount].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const topAcct = [...acctCount].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+    const rep = txs.find((t) => String(t.categoryId ?? "none") === topCat) ?? txs[0];
+    return {
+      displayName: txs[0].displayName,
+      categoryId: rep.categoryId,
+      categoryName: rep.categoryName,
+      categoryColor: rep.categoryColor,
+      categoryIcon: rep.categoryIcon,
+      account: topAcct,
+      count: txs.length,
+      total: txs.reduce((a, t) => a + t.amount, 0),
+    };
+  }, [vendor, txs]);
+
   // Linear-style filters: a filter shows as a chip only when active (has a
   // value) or explicitly added from the "+ Filter" menu. The menu lists the rest.
   const FILTERS = [
@@ -426,7 +455,34 @@ export default function TransactionsPage() {
             No transactions match.
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--border)]">
+          <>
+            {modal && (
+              <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
+                <span
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg"
+                  style={{ background: (modal.categoryColor ?? "#94a3b8") + "22" }}
+                >
+                  {modal.categoryIcon ?? "•"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{modal.displayName}</div>
+                  <div className="truncate text-xs text-[var(--muted)]">
+                    {modal.count} transaction{modal.count === 1 ? "" : "s"} ·{" "}
+                    {modal.categoryName ?? "Uncategorized"}
+                    {modal.account ? ` · ${modal.account}` : ""}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-sm font-semibold tabular-nums">
+                    {usd(modal.total, { sign: true })}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                    total
+                  </div>
+                </div>
+              </div>
+            )}
+            <ul className="divide-y divide-[var(--border)]">
             {grouped.map((g) => {
               // Only group under a day header when the day actually has more than
               // one transaction — otherwise the header + its subtotal just echo the
@@ -442,7 +498,11 @@ export default function TransactionsPage() {
                     </span>
                   </li>
                 )}
-                {g.rows.map((t) => (
+                {g.rows.map((t) => {
+                  const sameCat =
+                    modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
+                  const sameAcct = modal && t.account === modal.account;
+                  return (
               <li
                 key={t.id}
                 data-drawer-row
@@ -453,13 +513,72 @@ export default function TransactionsPage() {
                     : "hover:bg-[var(--background)]"
                 } ${t.excluded ? "opacity-55" : ""}`}
               >
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
-                  style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
-                >
-                  {t.categoryIcon ?? "•"}
-                </span>
+                {!modal && (
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
+                    style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
+                  >
+                    {t.categoryIcon ?? "•"}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
+                  {modal ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        {editingDateId === t.id ? (
+                          <input
+                            type="date"
+                            defaultValue={t.effectiveDate ?? t.date}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => commitDate(t, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                              if (e.key === "Escape") setEditingDateId(null);
+                            }}
+                            className="rounded border border-[var(--border)] bg-card px-1 py-0.5 text-sm"
+                          />
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingDateId(t.id);
+                            }}
+                            className="text-sm font-medium hover:underline"
+                            title="Edit effective date"
+                          >
+                            {longDate(t.effectiveDate ?? t.date)}
+                          </button>
+                        )}
+                        {t.excluded ? (
+                          <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                            excluded
+                          </span>
+                        ) : null}
+                      </div>
+                      {(!sameAcct || (t.effectiveDate && t.effectiveDate !== t.date)) && (
+                        <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                          {!sameAcct && <span>{t.account}</span>}
+                          {t.effectiveDate && t.effectiveDate !== t.date && (
+                            <span className="text-amber-600">
+                              {!sameAcct ? "· " : ""}posted {shortDate(t.date)}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  commitDate(t, null);
+                                }}
+                                className="ml-1 hover:text-[var(--foreground)]"
+                                title="Revert to posted date"
+                              >
+                                ↺
+                              </button>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{t.displayName}</span>
                     {t.excluded ? (
@@ -562,6 +681,8 @@ export default function TransactionsPage() {
                       </>
                     )}
                   </div>
+                    </>
+                  )}
                 </div>
                 <button
                   onClick={(e) => {
@@ -577,6 +698,7 @@ export default function TransactionsPage() {
                 >
                   ↻
                 </button>
+                {(!modal || !sameCat) && (
                 <select
                   value={t.categoryId ?? ""}
                   onClick={(e) => e.stopPropagation()}
@@ -602,6 +724,7 @@ export default function TransactionsPage() {
                     </option>
                   ))}
                 </select>
+                )}
                 <div
                   className={`w-24 text-right text-sm font-semibold ${
                     t.amount >= 0 ? "text-emerald-600" : "text-[var(--foreground)]"
@@ -610,11 +733,13 @@ export default function TransactionsPage() {
                   {usd(t.amount, { sign: true })}
                 </div>
               </li>
-                ))}
+                );
+                })}
               </Fragment>
               );
             })}
           </ul>
+          </>
         )}
       </div>
     </Shell>
