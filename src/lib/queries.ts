@@ -863,14 +863,47 @@ const MONTHLY_FACTOR: Record<string, number> = {
   monthly: 1,
   yearly: 1 / 12,
 };
+
+// Approximate days between charges, used to decide if a recurring is still live.
+const CADENCE_DAYS: Record<string, number> = {
+  weekly: 7,
+  biweekly: 14,
+  monthly: 30,
+  quarterly: 91,
+  semiannual: 182,
+  yearly: 365,
+};
+
+// A recurring is "active" if it charged within ~1.5 cycles (+5d grace). When a
+// vendor stops or is renamed (its descriptor drifts to a new merchant), the old
+// series goes silent and should stop counting toward "upcoming" projections and
+// category recurring baselines — otherwise it double-counts with its successor.
+// Shared by categorySummary (the shelf) and recurringMonthlyByCategory (the
+// category-row baseline) so the two views never disagree.
+export function isRecurringActive(
+  lastDate: string,
+  cadence: string,
+  now = Date.now()
+): boolean {
+  const days =
+    (now - new Date(lastDate + "T00:00:00Z").getTime()) / 86_400_000;
+  return days <= (CADENCE_DAYS[cadence] ?? 30) * 1.5 + 5;
+}
+
 export function recurringMonthlyByCategory(): Record<number, number> {
   const rows = getDb()
     .prepare(
-      "SELECT categoryId, cadence, avgAmount FROM recurrings WHERE avgAmount < 0 AND categoryId IS NOT NULL"
+      "SELECT categoryId, cadence, avgAmount, lastDate FROM recurrings WHERE avgAmount < 0 AND categoryId IS NOT NULL"
     )
-    .all() as { categoryId: number; cadence: string; avgAmount: number }[];
+    .all() as {
+    categoryId: number;
+    cadence: string;
+    avgAmount: number;
+    lastDate: string;
+  }[];
   const out: Record<number, number> = {};
   for (const r of rows) {
+    if (!isRecurringActive(r.lastDate, r.cadence)) continue;
     out[r.categoryId] =
       (out[r.categoryId] ?? 0) + Math.abs(r.avgAmount) * (MONTHLY_FACTOR[r.cadence] ?? 1);
   }
@@ -1158,18 +1191,6 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
   // for the current month, and only ACTIVE ones (a stale/stopped recurring that
   // hasn't charged within ~1.5 cycles isn't "upcoming"; it's inactive).
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const PERIOD: Record<string, number> = {
-    weekly: 7,
-    biweekly: 14,
-    monthly: 30,
-    quarterly: 91,
-    semiannual: 182,
-    yearly: 365,
-  };
-  const now = Date.now();
-  const isActiveRec = (r: { lastDate: string; cadence: string }) =>
-    (now - new Date(r.lastDate + "T00:00:00Z").getTime()) / 86_400_000 <=
-    (PERIOD[r.cadence] ?? 30) * 1.5 + 5;
   const upcoming =
     month !== currentMonth
       ? []
@@ -1180,7 +1201,7 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
               r.avgAmount < 0 &&
               r.expectedThisMonth &&
               !r.paid &&
-              isActiveRec(r)
+              isRecurringActive(r.lastDate, r.cadence)
           )
           .map((r) => ({
             merchant: r.merchant,

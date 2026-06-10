@@ -23,6 +23,8 @@ import {
   setRecurringSetting,
   setTransactionRecurringExcluded,
   recurringsForMonth,
+  recurringMonthlyByCategory,
+  isRecurringActive,
   setBudget,
 } from "../src/lib/queries";
 import { createSplitRule, applySplitRules } from "../src/lib/splits";
@@ -233,6 +235,45 @@ test("upcoming bills appear on the current month only, never on a past one", () 
   assert.equal(past.upcoming.count, 0, "past month shows no upcoming bills");
   assert.equal(past.upcoming.items.length, 0);
   assert.equal(past.upcoming.total, 0);
+});
+
+test("isRecurringActive: live within ~1.5 cycles of its last charge, dead beyond", () => {
+  const now = Date.UTC(2026, 5, 10); // 2026-06-10
+  // Monthly window ≈ 30*1.5+5 = 50 days.
+  assert.equal(isRecurringActive("2026-06-02", "monthly", now), true, "9 days → active");
+  assert.equal(isRecurringActive("2026-02-01", "monthly", now), false, "130 days → inactive");
+  // Weekly window ≈ 7*1.5+5 = 15.5 days.
+  assert.equal(isRecurringActive("2026-06-05", "weekly", now), true, "5 days → active");
+  assert.equal(isRecurringActive("2026-05-20", "weekly", now), false, "21 days → inactive");
+});
+
+test("a stale (renamed/stopped) recurring stops counting toward the category baseline", () => {
+  // When a vendor is renamed its descriptor drifts to a new merchant and the old
+  // recurring goes silent. The category recurring baseline must drop the dead
+  // series, or it double-counts with its successor — the Better Bodies / Better
+  // Bodies Inc gym bug, where one $59 membership read as $145. This is the same
+  // active filter the shelf's "upcoming this month" already applies.
+  const iso = (offsetDays: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - offsetDays);
+    return d.toISOString().slice(0, 10);
+  };
+  const ins = (merchant: string, amt: number, lastOffset: number) =>
+    getDb()
+      .prepare(
+        `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+         VALUES (?, ?, ?, 'monthly', ?, ?, 6)`
+      )
+      .run(merchant, CAT_X, amt, iso(lastOffset), iso(lastOffset));
+  ins("Gym Inc", -59, 5); // live: charged 5 days ago
+  ins("Gym", -52, 200); // dead: renamed away, silent for 200 days
+
+  const byCat = recurringMonthlyByCategory();
+  assert.equal(
+    byCat[CAT_X],
+    59,
+    "only the active recurring counts; the stale duplicate is dropped"
+  );
 });
 
 // Simulate already-imported rows: backfill rawMerchant = merchant, as the
