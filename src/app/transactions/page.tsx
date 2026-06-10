@@ -427,9 +427,14 @@ export default function TransactionsPage() {
           </p>
         ) : (
           <ul className="divide-y divide-[var(--border)]">
-            {grouped.map((g) => (
+            {grouped.map((g) => {
+              // Only group under a day header when the day actually has more than
+              // one transaction — otherwise the header + its subtotal just echo the
+              // single row below it. Solo-charge days show the date inline instead.
+              const headed = grouping && g.rows.length > 1;
+              return (
               <Fragment key={g.key}>
-                {grouping && (
+                {headed && (
                   <li className="flex items-center justify-between bg-[var(--background)] px-4 py-1.5">
                     <span className="text-xs font-semibold text-[var(--muted)]">{g.label}</span>
                     <span className="text-xs tabular-nums text-[var(--muted)]">
@@ -464,7 +469,7 @@ export default function TransactionsPage() {
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
-                    {grouping ? (
+                    {headed ? (
                       <>
                         <span>{t.account}</span>
                         {t.effectiveDate && t.effectiveDate !== t.date && (
@@ -607,7 +612,8 @@ export default function TransactionsPage() {
               </li>
                 ))}
               </Fragment>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
