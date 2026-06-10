@@ -36,6 +36,9 @@ export default function CategoriesPage() {
   const [kind, setKind] = useState<"expense" | "income">("expense");
   const [adding, setAdding] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  // Default to budget pressure so the categories nearest/over their budget rise
+  // to the top — the thing a budget exists to surface. "spent" is the old order.
+  const [sort, setSort] = useState<"pressure" | "spent" | "name">("pressure");
   const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const toast = useToast();
 
@@ -124,9 +127,23 @@ export default function CategoriesPage() {
     load(month);
   }
 
-  const excluded = cats.filter((c) => c.excludeFromTotals);
-  const expense = cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals);
-  const income = cats.filter((c) => c.kind === "income" && !c.excludeFromTotals);
+  // Budget pressure: fraction of budget spent. Unbudgeted categories have no
+  // pressure, so they sort below budgeted ones (and among themselves by spend).
+  const pressure = (c: Cat) => (c.budget && c.budget > 0 ? c.total / c.budget : -1);
+  const sortCats = (list: Cat[]) => {
+    const arr = [...list];
+    if (sort === "name") return arr.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "pressure")
+      return arr.sort((a, b) => pressure(b) - pressure(a) || b.total - a.total);
+    return arr.sort((a, b) => b.total - a.total); // "spent"
+  };
+  const excluded = sortCats(cats.filter((c) => c.excludeFromTotals));
+  const expense = sortCats(
+    cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals)
+  );
+  const income = sortCats(
+    cats.filter((c) => c.kind === "income" && !c.excludeFromTotals)
+  );
 
   return (
     <Shell
@@ -199,6 +216,19 @@ export default function CategoriesPage() {
         </div>
       </div>
       )}
+
+      <div className="mb-4 flex items-center justify-end">
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          aria-label="Sort categories"
+          className="btn-ghost cursor-pointer text-sm"
+        >
+          <option value="pressure">Budget used</option>
+          <option value="spent">Most spent</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </div>
 
       <Group
         title="Expenses"
@@ -348,6 +378,8 @@ function Group({
           const budgeted = onBudget != null && c.budget != null;
           const budget = c.budget ?? 0;
           const over = budgeted && c.total > budget;
+          // Nearing the limit but not over yet — amber, between identity and red.
+          const atRisk = budgeted && !over && budget > 0 && c.total / budget >= 0.9;
           const remaining = budget - c.total;
           return (
             <div
@@ -370,6 +402,8 @@ function Group({
                       className={`font-semibold tabular-nums ${
                         over
                           ? "text-rose-600"
+                          : atRisk
+                          ? "text-amber-600"
                           : c.excludeFromTotals
                           ? "text-[var(--muted)] line-through"
                           : ""
@@ -395,7 +429,7 @@ function Group({
                       className="h-full rounded-full"
                       style={{
                         width: `${Math.min((c.total / budget) * 100, 100)}%`,
-                        background: over ? "#e11d48" : c.color,
+                        background: over ? "#e11d48" : atRisk ? "#f59e0b" : c.color,
                       }}
                     />
                     {c.recurringBaseline > 0 && (
@@ -430,7 +464,7 @@ function Group({
                     )}
                   </span>
                   {budgeted ? (
-                    <span className={over ? "text-rose-600" : ""}>
+                    <span className={over ? "text-rose-600" : atRisk ? "text-amber-600" : ""}>
                       {remaining >= 0
                         ? `${usd(remaining, { cents: false })} left`
                         : `${usd(-remaining, { cents: false })} over`}
