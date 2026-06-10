@@ -20,6 +20,7 @@ import {
 } from "@/components/Actions";
 import Shell from "@/components/Shell";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
+import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 
 type Dash = {
   monthLabel: string;
@@ -126,6 +127,7 @@ export default function DashboardPage() {
     const ms = await loadMonths();
     await load(month || defaultMonth(ms));
   }, [loadMonths, load, month]);
+  useSyncedRefresh(refresh);
 
   function changeMonth(m: string) {
     setMonth(m);

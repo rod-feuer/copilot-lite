@@ -4,6 +4,7 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import { ToastProvider } from "@/components/Toast";
 import { TxDrawerProvider } from "@/components/TransactionDrawer";
+import { SyncOnLaunch } from "@/components/SyncOnLaunch";
 
 // Apply the saved theme before paint to avoid a flash of the wrong theme.
 const themeScript = `try{var t=localStorage.getItem('theme')||'light';document.documentElement.dataset.theme=t;}catch(e){}`;
@@ -39,6 +40,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <ToastProvider>
+          <SyncOnLaunch />
           <TxDrawerProvider>
             {/* Fixed-height shell: the sidebar stays put and `main` is the only
                 scroll area, so the sidebar nav and each page header can stick. */}

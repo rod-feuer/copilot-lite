@@ -5,6 +5,7 @@ import Shell from "@/components/Shell";
 import { MonthPicker, CleanupNamesButtons } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
+import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
 
@@ -113,6 +114,10 @@ export default function RecurringsPage() {
     const data = await fetch("/api/recurrings/suggested").then((r) => r.json());
     setSuggestions(data);
   }, []);
+  useSyncedRefresh(() => {
+    load(month);
+    loadSuggestions();
+  });
 
   useEffect(() => {
     fetch("/api/categories")

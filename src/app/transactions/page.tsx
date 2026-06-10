@@ -10,6 +10,7 @@ import {
 } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
+import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson, patchJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth } from "@/lib/format";
 
@@ -73,6 +74,7 @@ export default function TransactionsPage() {
   const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
+  useSyncedRefresh(() => setRefreshKey((k) => k + 1));
 
   const loadStatic = useCallback(async () => {
     const [ms, cs, accts] = await Promise.all([

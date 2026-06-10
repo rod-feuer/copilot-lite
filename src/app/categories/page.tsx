@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
+import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -44,6 +45,7 @@ export default function CategoriesPage() {
     );
     setCats(data);
   }, []);
+  useSyncedRefresh(() => load(month));
 
   useEffect(() => {
     fetch("/api/months")
