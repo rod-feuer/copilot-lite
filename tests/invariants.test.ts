@@ -26,7 +26,15 @@ import {
   recurringMonthlyByCategory,
   isRecurringActive,
   setBudget,
+  getMerchantLinks,
+  canonicalMerchant,
 } from "../src/lib/queries";
+import {
+  stripLocationSuffix,
+  mergeSuggestions,
+  approveMerge,
+  dismissMerge,
+} from "../src/lib/merges";
 import { createSplitRule, applySplitRules } from "../src/lib/splits";
 
 let CAT: number, CAT_INC: number, CAT_EXC: number, CAT_X: number;
@@ -76,7 +84,7 @@ before(() => {
   CAT_X = addCat("Home");
 });
 beforeEach(() => {
-  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log", "recurring_tx_exclusions"])
+  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log", "recurring_tx_exclusions", "merchant_merge_dismissals"])
     getDb().exec(`DELETE FROM ${t}`);
 });
 after(() => {
@@ -273,6 +281,50 @@ test("a stale (renamed/stopped) recurring stops counting toward the category bas
     byCat[CAT_X],
     59,
     "only the active recurring counts; the stale duplicate is dropped"
+  );
+});
+
+test("stripLocationSuffix peels a trailing City ST, keeps specific names, rejects the rest", () => {
+  assert.equal(stripLocationSuffix("Crew Carwash - Westfcarmel In"), "Crew Carwash");
+  assert.equal(stripLocationSuffix("Turf Kings Carmel In"), "Turf Kings");
+  assert.equal(stripLocationSuffix("The Gardcarmel In"), null, "prefix too short → no collapse to 'The'");
+  assert.equal(stripLocationSuffix("Kroger"), null, "no location suffix");
+  assert.equal(stripLocationSuffix("Acme Widgets Go"), null, "trailing token is not a US state");
+});
+
+test("merge suggestions group location-suffix variants and honor dismissal", () => {
+  tx("Turf Kings Carmel In", { amount: -80, categoryId: CAT });
+  tx("Turf Kings Fishers In", { amount: -80, categoryId: CAT });
+  tx("Turf Kings", { amount: -80, categoryId: CAT });
+  tx("Kroger", { amount: -20, categoryId: CAT });
+
+  const g = mergeSuggestions().find((x) => x.canonical === "Turf Kings");
+  assert.ok(g, "a Turf Kings merge is suggested");
+  assert.equal(g!.variants.length, 3, "both location descriptors + the clean name grouped");
+  assert.ok(
+    !mergeSuggestions().some((x) => x.canonical === "Kroger"),
+    "a lone merchant is never suggested"
+  );
+
+  dismissMerge("Turf Kings");
+  assert.ok(
+    !mergeSuggestions().some((x) => x.canonical === "Turf Kings"),
+    "a dismissed group does not resurface"
+  );
+});
+
+test("approving a merge folds the descriptors into one vendor and clears the suggestion", () => {
+  tx("Turf Kings Carmel In", { amount: -80, categoryId: CAT });
+  tx("Turf Kings Fishers In", { amount: -80, categoryId: CAT });
+  tx("Turf Kings", { amount: -80, categoryId: CAT });
+
+  approveMerge("Turf Kings", ["Turf Kings Carmel In", "Turf Kings Fishers In", "Turf Kings"]);
+  const links = getMerchantLinks();
+  assert.equal(canonicalMerchant("Turf Kings Carmel In", links), "Turf Kings");
+  assert.equal(canonicalMerchant("Turf Kings Fishers In", links), "Turf Kings");
+  assert.ok(
+    !mergeSuggestions().some((x) => x.canonical === "Turf Kings"),
+    "once linked, the group is no longer suggested"
   );
 });
 

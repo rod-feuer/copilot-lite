@@ -118,6 +118,7 @@ function init(db: Database.Database) {
   ensureMerchantLinks(db);
   ensureCleanupLog(db);
   ensureRecurringTxExclusions(db);
+  ensureMergeDismissals(db);
 }
 
 // Individual charges the user flagged as one-offs, excluded from their
@@ -126,6 +127,12 @@ function init(db: Database.Database) {
 // the live connection so the feature works without a dev-server restart.
 export function ensureRecurringTxExclusions(db: Database.Database) {
   db.exec("CREATE TABLE IF NOT EXISTS recurring_tx_exclusions (hash TEXT PRIMARY KEY)");
+}
+
+// Merge suggestions the user rejected, keyed by the proposed canonical name, so
+// a dismissed "possible duplicate vendor" group never resurfaces in the queue.
+export function ensureMergeDismissals(db: Database.Database) {
+  db.exec("CREATE TABLE IF NOT EXISTS merchant_merge_dismissals (canonical TEXT PRIMARY KEY)");
 }
 
 // User-declared merchant identity: fold an `alias` descriptor into a

@@ -8,6 +8,7 @@ import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
+import type { MergeSuggestion } from "@/lib/merges";
 
 type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
 
@@ -98,6 +99,8 @@ export default function RecurringsPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [merges, setMerges] = useState<MergeSuggestion[]>([]);
+  const [mergeBusy, setMergeBusy] = useState<string | null>(null);
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [catFilter, setCatFilter] = useState(""); // "" = all, "none" = uncategorized, else id
@@ -115,9 +118,14 @@ export default function RecurringsPage() {
     const data = await fetch("/api/recurrings/suggested").then((r) => r.json());
     setSuggestions(data);
   }, []);
+  const loadMerges = useCallback(async () => {
+    const data = await fetch("/api/merges").then((r) => r.json());
+    setMerges(data);
+  }, []);
   useSyncedRefresh(() => {
     load(month);
     loadSuggestions();
+    loadMerges();
   });
 
   useEffect(() => {
@@ -134,10 +142,32 @@ export default function RecurringsPage() {
       });
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSuggestions();
+    loadMerges();
     fetch("/api/merchants")
       .then((r) => r.json())
       .then((rows: { merchant: string }[]) => setMerchantOptions(rows.map((r) => r.merchant)));
-  }, [load, loadSuggestions]);
+  }, [load, loadSuggestions, loadMerges]);
+
+  async function resolveMerge(g: MergeSuggestion, action: "approve" | "dismiss") {
+    setMergeBusy(g.canonical);
+    setMerges((ms) => ms.filter((m) => m.canonical !== g.canonical)); // optimistic
+    try {
+      await postJson("/api/merges", {
+        action,
+        canonical: g.canonical,
+        variants: g.variants.map((v) => v.merchant),
+      });
+      if (action === "approve") {
+        toast(`Combined into “${g.canonical}”`, "success");
+        load(month);
+      }
+    } catch {
+      toast("Couldn't update — please try again", "error");
+      loadMerges(); // restore on failure
+    } finally {
+      setMergeBusy(null);
+    }
+  }
 
   async function linkMerchants(alias: string, primary: string, unlink = false) {
     try {
@@ -339,6 +369,54 @@ export default function RecurringsPage() {
                   style={{ width: `${Math.round((paidSoFar / totalBills) * 100)}%` }}
                 />
               </div>
+            </div>
+          )}
+
+          {merges.length > 0 && (
+            <div className="card p-4">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-sm font-semibold">Possible duplicate vendors</span>
+                <span className="rounded-full bg-[var(--muted)]/15 px-2 py-0.5 text-xs text-[var(--muted)]">
+                  {merges.length}
+                </span>
+              </div>
+              <p className="mb-3 text-xs text-[var(--muted)]">
+                Same vendor posting under different bank descriptors — usually a
+                location suffix. Combine to fix recurring detection, or dismiss.
+              </p>
+              <ul className="flex flex-col gap-2">
+                {merges.map((g) => (
+                  <li
+                    key={g.canonical}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-[var(--border)] p-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{g.canonical}</div>
+                      <div className="mt-0.5 text-xs text-[var(--muted)]">
+                        {g.variants
+                          .map((v) => `${v.merchant} (${v.count})`)
+                          .join("  ·  ")}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        disabled={mergeBusy === g.canonical}
+                        onClick={() => resolveMerge(g, "approve")}
+                        className="btn-primary text-xs disabled:opacity-50"
+                      >
+                        Combine
+                      </button>
+                      <button
+                        disabled={mergeBusy === g.canonical}
+                        onClick={() => resolveMerge(g, "dismiss")}
+                        className="btn-ghost text-xs disabled:opacity-50"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
