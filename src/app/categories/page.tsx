@@ -132,13 +132,21 @@ export default function CategoriesPage() {
     <Shell
       title="Categories"
       subtitle="Totals for the selected month"
-      actions={<MonthPicker months={months} value={month} onChange={changeMonth} />}
+      actions={
+        <>
+          <MonthPicker months={months} value={month} onChange={changeMonth} />
+          <button
+            onClick={() => setShowAddForm((v) => !v)}
+            className="btn-ghost"
+          >
+            + New category
+          </button>
+        </>
+      }
     >
-      {!showAddForm ? (
-        <button onClick={() => setShowAddForm(true)} className="btn-ghost mb-5">
-          + New category
-        </button>
-      ) : (
+      <BudgetSummary cats={cats} />
+
+      {showAddForm && (
       <div className="card mb-5 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold">New category</h3>
@@ -226,6 +234,79 @@ export default function CategoriesPage() {
         </div>
       )}
     </Shell>
+  );
+}
+
+// Top-of-page orientation: how the month's spend sits against budgets overall,
+// plus the two things that need attention (categories over budget, categories
+// with no budget). Scoped to budgeted expense categories so the bar compares
+// like-for-like; unbudgeted spend is surfaced separately rather than distorting it.
+function BudgetSummary({ cats }: { cats: Cat[] }) {
+  const expense = cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals);
+  if (expense.length === 0) return null;
+  const budgeted = expense.filter((c) => c.budget != null);
+  const unbudgeted = expense.filter((c) => c.budget == null);
+  const budget = budgeted.reduce((s, c) => s + (c.budget ?? 0), 0);
+
+  if (budget === 0) {
+    const totalSpent = expense.reduce((s, c) => s + c.total, 0);
+    return (
+      <div className="card mb-5 p-5">
+        <div className="text-2xl font-semibold tracking-tight">
+          {usd(totalSpent, { cents: false })}
+        </div>
+        <div className="stat-label">spent this month</div>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Set a budget on any category below to track spending against it.
+        </p>
+      </div>
+    );
+  }
+
+  const spent = budgeted.reduce((s, c) => s + c.total, 0);
+  const overCount = budgeted.filter((c) => c.total > (c.budget ?? 0)).length;
+  const remaining = budget - spent;
+  const over = remaining < 0;
+  const pct = Math.min((spent / budget) * 100, 100);
+  return (
+    <div className="card mb-5 p-5">
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-2xl font-semibold tracking-tight">
+            {usd(spent, { cents: false })}
+          </div>
+          <div className="stat-label">
+            spent of {usd(budget, { cents: false })} budgeted
+          </div>
+        </div>
+        <div className="text-right">
+          <div
+            className={`text-2xl font-semibold tracking-tight ${
+              over ? "text-rose-600" : ""
+            }`}
+          >
+            {usd(Math.abs(remaining), { cents: false })}
+          </div>
+          <div className="stat-label">{over ? "over budget" : "left"}</div>
+        </div>
+      </div>
+      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${pct}%`, background: over ? "#e11d48" : "var(--accent)" }}
+        />
+      </div>
+      <div className="mt-2.5 text-xs text-[var(--muted)]">
+        {overCount > 0 ? (
+          <span className="font-medium text-rose-600">
+            {overCount} categor{overCount === 1 ? "y" : "ies"} over budget
+          </span>
+        ) : (
+          <span>On track — nothing over budget</span>
+        )}
+        {unbudgeted.length > 0 && <span> · {unbudgeted.length} not budgeted</span>}
+      </div>
+    </div>
   );
 }
 
