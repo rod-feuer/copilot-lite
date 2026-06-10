@@ -14,6 +14,10 @@ Built with Next.js 16 + Tailwind v4 + SQLite (better-sqlite3). All data stays on
 your machine in `data/copilot.db` (gitignored) — nothing is sent anywhere except the
 optional Claude categorization call (see below).
 
+![Copilot Lite dashboard](docs/dashboard.png)
+
+> Shown with the built-in sample data.
+
 ## Prerequisites
 
 - **Node 20+** (tested on Node 24). `better-sqlite3` is a native module, so a working

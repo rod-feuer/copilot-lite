@@ -481,7 +481,7 @@ function PaceStrip({ pace, spent }: { pace: Dash["pace"]; spent: number }) {
     { label: "Avg / day", value: usd(avgDay, { cents: false }) },
   ];
   if (inProgress) {
-    items.push({ label: "Days left", value: String(daysLeft) });
+    items.push({ label: daysLeft === 1 ? "Day left" : "Days left", value: String(daysLeft) });
     items.push({
       label: "Projected",
       value: usd(pace.projectedMonthEnd as number, { cents: false }),
