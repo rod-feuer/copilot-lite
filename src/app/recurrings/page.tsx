@@ -509,18 +509,20 @@ function BillList({
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize && onMute);
 
-  // Convey paid status by grouping rather than a cryptic per-row ✓/○: split an
-  // active list into Upcoming (due, unpaid) and Paid. Only group when both exist
-  // (the mid-current-month case); single-state or inactive lists render flat.
-  const up = recs.filter((r) => !r.paid);
-  const pd = recs.filter((r) => r.paid);
-  const sections =
-    dim || up.length === 0 || pd.length === 0
-      ? [{ key: "all", label: "", recs }]
-      : [
-          { key: "up", label: "Upcoming", recs: up },
-          { key: "pd", label: "Paid this month", recs: pd },
-        ];
+  // Convey paid status by grouping rather than a cryptic per-row ✓/○. Unpaid
+  // bills split by due date: Overdue (date already passed — expected but not yet
+  // matched to a charge) vs Upcoming (still ahead). Headers are shown only when
+  // there's something to distinguish; a lone all-paid list renders flat.
+  const today = new Date().toISOString().slice(0, 10);
+  const groups = [
+    { key: "od", label: "Overdue", recs: recs.filter((r) => !r.paid && r.dueDate < today) },
+    { key: "up", label: "Upcoming", recs: recs.filter((r) => !r.paid && r.dueDate >= today) },
+    { key: "pd", label: "Paid this month", recs: recs.filter((r) => r.paid) },
+  ].filter((g) => g.recs.length > 0);
+  const onlyPaid = groups.length === 1 && groups[0].key === "pd";
+  const sections = dim
+    ? [{ key: "all", label: "", recs }]
+    : groups.map((g) => ({ ...g, label: onlyPaid ? "" : g.label }));
   return (
     <div>
       {title && (
@@ -587,7 +589,11 @@ function BillList({
                     e.stopPropagation();
                     setMatchEditId((id) => (id === r.id ? null : r.id));
                   }}
-                  title="Edit this recurring (rename, amount, cadence, matching)"
+                  title={
+                    r.settings
+                      ? "Has custom settings (rename, amount, cadence, or matching) — click to view or reset"
+                      : "Edit this recurring (rename, amount, cadence, matching)"
+                  }
                   className={`shrink-0 rounded border border-[var(--border)] px-2 py-0.5 text-xs ${
                     r.settings
                       ? "text-[var(--accent)]"
