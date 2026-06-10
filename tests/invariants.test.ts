@@ -15,12 +15,13 @@ import {
   undoRenormalizeMerchants,
   cleanupUndoAvailable,
 } from "../src/lib/db";
-import { dashboard } from "../src/lib/core";
+import { dashboard, detectRecurrings } from "../src/lib/core";
 import {
   listTransactions,
   merchantSummary,
   categoriesWithTotals,
   setRecurringSetting,
+  setTransactionRecurringExcluded,
   recurringsForMonth,
   setBudget,
 } from "../src/lib/queries";
@@ -73,7 +74,7 @@ before(() => {
   CAT_X = addCat("Home");
 });
 beforeEach(() => {
-  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log"])
+  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log", "recurring_tx_exclusions"])
     getDb().exec(`DELETE FROM ${t}`);
 });
 after(() => {
@@ -297,6 +298,39 @@ test("undo restores the pre-cleanup names (not the raw descriptor) and aliases",
     .get() as { alias: string } | undefined;
   assert.equal(s?.alias, "Acme Subscription", "alias keyed back to the restored name");
   assert.equal(cleanupUndoAvailable(getDb()), false, "undo is consumed once applied");
+});
+
+test("a charge can be excluded from its recurring without muting the whole vendor", () => {
+  // Five regular monthly charges → one recurring series.
+  for (const d of ["2025-01-15", "2025-02-15", "2025-03-15", "2025-04-15", "2025-05-15"])
+    tx("Acme Sub", { amount: -100, date: d, categoryId: CAT });
+  detectRecurrings();
+  const before = getDb()
+    .prepare("SELECT id, date, recurringId FROM transactions WHERE merchant='Acme Sub' ORDER BY date")
+    .all() as { id: number; date: string; recurringId: number | null }[];
+  assert.ok(before.every((r) => r.recurringId != null), "all five start stamped recurring");
+
+  // Flag the last charge as a one-off; the series stays intact for the rest.
+  const last = before[before.length - 1];
+  setTransactionRecurringExcluded(last.id, true);
+  detectRecurrings();
+  const after = getDb()
+    .prepare("SELECT id, recurringId FROM transactions WHERE merchant='Acme Sub'")
+    .all() as { id: number; recurringId: number | null }[];
+  assert.equal(after.find((r) => r.id === last.id)!.recurringId, null, "the flagged charge is no longer recurring");
+  assert.equal(after.filter((r) => r.recurringId != null).length, 4, "the other four remain recurring");
+  const rec = getDb()
+    .prepare("SELECT count FROM recurrings WHERE merchant='Acme Sub'")
+    .get() as { count: number };
+  assert.equal(rec.count, 4, "the series stats reflect only the four kept charges");
+
+  // Add it back; it rejoins the series.
+  setTransactionRecurringExcluded(last.id, false);
+  detectRecurrings();
+  const restored = getDb()
+    .prepare("SELECT recurringId FROM transactions WHERE id=?")
+    .get(last.id) as { recurringId: number | null };
+  assert.ok(restored.recurringId != null, "re-included charge is recurring again");
 });
 
 test("auto-split children sum to the parent and the parent is excluded", () => {

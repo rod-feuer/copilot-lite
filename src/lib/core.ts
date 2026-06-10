@@ -4,6 +4,7 @@ import {
   upcomingRecurringExpenses,
   getBudgets,
   getRecurringOverrides,
+  getRecurringTxExclusions,
   getMerchantLinks,
   canonicalMerchant,
 } from "./queries";
@@ -121,7 +122,7 @@ export function detectRecurrings(): Recurring[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT merchant, date, amount, categoryId
+      `SELECT merchant, date, amount, categoryId, hash
        FROM transactions ORDER BY merchant, date`
     )
     .all() as {
@@ -129,6 +130,7 @@ export function detectRecurrings(): Recurring[] {
     date: string;
     amount: number;
     categoryId: number | null;
+    hash: string;
   }[];
 
   // Group by canonical merchant, so user-linked descriptors (e.g. a gas bill
@@ -148,6 +150,7 @@ export function detectRecurrings(): Recurring[] {
   db.prepare("DELETE FROM recurrings").run();
 
   const overrides = getRecurringOverrides();
+  const excluded = getRecurringTxExclusions(); // charges flagged as one-offs
   const created = new Set<string>();
   const out: Recurring[] = [];
   const insert = db.prepare(
@@ -158,8 +161,9 @@ export function detectRecurrings(): Recurring[] {
     "UPDATE transactions SET recurringId = ? WHERE merchant = ?"
   );
 
-  for (const [merchant, txs] of byMerchant) {
+  for (const [merchant, all] of byMerchant) {
     if (overrides[merchant] === "mute") continue; // user said: not recurring
+    const txs = all.filter((t) => !excluded.has(t.hash)); // drop flagged one-offs
     if (txs.length < 3) continue;
 
     // Amounts must be roughly consistent — measured by coefficient of variation
@@ -206,8 +210,10 @@ export function detectRecurrings(): Recurring[] {
   // didn't already catch (cadence/amount inferred from its history).
   for (const [merchant, status] of Object.entries(overrides)) {
     if (status !== "force" || created.has(merchant)) continue;
-    const txs = byMerchant.get(merchant);
-    if (!txs || txs.length === 0) continue;
+    const all = byMerchant.get(merchant);
+    if (!all || all.length === 0) continue;
+    const txs = all.filter((t) => !excluded.has(t.hash));
+    if (txs.length === 0) continue;
     const amounts = txs.map((t) => t.amount);
     const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
     let cadence: Recurring["cadence"] = "monthly";
@@ -232,6 +238,12 @@ export function detectRecurrings(): Recurring[] {
       link.run(info.lastInsertRowid, om);
     out.push({ id: Number(info.lastInsertRowid), ...rec });
   }
+
+  // Flagged one-offs never belong to a recurring, however their merchant was
+  // stamped above (a sibling charge shares the same merchant string).
+  db.prepare(
+    "UPDATE transactions SET recurringId = NULL WHERE hash IN (SELECT hash FROM recurring_tx_exclusions)"
+  ).run();
 
   return out.sort((a, b) => a.nextDate.localeCompare(b.nextDate));
 }

@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   setTransactionCategory,
   setTransactionEffectiveDate,
+  setTransactionRecurringExcluded,
 } from "@/lib/queries";
+import { detectRecurrings } from "@/lib/core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +15,14 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
+
+  // Flag/unflag this single charge as a one-off (excluded from its merchant's
+  // recurring series), then rebuild so the series stats + recurringId reflect it.
+  if ("recurringExcluded" in body) {
+    setTransactionRecurringExcluded(Number(id), !!body.recurringExcluded);
+    detectRecurrings();
+    return NextResponse.json({ ok: true });
+  }
 
   // Set/clear the effective (accounting) date.
   if ("effectiveDate" in body) {

@@ -24,6 +24,7 @@ type Tx = {
   excluded: 0 | 1;
   effectiveDate: string | null;
   recurringId: number | null;
+  recurringExcluded: 0 | 1; // user flagged this charge as a one-off
   categoryId: number | null;
   categoryName: string | null;
   categoryColor: string | null;
@@ -185,18 +186,22 @@ export default function TransactionsPage() {
     setRefreshKey((k) => k + 1);
   }
 
-  // Make a merchant recurring (or un-mark it) — persists across re-scans.
+  // Recurring control. A charge that's part of a recurring can be flagged as a
+  // one-off (per transaction); a flagged one can be added back; and a merchant
+  // with no recurring at all can be forced recurring (merchant-level). All
+  // persist across re-scans.
   async function toggleRecurring(t: Tx) {
-    const makeIt = !t.recurringId;
     try {
-      await postJson("/api/recurrings/override", {
-        merchant: t.merchant,
-        status: makeIt ? "force" : "mute",
-      });
-      toast(
-        makeIt ? `Marked "${t.merchant}" recurring` : `"${t.merchant}" is no longer recurring`,
-        "success"
-      );
+      if (t.recurringId != null) {
+        await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: true });
+        toast("Excluded this charge from the recurring", "success");
+      } else if (t.recurringExcluded) {
+        await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: false });
+        toast("Added this charge back to the recurring", "success");
+      } else {
+        await postJson("/api/recurrings/override", { merchant: t.merchant, status: "force" });
+        toast(`Marked "${t.merchant}" recurring`, "success");
+      }
       setRefreshKey((k) => k + 1);
     } catch {
       toast("Couldn't update — please try again", "error");
@@ -502,6 +507,8 @@ export default function TransactionsPage() {
                   const sameCat =
                     modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
                   const sameAcct = modal && t.account === modal.account;
+                  const recState =
+                    t.recurringId != null ? "in" : t.recurringExcluded ? "out" : "none";
                   return (
               <li
                 key={t.id}
@@ -689,11 +696,19 @@ export default function TransactionsPage() {
                     e.stopPropagation();
                     toggleRecurring(t);
                   }}
-                  title={t.recurringId ? "Mark as not recurring" : "Make recurring"}
+                  title={
+                    recState === "in"
+                      ? "Part of a recurring — click to exclude this charge"
+                      : recState === "out"
+                        ? "Excluded from the recurring — click to add it back"
+                        : "Make recurring"
+                  }
                   className={`shrink-0 rounded-md px-1.5 py-1 text-sm transition-opacity ${
-                    t.recurringId
+                    recState === "in"
                       ? "text-[var(--accent)]"
-                      : "text-[var(--muted)] opacity-0 hover:bg-[var(--background)] group-hover:opacity-100"
+                      : recState === "out"
+                        ? "text-[var(--muted)] line-through opacity-70 hover:opacity-100"
+                        : "text-[var(--muted)] opacity-0 hover:bg-[var(--background)] group-hover:opacity-100"
                   }`}
                 >
                   ↻

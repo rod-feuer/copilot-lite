@@ -1,4 +1,9 @@
-import { getDb, ensureRecurringSettings, ensureMerchantLinks } from "./db";
+import {
+  getDb,
+  ensureRecurringSettings,
+  ensureMerchantLinks,
+  ensureRecurringTxExclusions,
+} from "./db";
 import type { TransactionWithCategory, Recurring, Category } from "./types";
 
 // ---- Merchant linking ----------------------------------------------------
@@ -196,6 +201,7 @@ export function listTransactions(opts: {
   limit?: number;
 }): TransactionWithCategory[] {
   const db = getDb();
+  ensureRecurringTxExclusions(db);
   const where: string[] = [];
   const params: Record<string, unknown> = {};
   if (opts.month) {
@@ -267,12 +273,15 @@ export function listTransactions(opts: {
   const dir = opts.dir === "asc" ? "ASC" : "DESC";
   const sql = `
     SELECT t.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon,
-           COALESCE(c.excludeFromTotals, 0) AS categoryExcluded
+           COALESCE(c.excludeFromTotals, 0) AS categoryExcluded,
+           (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
     FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY ${sortCol} ${dir}, t.id DESC
     ${opts.limit ? "LIMIT " + opts.limit : ""}`;
-  const rows = db.prepare(sql).all(params) as TransactionWithCategory[];
+  const rows = db.prepare(sql).all(params) as (TransactionWithCategory & {
+    recurringExcluded: number;
+  })[];
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
   return rows.map((r) => ({ ...r, displayName: merchantDisplayName(r.merchant, settings, links) }));
@@ -300,6 +309,32 @@ export function setRecurringOverride(merchant: string, status: "force" | "mute")
 
 export function clearRecurringOverride(merchant: string) {
   getDb().prepare("DELETE FROM recurring_overrides WHERE merchant = ?").run(merchant);
+}
+
+// Transaction hashes flagged as one-offs (excluded from their merchant's
+// recurring series). Read by detectRecurrings so the exclusion survives rebuilds.
+export function getRecurringTxExclusions(): Set<string> {
+  const db = getDb();
+  ensureRecurringTxExclusions(db);
+  const rows = db.prepare("SELECT hash FROM recurring_tx_exclusions").all() as {
+    hash: string;
+  }[];
+  return new Set(rows.map((r) => r.hash));
+}
+
+// Flag/unflag a single transaction as a one-off. Keyed by the transaction's
+// stable hash so it persists across re-imports. Callers re-run detectRecurrings
+// to recompute the series (and clear/restore this charge's recurringId).
+export function setTransactionRecurringExcluded(id: number, excluded: boolean) {
+  const db = getDb();
+  ensureRecurringTxExclusions(db);
+  const row = db.prepare("SELECT hash FROM transactions WHERE id = ?").get(id) as
+    | { hash: string }
+    | undefined;
+  if (!row) return;
+  if (excluded)
+    db.prepare("INSERT OR IGNORE INTO recurring_tx_exclusions (hash) VALUES (?)").run(row.hash);
+  else db.prepare("DELETE FROM recurring_tx_exclusions WHERE hash = ?").run(row.hash);
 }
 
 // Normalize a bank-descriptor merchant string to a coarse vendor key so the

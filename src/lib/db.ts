@@ -117,6 +117,15 @@ function init(db: Database.Database) {
   ensureRecurringSettings(db);
   ensureMerchantLinks(db);
   ensureCleanupLog(db);
+  ensureRecurringTxExclusions(db);
+}
+
+// Individual charges the user flagged as one-offs, excluded from their
+// merchant's recurring series. Keyed by the stable transaction hash so it
+// survives re-imports and detectRecurrings() rebuilds. Idempotent; callable on
+// the live connection so the feature works without a dev-server restart.
+export function ensureRecurringTxExclusions(db: Database.Database) {
+  db.exec("CREATE TABLE IF NOT EXISTS recurring_tx_exclusions (hash TEXT PRIMARY KEY)");
 }
 
 // User-declared merchant identity: fold an `alias` descriptor into a
