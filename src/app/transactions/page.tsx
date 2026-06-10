@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Shell from "@/components/Shell";
 import {
   MonthPicker,
@@ -209,6 +209,26 @@ export default function TransactionsPage() {
     [txs]
   );
 
+  // Group the list under day headers when it's in date order (the rows are
+  // already date-sorted by the server, so consecutive runs share a day). Other
+  // sorts (amount, merchant) stay a flat list — a date header would be nonsense.
+  const grouping = sort === "date";
+  const grouped = useMemo(() => {
+    if (!grouping) return [{ key: "__all", label: "", total: 0, rows: txs }];
+    const out: { key: string; label: string; total: number; rows: Tx[] }[] = [];
+    for (const t of txs) {
+      const day = t.effectiveDate ?? t.date;
+      let g = out[out.length - 1];
+      if (!g || g.key !== day) {
+        g = { key: day, label: dayLabel(day), total: 0, rows: [] };
+        out.push(g);
+      }
+      g.rows.push(t);
+      if (!(t.excluded || t.categoryExcluded)) g.total += t.amount;
+    }
+    return out;
+  }, [txs, grouping]);
+
   // Linear-style filters: a filter shows as a chip only when active (has a
   // value) or explicitly added from the "+ Filter" menu. The menu lists the rest.
   const FILTERS = [
@@ -407,7 +427,17 @@ export default function TransactionsPage() {
           </p>
         ) : (
           <ul className="divide-y divide-[var(--border)]">
-            {txs.map((t) => (
+            {grouped.map((g) => (
+              <Fragment key={g.key}>
+                {grouping && (
+                  <li className="flex items-center justify-between bg-[var(--background)] px-4 py-1.5">
+                    <span className="text-xs font-semibold text-[var(--muted)]">{g.label}</span>
+                    <span className="text-xs tabular-nums text-[var(--muted)]">
+                      {usd(g.total, { sign: true })}
+                    </span>
+                  </li>
+                )}
+                {g.rows.map((t) => (
               <li
                 key={t.id}
                 data-drawer-row
@@ -433,48 +463,99 @@ export default function TransactionsPage() {
                       </span>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-1 text-xs text-[var(--muted)]">
-                    {editingDateId === t.id ? (
-                      <input
-                        type="date"
-                        defaultValue={t.effectiveDate ?? t.date}
-                        autoFocus
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => commitDate(t, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.currentTarget.blur();
-                          if (e.key === "Escape") setEditingDateId(null);
-                        }}
-                        className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
-                      />
+                  <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                    {grouping ? (
+                      <>
+                        <span>{t.account}</span>
+                        {t.effectiveDate && t.effectiveDate !== t.date && (
+                          <span className="text-amber-600">
+                            · posted {shortDate(t.date)}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                commitDate(t, null);
+                              }}
+                              className="ml-1 hover:text-[var(--foreground)]"
+                              title="Revert to posted date"
+                            >
+                              ↺
+                            </button>
+                          </span>
+                        )}
+                        {editingDateId === t.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            ·
+                            <input
+                              type="date"
+                              defaultValue={t.effectiveDate ?? t.date}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => commitDate(t, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                                if (e.key === "Escape") setEditingDateId(null);
+                              }}
+                              className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
+                            />
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingDateId(t.id);
+                            }}
+                            className="hidden hover:text-[var(--foreground)] hover:underline group-hover:inline"
+                            title="Set effective date"
+                          >
+                            · edit date
+                          </button>
+                        )}
+                      </>
                     ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingDateId(t.id);
-                        }}
-                        className="hover:text-[var(--foreground)] hover:underline"
-                        title="Edit effective date"
-                      >
-                        {longDate(t.effectiveDate ?? t.date)}
-                      </button>
+                      <>
+                        {editingDateId === t.id ? (
+                          <input
+                            type="date"
+                            defaultValue={t.effectiveDate ?? t.date}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => commitDate(t, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                              if (e.key === "Escape") setEditingDateId(null);
+                            }}
+                            className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
+                          />
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingDateId(t.id);
+                            }}
+                            className="hover:text-[var(--foreground)] hover:underline"
+                            title="Edit effective date"
+                          >
+                            {longDate(t.effectiveDate ?? t.date)}
+                          </button>
+                        )}
+                        {t.effectiveDate && t.effectiveDate !== t.date && (
+                          <span className="text-amber-600">
+                            · posted {shortDate(t.date)}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                commitDate(t, null);
+                              }}
+                              className="ml-1 hover:text-[var(--foreground)]"
+                              title="Revert to posted date"
+                            >
+                              ↺
+                            </button>
+                          </span>
+                        )}
+                        <span>· {t.account}</span>
+                      </>
                     )}
-                    {t.effectiveDate && t.effectiveDate !== t.date && (
-                      <span className="text-amber-600">
-                        · posted {shortDate(t.date)}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            commitDate(t, null);
-                          }}
-                          className="ml-1 hover:text-[var(--foreground)]"
-                          title="Revert to posted date"
-                        >
-                          ↺
-                        </button>
-                      </span>
-                    )}
-                    <span>· {t.account}</span>
                   </div>
                 </div>
                 <button
@@ -497,7 +578,17 @@ export default function TransactionsPage() {
                   onChange={(e) =>
                     setCategory(t.id, e.target.value ? Number(e.target.value) : null)
                   }
-                  className="max-w-37 rounded-lg border border-[var(--border)] bg-card px-2 py-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+                  title="Category"
+                  className={`max-w-[9rem] shrink-0 cursor-pointer appearance-none truncate rounded-full px-2.5 py-1 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${
+                    t.categoryId != null
+                      ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
+                      : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                  style={
+                    t.categoryId != null
+                      ? { background: (t.categoryColor ?? "#94a3b8") + "22" }
+                      : undefined
+                  }
                 >
                   <option value="">Uncategorized</option>
                   {cats.map((c) => (
@@ -514,12 +605,24 @@ export default function TransactionsPage() {
                   {usd(t.amount, { sign: true })}
                 </div>
               </li>
+                ))}
+              </Fragment>
             ))}
           </ul>
         )}
       </div>
     </Shell>
   );
+}
+
+// Day-group header label, e.g. "Saturday, June 6". UTC to match the stored dates.
+function dayLabel(iso: string): string {
+  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 // Active-filter chip: an inline control + a remove (✕). Shown only for applied
