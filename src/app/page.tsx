@@ -288,9 +288,11 @@ export default function DashboardPage() {
                       labelFormatter={(label) => shortDate(String(label))}
                       contentStyle={{
                         borderRadius: 12,
-                        border: "1px solid #e8eaed",
+                        border: "1px solid var(--border)",
+                        background: "var(--card)",
                         fontSize: 12,
                       }}
+                      labelStyle={{ color: "var(--foreground)" }}
                     />
                     {/* Faint prior-month curve, drawn first so it sits beneath. */}
                     <Area
