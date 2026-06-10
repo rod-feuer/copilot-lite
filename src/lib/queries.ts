@@ -150,6 +150,37 @@ export function clearMatchRule(merchant: string) {
   setRecurringSetting(merchant, { matchMode: null, matchText: null, amountTolerance: null });
 }
 
+// Merchant strings to match for a text search: every descriptor of any vendor
+// whose own name, original bank descriptor (rawMerchant), canonical name, or
+// user alias contains the query — then expanded across linked variants so a
+// combined vendor matches as one unit (and you can search by the friendly name
+// you set, not just the raw descriptor).
+function vendorSearchMerchants(ql: string): string[] {
+  const db = getDb();
+  const links = getMerchantLinks();
+  const settings = getRecurringSettings();
+  const rows = db
+    .prepare("SELECT DISTINCT merchant, rawMerchant FROM transactions")
+    .all() as { merchant: string; rawMerchant: string | null }[];
+  const matched = new Set<string>();
+  for (const r of rows) {
+    const canon = canonicalMerchant(r.merchant, links);
+    const alias = settings[canon]?.alias ?? "";
+    if (
+      r.merchant.toLowerCase().includes(ql) ||
+      (r.rawMerchant ?? "").toLowerCase().includes(ql) ||
+      canon.toLowerCase().includes(ql) ||
+      alias.toLowerCase().includes(ql)
+    )
+      matched.add(canon);
+  }
+  if (matched.size === 0) return [];
+  const out: string[] = [];
+  for (const r of rows)
+    if (matched.has(canonicalMerchant(r.merchant, links))) out.push(r.merchant);
+  return out;
+}
+
 export function listTransactions(opts: {
   month?: string;
   categoryId?: number | "none";
@@ -177,15 +208,29 @@ export function listTransactions(opts: {
     params.cat = opts.categoryId;
   }
   if (opts.q) {
-    // Match merchant; also match the amount if the query contains digits.
+    // Vendor-aware text match: include transactions whose vendor matches the
+    // query by any of its descriptor variants, its canonical name, or the
+    // alias/display name you've set — expanded across linked descriptors, so a
+    // combined vendor (e.g. AT&T's several descriptors folded into one) matches
+    // as a whole. An amount match is added when the query contains digits.
     const digits = opts.q.replace(/[^0-9.]/g, "");
-    if (digits) {
-      where.push("(LOWER(t.merchant) LIKE @q OR CAST(ABS(t.amount) AS TEXT) LIKE @qn)");
-      params.qn = `%${digits}%`;
-    } else {
-      where.push("LOWER(t.merchant) LIKE @q");
+    const hasText = /[a-z]/i.test(opts.q);
+    const clauses: string[] = [];
+    if (hasText) {
+      const merchants = vendorSearchMerchants(opts.q.toLowerCase());
+      if (merchants.length) {
+        const ph = merchants.map((_, i) => `@sm${i}`);
+        merchants.forEach((m, i) => (params[`sm${i}`] = m));
+        clauses.push(`t.merchant IN (${ph.join(",")})`);
+      } else {
+        clauses.push("0"); // text was given but matched no vendor
+      }
     }
-    params.q = `%${opts.q.toLowerCase()}%`;
+    if (digits) {
+      clauses.push("CAST(ABS(t.amount) AS TEXT) LIKE @qn");
+      params.qn = `%${digits}%`;
+    }
+    if (clauses.length) where.push(`(${clauses.join(" OR ")})`);
   }
   if (opts.vendor) {
     // Match every descriptor variant of the vendor, so this shows the same set
