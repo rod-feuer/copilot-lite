@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Shell from "@/components/Shell";
 import {
   MonthPicker,
@@ -61,6 +61,23 @@ export default function TransactionsPage() {
   const [month, setMonth] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [q, setQ] = useState("");
+  // Search is otherwise scoped to the selected month, so a typed query would
+  // silently miss anything outside it. When a search begins we widen to all
+  // months (stashing where we were); clearing the search snaps back — unless
+  // the user manually narrowed to a month mid-search, which we respect.
+  const monthBeforeSearch = useRef<string | null>(null);
+  function search(value: string) {
+    const had = q.length > 0;
+    const has = value.length > 0;
+    if (!had && has) {
+      monthBeforeSearch.current = month;
+      setMonth("");
+    } else if (had && !has) {
+      if (month === "" && monthBeforeSearch.current) setMonth(monthBeforeSearch.current);
+      monthBeforeSearch.current = null;
+    }
+    setQ(value);
+  }
   const [vendor, setVendor] = useState(""); // deep-link only (from the drawer)
   const [type, setType] = useState("");
   const [account, setAccount] = useState("");
@@ -88,11 +105,11 @@ export default function TransactionsPage() {
     // Honor deep-links from the dashboard, e.g. /transactions?month=2026-05&category=35
     // or ?type=expense or ?q=Chubb. Each present param pre-applies its filter.
     const params = new URLSearchParams(window.location.search);
-    // A vendor deep-link (from the drawer's "View all transactions") shows the
-    // full vendor history, so default to all months unless a month was given.
-    const hasVendor = !!params.get("vendor");
+    // A vendor deep-link (from the drawer's "View all transactions") or a search
+    // deep-link spans history, so default to all months unless a month was given.
+    const wide = !!params.get("vendor") || !!params.get("q");
     setMonth(
-      (cur) => cur || params.get("month") || (hasVendor ? "" : defaultMonth(ms))
+      (cur) => cur || params.get("month") || (wide ? "" : defaultMonth(ms))
     );
     const apply = (key: string, setter: (v: string) => void) => {
       const v = params.get(key);
@@ -318,7 +335,7 @@ export default function TransactionsPage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => search(e.target.value)}
           placeholder="Search merchant or amount…"
           className="btn-ghost w-60 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
         />

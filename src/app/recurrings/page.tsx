@@ -273,28 +273,6 @@ export default function RecurringsPage() {
       subtitle="Bills & subscriptions by month"
       actions={
         <>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search recurrings…"
-            className="btn-ghost w-44 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-          />
-          <select
-            value={catFilter}
-            onChange={(e) => setCatFilter(e.target.value)}
-            aria-label="Filter by category"
-            className={`btn-ghost max-w-44 cursor-pointer ${
-              catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
-            }`}
-          >
-            <option value="">All categories</option>
-            <option value="none">Uncategorized</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.icon} {c.name}
-              </option>
-            ))}
-          </select>
           <MonthPicker months={months} value={month} onChange={changeMonth} />
           <CleanupNamesButtons onDone={() => load(month)} disabled={busy} />
           <button className="btn-ghost" disabled={busy} onClick={recompute}>
@@ -303,6 +281,30 @@ export default function RecurringsPage() {
         </>
       }
     >
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search recurrings…"
+          className="btn-ghost w-60 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+        />
+        <select
+          value={catFilter}
+          onChange={(e) => setCatFilter(e.target.value)}
+          aria-label="Filter by category"
+          className={`btn-ghost ml-auto max-w-44 cursor-pointer ${
+            catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
+          }`}
+        >
+          <option value="">All categories</option>
+          <option value="none">Uncategorized</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.icon} {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
       {recs.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="mb-2 text-4xl">↻</div>
