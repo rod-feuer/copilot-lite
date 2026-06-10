@@ -641,7 +641,6 @@ function CategoryBody({
                 onClick={() => onOpenMerchant(t.merchant)}
                 editable={{
                   cats,
-                  recurring: t.recurringId != null,
                   onRecategorize: (cid) => onTxRecategorize(t.id, cid),
                   onToggleRecurring: () => onTxToggleRecurring(t.merchant, t.recurringId == null),
                 }}
@@ -670,7 +669,6 @@ function monthsSince(firstSeen: string | null): number {
 // Used by both the Upcoming and Transactions lists so they line up.
 type RowEdit = {
   cats: Cat[];
-  recurring: boolean;
   onRecategorize: (categoryId: number | null) => void;
   onToggleRecurring: () => void;
 };
@@ -703,15 +701,36 @@ function ShelfRow({
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span
-            className={`w-3.5 shrink-0 text-center ${
-              muted ? "text-[var(--muted)]" : "text-[var(--accent)]"
-            }`}
-            title={recurring ? "Recurring" : undefined}
-            aria-hidden={!recurring}
-          >
-            {recurring ? "↻" : ""}
-          </span>
+          {editable ? (
+            // The ↻ gutter doubles as the recurring toggle: solid when the
+            // charge is part of a recurring series, a faint hover affordance
+            // when it isn't. Operates on the whole vendor (force/mute).
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                editable.onToggleRecurring();
+              }}
+              title={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
+              aria-label={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
+              className={`w-3.5 shrink-0 text-center transition-opacity hover:text-[var(--accent)] ${
+                recurring
+                  ? "text-[var(--accent)] opacity-100"
+                  : "text-[var(--muted)] opacity-0 focus:opacity-100 group-hover:opacity-100"
+              }`}
+            >
+              ↻
+            </button>
+          ) : (
+            <span
+              className={`w-3.5 shrink-0 text-center ${
+                muted ? "text-[var(--muted)]" : "text-[var(--accent)]"
+              }`}
+              title={recurring ? "Recurring" : undefined}
+              aria-hidden={!recurring}
+            >
+              {recurring ? "↻" : ""}
+            </span>
+          )}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
           <Tooltip
             label={name}
@@ -768,15 +787,9 @@ function ShelfRow({
               </option>
             ))}
           </select>
-          <button
-            onClick={() => {
-              editable.onToggleRecurring();
-              setEditing(false);
-            }}
-            className="rounded-lg border border-[var(--border)] px-2 py-1 hover:bg-card"
-          >
-            {editable.recurring ? "↻ Not recurring" : "↻ Make recurring"}
-          </button>
+          <span className="text-[var(--muted)]">
+            Recurring? Use the ↻ at the start of the row.
+          </span>
         </div>
       )}
     </li>
