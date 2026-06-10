@@ -500,7 +500,7 @@ function MerchantBody({
                 r.excluded ? "opacity-55" : ""
               }`}
             >
-              <span className="text-xs text-[var(--muted)]">{shortDate(r.date)}</span>
+              <span className="text-xs text-[var(--muted)]">{monthDayYear(r.date)}</span>
               <span className={`tabular-nums ${r.amount >= 0 ? "text-emerald-600" : ""}`}>
                 {usd(r.amount, { sign: true })}
               </span>
