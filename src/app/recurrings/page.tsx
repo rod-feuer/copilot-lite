@@ -100,6 +100,7 @@ export default function RecurringsPage() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
   const [q, setQ] = useState("");
+  const [catFilter, setCatFilter] = useState(""); // "" = all, "none" = uncategorized, else id
   const [combineFor, setCombineFor] = useState<string | null>(null);
   const [combinePick, setCombinePick] = useState("");
   const toast = useToast();
@@ -241,20 +242,29 @@ export default function RecurringsPage() {
     .filter((r) => !isActive(r) && !r.paid)
     .sort((a, b) => b.lastDate.localeCompare(a.lastDate));
 
-  // Search filters the displayed lists (by name or category) — not the summary.
+  // The search box and the category picker both filter the displayed lists (not
+  // the summary). Suggestions carry a category by name (no id), so match those by
+  // the selected category's name.
   const ql = q.trim().toLowerCase();
+  const catName =
+    catFilter && catFilter !== "none"
+      ? cats.find((c) => String(c.id) === catFilter)?.name ?? null
+      : null;
+  const matchText = (text: string) => !ql || text.toLowerCase().includes(ql);
   const matchRec = (r: Rec) =>
-    !ql ||
-    (r.displayName ?? r.merchant).toLowerCase().includes(ql) ||
-    (r.categoryName ?? "").toLowerCase().includes(ql);
+    matchText(`${r.displayName ?? r.merchant} ${r.categoryName ?? ""}`) &&
+    (!catFilter ||
+      (catFilter === "none" ? r.categoryId == null : String(r.categoryId) === catFilter));
   const matchSug = (s: Suggestion) =>
-    !ql || s.merchant.toLowerCase().includes(ql) || (s.category?.name ?? "").toLowerCase().includes(ql);
+    matchText(`${s.merchant} ${s.category?.name ?? ""}`) &&
+    (!catFilter || (catFilter === "none" ? !s.category : s.category?.name === catName));
   const shownBills = bills.filter(matchRec);
   const shownIncome = incomeBills.filter(matchRec);
   const shownInactive = inactive.filter(matchRec);
   const shownSuggestions = suggestions.filter(matchSug);
+  const filtering = ql.length > 0 || catFilter !== "";
   const noMatches =
-    ql.length > 0 &&
+    filtering &&
     shownBills.length + shownIncome.length + shownInactive.length + shownSuggestions.length === 0;
 
   return (
@@ -269,6 +279,22 @@ export default function RecurringsPage() {
             placeholder="Search recurrings…"
             className="btn-ghost w-44 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
           />
+          <select
+            value={catFilter}
+            onChange={(e) => setCatFilter(e.target.value)}
+            aria-label="Filter by category"
+            className={`btn-ghost max-w-44 cursor-pointer ${
+              catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
+            }`}
+          >
+            <option value="">All categories</option>
+            <option value="none">Uncategorized</option>
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.icon} {c.name}
+              </option>
+            ))}
+          </select>
           <MonthPicker months={months} value={month} onChange={changeMonth} />
           <CleanupNamesButtons onDone={() => load(month)} disabled={busy} />
           <button className="btn-ghost" disabled={busy} onClick={recompute}>
@@ -337,7 +363,7 @@ export default function RecurringsPage() {
             onOpen={(m) => openTx(m, { onChange: () => load(month) })}
           />
 
-          {!ql && bills.length === 0 && incomeBills.length === 0 && (
+          {!filtering && bills.length === 0 && incomeBills.length === 0 && (
             <p className="card p-6 text-center text-sm text-[var(--muted)]">
               No recurring bills this month.
             </p>
@@ -345,7 +371,7 @@ export default function RecurringsPage() {
 
           {noMatches && (
             <p className="card p-6 text-center text-sm text-[var(--muted)]">
-              No recurrings match “{q}”.
+              No recurrings match {ql ? `“${q}”` : "this filter"}.
             </p>
           )}
 
@@ -470,7 +496,7 @@ export default function RecurringsPage() {
               >
                 {showInactive ? "▾" : "▸"} Inactive ({shownInactive.length})
               </button>
-              {(showInactive || ql) && (
+              {(showInactive || filtering) && (
                 <BillList
                   title=""
                   recs={shownInactive}
