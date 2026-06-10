@@ -464,17 +464,29 @@ function Group({
                     )}
                   </span>
                   {budgeted ? (
-                    <span className={over ? "text-rose-600" : atRisk ? "text-amber-600" : ""}>
+                    <span
+                      className={`font-medium ${
+                        over
+                          ? "text-rose-600"
+                          : atRisk
+                          ? "text-amber-600"
+                          : "text-[var(--foreground)]"
+                      }`}
+                    >
                       {remaining >= 0
                         ? `${usd(remaining, { cents: false })} left`
                         : `${usd(-remaining, { cents: false })} over`}
                       {c.recurringBaseline > 0 && (
                         <span
-                          className={c.recurringBaseline > budget ? "text-amber-600" : undefined}
+                          className={`font-normal ${
+                            c.recurringBaseline > budget
+                              ? "text-amber-600"
+                              : "text-[var(--muted)]"
+                          }`}
                           title={
                             c.recurringBaseline > budget
                               ? "Budget is below this category's known recurring cost"
-                              : undefined
+                              : "Recurring cost in this category"
                           }
                         >
                           {" · "}
@@ -531,7 +543,7 @@ function BudgetInput({
   }
   return (
     <span className="inline-flex items-baseline text-[var(--muted)]">
-      / $
+      of&nbsp;$
       <input
         defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
         onBlur={(e) => commit(e.target.value)}
