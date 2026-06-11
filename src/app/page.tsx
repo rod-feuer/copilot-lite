@@ -27,6 +27,8 @@ type Dash = {
   income: number;
   expenses: number;
   net: number;
+  projectedIncome: number | null;
+  projectedNet: number | null;
   byCategory: {
     name: string;
     categoryId: number | null;
@@ -196,12 +198,20 @@ export default function DashboardPage() {
               tone="pos"
               href={`/transactions?month=${month}&type=income`}
               sub={
-                <DeltaLine
-                  cur={data.income}
-                  prev={data.prev?.income}
-                  prevLabel={prevPeriodLabel(data.prev)}
-                  higherIsGood
-                />
+                data.projectedIncome != null ? (
+                  // Income posts late in the month, so a vs-prior delta on the
+                  // amount-so-far is noise — show what's expected instead.
+                  <span className="text-xs text-[var(--muted)]">
+                    ≈ {usd(data.projectedIncome, { cents: false })} expected
+                  </span>
+                ) : (
+                  <DeltaLine
+                    cur={data.income}
+                    prev={data.prev?.income}
+                    prevLabel={prevPeriodLabel(data.prev)}
+                    higherIsGood
+                  />
+                )
               }
             />
             <Stat
@@ -219,17 +229,25 @@ export default function DashboardPage() {
               }
             />
             <Stat
-              label="Net cash flow"
-              value={usd(data.net, { sign: true, cents: false })}
-              tone={data.net >= 0 ? "pos" : "neg"}
+              label={data.projectedNet != null ? "Net cash flow (projected)" : "Net cash flow"}
+              value={usd(data.projectedNet ?? data.net, { sign: true, cents: false })}
+              tone={(data.projectedNet ?? data.net) >= 0 ? "pos" : "neg"}
               href={`/transactions?month=${month}`}
               sub={
-                <DeltaLine
-                  cur={data.net}
-                  prev={data.prev?.net}
-                  prevLabel={prevPeriodLabel(data.prev)}
-                  higherIsGood
-                />
+                data.projectedNet != null ? (
+                  // Mid-month net is misleading (income hasn't posted) — lead with
+                  // the projected month-end figure, keep the actual as context.
+                  <span className="text-xs text-[var(--muted)]">
+                    {usd(data.net, { sign: true, cents: false })} so far
+                  </span>
+                ) : (
+                  <DeltaLine
+                    cur={data.net}
+                    prev={data.prev?.net}
+                    prevLabel={prevPeriodLabel(data.prev)}
+                    higherIsGood
+                  />
+                )
               }
             />
           </div>

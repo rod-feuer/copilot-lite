@@ -317,6 +317,12 @@ export type DashboardData = {
   income: number;
   expenses: number;
   net: number;
+  // For an in-progress month, income is heavily back-loaded (paychecks post late),
+  // so month-to-date income and net are misleading. These project the month-end
+  // figures (income ≈ prior full month; net = projected income − projected spend).
+  // Null on complete/past months, where the actuals are shown instead.
+  projectedIncome: number | null;
+  projectedNet: number | null;
   byCategory: {
     name: string;
     categoryId: number | null;
@@ -574,7 +580,20 @@ export function dashboard(month?: string): DashboardData {
   ).m;
 
   let prev: DashboardData["prev"] = null;
+  let priorFullIncome: number | null = null;
   if (prevMonth) {
+    // Full prior-month income (unbounded by day) — the basis for projecting this
+    // month's back-loaded income.
+    priorFullIncome = (
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(CASE WHEN t.amount >= 0 THEN t.amount ELSE 0 END), 0) AS income
+           FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
+           WHERE substr(COALESCE(t.effectiveDate, t.date),1,7) = ? AND t.excluded = 0
+             AND COALESCE(c.excludeFromTotals, 0) = 0`
+        )
+        .get(prevMonth) as { income: number }
+    ).income;
     // Bound the baseline to the same first-N days when comparing a partial month.
     const dayClause =
       compareThroughDay != null
@@ -661,11 +680,24 @@ export function dashboard(month?: string): DashboardData {
     timeZone: "UTC",
   });
 
+  // Project this month's back-loaded income and net — only while a month is in
+  // progress (we're already projecting spend) and we have a prior month to lean
+  // on. Income recurs, so prior full-month income is the estimate; never below
+  // what's already in.
+  let projectedIncome: number | null = null;
+  let projectedNet: number | null = null;
+  if (projectedMonthEnd != null && priorFullIncome != null) {
+    projectedIncome = Number(Math.max(income, priorFullIncome).toFixed(2));
+    projectedNet = Number((projectedIncome - projectedMonthEnd).toFixed(2));
+  }
+
   return {
     monthLabel,
     income: Number(income.toFixed(2)),
     expenses: Number(expenses.toFixed(2)),
     net: Number((income - expenses).toFixed(2)),
+    projectedIncome,
+    projectedNet,
     byCategory,
     budget: budgetSummary,
     pace,
