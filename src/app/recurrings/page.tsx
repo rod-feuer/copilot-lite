@@ -103,8 +103,6 @@ export default function RecurringsPage() {
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [catFilter, setCatFilter] = useState(""); // "" = all, "none" = uncategorized, else id
-  const [combineFor, setCombineFor] = useState<string | null>(null);
-  const [combinePick, setCombinePick] = useState("");
   const toast = useToast();
   const openTx = useTxDrawer();
 
@@ -438,16 +436,6 @@ export default function RecurringsPage() {
                           Add
                         </button>
                         <button
-                          onClick={() => {
-                            setCombineFor((m) => (m === s.merchant ? null : s.merchant));
-                            setCombinePick("");
-                          }}
-                          title="Combine into another recurring"
-                          className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-                        >
-                          Combine
-                        </button>
-                        <button
                           onClick={() => dismissSuggestion(s)}
                           title="Dismiss"
                           className="shrink-0 rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-rose-500"
@@ -455,45 +443,6 @@ export default function RecurringsPage() {
                           ✕
                         </button>
                       </div>
-                      {combineFor === s.merchant && (
-                        <div className="flex flex-wrap items-center gap-2 border-t border-dashed border-[var(--border)] bg-[var(--background)] px-4 py-3 text-xs">
-                          <span className="text-[var(--muted)]">Fold this into</span>
-                          <input
-                            list="combine-merchants"
-                            value={combinePick}
-                            onChange={(e) => setCombinePick(e.target.value)}
-                            placeholder="pick the recurring/merchant to keep…"
-                            className="w-64 rounded-lg border border-[var(--border)] bg-card px-2 py-1"
-                          />
-                          <datalist id="combine-merchants">
-                            {merchantOptions
-                              .filter((m) => m !== s.merchant)
-                              .slice(0, 1000)
-                              .map((m) => (
-                                <option key={m} value={m} />
-                              ))}
-                          </datalist>
-                          <button
-                            onClick={() => {
-                              const v = combinePick.trim();
-                              if (v && v !== s.merchant) {
-                                linkMerchants(s.merchant, v);
-                                setCombineFor(null);
-                                setCombinePick("");
-                              }
-                            }}
-                            className="rounded-lg bg-[var(--accent)] px-3 py-1 font-medium text-white"
-                          >
-                            Combine
-                          </button>
-                          <button
-                            onClick={() => setCombineFor(null)}
-                            className="rounded-lg px-2 py-1 text-[var(--muted)]"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
                       </div>
                     );
                   })}
