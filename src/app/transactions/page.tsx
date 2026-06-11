@@ -11,6 +11,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
+import { MergeQueue } from "@/components/MergeQueue";
 import { postJson, patchJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth } from "@/lib/format";
 
@@ -472,6 +473,8 @@ export default function TransactionsPage() {
           <option value="merchant-asc">Merchant A–Z</option>
         </select>
       </div>
+
+      <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
       <div className="card overflow-hidden">
         {txs.length === 0 ? (
