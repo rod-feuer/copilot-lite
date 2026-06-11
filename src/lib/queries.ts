@@ -738,8 +738,14 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
     });
   });
   // Pass 2 — category + amount-within-5% fallback (no custom rule, still unmatched).
+  // Skip INACTIVE recurrings here: this loose, cross-vendor match would otherwise
+  // let a long-stale recurring claim another vendor's charge of the same category
+  // and amount, falsely marking it "paid"/due instead of leaving it Inactive
+  // (the renamed-salon ghost: a 2023 "Mdg Carmel Hair…" grabbing a 2026 "Mdg
+  // Salons" charge). Exact-merchant passes above still let a real resume through.
   recs.forEach((r, ri) => {
     if (matched[ri] || matchRuleFor(r.merchant)) return;
+    if (!isRecurringActive(r.lastDate, r.cadence)) return;
     const expense = r.avgAmount < 0;
     const tol = Math.max(1, Math.abs(r.avgAmount) * 0.05);
     let bestIdx = -1;

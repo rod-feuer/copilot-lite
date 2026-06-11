@@ -226,6 +226,23 @@ test("a complete past month projects to its actuals, not a run-rate", () => {
   assert.equal(d.budget!.projected, d.budget!.spent, "finished month: projection = actuals");
 });
 
+test("an inactive recurring does not claim another vendor's charge by category fallback", () => {
+  const cm = new Date().toISOString().slice(0, 7);
+  // A long-stale recurring (last charged ~2 years ago) in category CAT.
+  getDb()
+    .prepare(
+      `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+       VALUES ('Old Salon', @cat, -60, 'monthly', '2024-01-15', '2024-02-15', 12)`
+    )
+    .run({ cat: CAT });
+  // A current-month charge: same category + amount, DIFFERENT vendor.
+  tx("New Place", { amount: -60, date: `${cm}-15`, categoryId: CAT });
+
+  const old = recurringsForMonth(cm).find((r) => r.merchant === "Old Salon");
+  assert.ok(old, "the stale recurring still appears (it'll sit in Inactive)");
+  assert.equal(old!.paid, false, "stale recurring is NOT falsely marked paid via category fallback");
+});
+
 test("upcoming bills appear on the current month only, never on a past one", () => {
   // "Upcoming · next 14 days" is a today-relative forecast: each recurring has a
   // single forward nextDate, so it must not bleed into a month being reviewed.
