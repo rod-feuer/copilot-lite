@@ -47,6 +47,7 @@ export type CopilotImportResult = {
   transfers: number;
   incomeRows: number;
   errors: number;
+  skippedPending: number;
   dateRange: [string, string] | null;
 };
 
@@ -67,7 +68,7 @@ export function importCopilotCsv(text: string): CopilotImportResult {
   if (raw.length < 2)
     return {
       inserted: 0, categories: 0, recurrings: 0, excludedRows: 0,
-      transfers: 0, incomeRows: 0, errors: 0, dateRange: null,
+      transfers: 0, incomeRows: 0, errors: 0, skippedPending: 0, dateRange: null,
     };
 
   const h = raw[0].map((x) => x.trim().toLowerCase());
@@ -88,6 +89,7 @@ export function importCopilotCsv(text: string): CopilotImportResult {
   // ---- Pass 1: normalize every row -------------------------------------
   const rows: Row[] = [];
   let errors = 0;
+  let skippedPending = 0;
   for (let i = 1; i < raw.length; i++) {
     const r = raw[i];
     try {
@@ -127,13 +129,21 @@ export function importCopilotCsv(text: string): CopilotImportResult {
         categoryKind = "expense";
       }
 
+      // Skip pending rows: they're transient and the posted version arrives
+      // later (via Plaid or a fresh export). Persisting them double-counts when
+      // the posted charge lands under a new id/descriptor — Plaid models
+      // pending→posted as remove+add, not an in-place flip.
+      if (ci.status >= 0 && r[ci.status].trim().toLowerCase() === "pending") {
+        skippedPending++;
+        continue;
+      }
+
       rows.push({
         date,
         name,
         amount: -rawAmount, // sign flip
         account: (ci.account >= 0 ? r[ci.account]?.trim() : "") || "Imported",
-        pending:
-          ci.status >= 0 && r[ci.status].trim().toLowerCase() === "pending" ? 1 : 0,
+        pending: 0,
         excluded: excludedFlag ? 1 : 0,
         categoryName,
         categoryKind,
@@ -262,6 +272,7 @@ export function importCopilotCsv(text: string): CopilotImportResult {
       transfers,
       incomeRows,
       errors,
+      skippedPending,
       dateRange: dates.length ? [dates[0], dates[dates.length - 1]] : null,
     };
   })();
