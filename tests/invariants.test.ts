@@ -28,6 +28,7 @@ import {
   setBudget,
   getMerchantLinks,
   canonicalMerchant,
+  linkMerchant,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -282,6 +283,24 @@ test("a stale (renamed/stopped) recurring stops counting toward the category bas
     59,
     "only the active recurring counts; the stale duplicate is dropped"
   );
+});
+
+test("a recurring spanning linked descriptors dates from the globally latest charge", () => {
+  // Canonical is "Zzz Vendor"; the most recent charge posts under the
+  // alphabetically EARLIER alias "Aaa Vendor". Detection groups by canonical, and
+  // the SELECT is ordered (merchant, date) — so without a per-group date sort the
+  // series ends on the alias's older charge and lastDate/gaps are wrong.
+  linkMerchant("Aaa Vendor", "Zzz Vendor");
+  tx("Zzz Vendor", { amount: -50, date: "2026-01-01", categoryId: CAT });
+  tx("Zzz Vendor", { amount: -50, date: "2026-02-01", categoryId: CAT });
+  tx("Zzz Vendor", { amount: -50, date: "2026-03-01", categoryId: CAT });
+  tx("Aaa Vendor", { amount: -50, date: "2026-04-01", categoryId: CAT });
+
+  const recs = detectRecurrings();
+  const r = recs.find((x) => x.merchant === "Zzz Vendor");
+  assert.ok(r, "the linked descriptors form one recurring");
+  assert.equal(r!.count, 4, "all four charges across both descriptors are counted");
+  assert.equal(r!.lastDate, "2026-04-01", "lastDate is the globally latest charge, not the alias's");
 });
 
 test("stripLocationSuffix peels a trailing City ST, keeps specific names, rejects the rest", () => {

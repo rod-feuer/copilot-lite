@@ -143,6 +143,12 @@ export function detectRecurrings(): Recurring[] {
     arr.push(r);
     byMerchant.set(key, arr);
   }
+  // The SELECT is ordered by (merchant, date), but a canonical group can span
+  // several descriptor strings — so it arrives ordered by descriptor, then date,
+  // NOT globally by date. Re-sort each group so gap math and lastDate/nextDate
+  // are correct for merged/linked vendors (e.g. a renamed gym).
+  for (const arr of byMerchant.values())
+    arr.sort((a, b) => a.date.localeCompare(b.date));
 
   // Clear child references BEFORE deleting parent rows, so this is safe whether
   // or not SQLite foreign-key enforcement is on.
