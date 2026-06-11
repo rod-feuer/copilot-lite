@@ -105,6 +105,7 @@ export default function RecurringsPage() {
   const [catFilter, setCatFilter] = useState(""); // "" = all, "none" = uncategorized, else id
   const toast = useToast();
   const openTx = useTxDrawer();
+  const shelfActive = useShelfActive();
 
   const load = useCallback(async (m: string) => {
     const data = await fetch(`/api/recurrings?month=${m}`).then((r) => r.json());
@@ -398,7 +399,15 @@ export default function RecurringsPage() {
                     const color = s.category?.color ?? "#94a3b8";
                     return (
                       <div key={s.merchant}>
-                      <div className="group flex items-center gap-3 px-4 py-2.5">
+                      <div
+                        data-drawer-row
+                        onClick={() => openTx(s.merchant, { onChange: loadSuggestions })}
+                        className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
+                          shelfActive.isMerchant(s.merchant)
+                            ? "bg-[var(--accent)]/10"
+                            : "hover:bg-[var(--background)]"
+                        }`}
+                      >
                         <span
                           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base"
                           style={{ background: color + "22" }}
@@ -406,15 +415,7 @@ export default function RecurringsPage() {
                           {s.category?.icon ?? "↻"}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <button
-                              data-drawer-row
-                              onClick={() => openTx(s.merchant, { onChange: loadSuggestions })}
-                              className="truncate text-left text-sm font-medium hover:underline"
-                            >
-                              {s.merchant}
-                            </button>
-                          </div>
+                          <div className="truncate text-sm font-medium">{s.merchant}</div>
                           <div className="text-xs text-[var(--muted)]">
                             {s.reason === "variable"
                               ? `regular ${s.cadence ?? ""} bill · variable amount`
@@ -430,13 +431,19 @@ export default function RecurringsPage() {
                           {usd(Math.abs(s.avgAmount))}
                         </div>
                         <button
-                          onClick={() => addSuggestion(s)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addSuggestion(s);
+                          }}
                           className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium hover:bg-[var(--background)]"
                         >
                           Add
                         </button>
                         <button
-                          onClick={() => dismissSuggestion(s)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            dismissSuggestion(s);
+                          }}
                           title="Dismiss"
                           className="shrink-0 rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-rose-500"
                         >
