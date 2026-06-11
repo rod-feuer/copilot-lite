@@ -238,6 +238,17 @@ test("a complete past month projects to its actuals, not a run-rate", () => {
   assert.equal(d.budget!.projected, d.budget!.spent, "finished month: projection = actuals");
 });
 
+test("a suggestion reflects a user-set name and expected amount", () => {
+  const dates = ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15"];
+  [-30, -300, -50, -250].forEach((a, i) => tx("Foo Utility", { amount: a, date: dates[i], categoryId: CAT }));
+  setRecurringSetting("Foo Utility", { alias: "Foo", expectedAmount: 120 });
+
+  const s = suggestedRecurrings().find((x) => x.merchant === "Foo Utility");
+  assert.ok(s, "still a suggestion");
+  assert.equal(s!.displayName, "Foo", "the user's name (alias) is the display name");
+  assert.equal(s!.avgAmount, -120, "the expected amount overrides the detected average");
+});
+
 test("same-vendor variable-amount suggestions cluster into one with aliases", () => {
   // Two descriptors of one vendor (a renamed seasonal utility), both regular-but-
   // variable so neither auto-confirms — should suggest as ONE entry.

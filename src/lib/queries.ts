@@ -1007,6 +1007,7 @@ const SUBSCRIPTION_HINT =
 export function suggestedRecurrings() {
   const db = getDb();
   const overrides = getRecurringOverrides();
+  const settings = getRecurringSettings(); // per-merchant alias / expected-amount overrides
   const cats = new Map(
     (db.prepare("SELECT id, name, color, icon FROM categories").all() as Category[]).map(
       (c) => [c.id, c]
@@ -1056,16 +1057,17 @@ export function suggestedRecurrings() {
   const todayMs = new Date().getTime();
 
   type Suggestion = {
-    merchant: string;
+    merchant: string; // the canonical descriptor — the key for settings / Add
+    displayName: string; // alias override if set, else merchant
     reason: "variable" | "new";
     cadence: string | null;
-    avgAmount: number;
+    avgAmount: number; // expected-amount override if set, else the detected average
     count: number;
     lastDate: string;
     category: { name: string; color: string; icon: string } | null;
     aliases: string[]; // other descriptors of the same vendor, folded in on Add
   };
-  const out: Omit<Suggestion, "aliases">[] = [];
+  const out: Omit<Suggestion, "aliases" | "displayName">[] = [];
 
   for (const [merchant, txs] of byMerchant) {
     if (overrides[merchant]) continue; // already forced or dismissed
@@ -1120,7 +1122,7 @@ export function suggestedRecurrings() {
   // (e.g. "2d Vectrenenergy Util Paymt" → "… Igc Ach Dr") before it ever became a
   // confirmed recurring — so they show as ONE suggestion whose Add folds in the
   // aliases. Greedy by name affinity; the first (highest-count) is the primary.
-  const clustered: Suggestion[] = [];
+  const clustered: Omit<Suggestion, "displayName">[] = [];
   for (const s of out) {
     const hit = clustered.find((c) => nameAffinity(c.merchant, s.merchant) >= LOW_MATCH);
     if (hit) {
@@ -1133,7 +1135,17 @@ export function suggestedRecurrings() {
       clustered.push({ ...s, aliases: [] });
     }
   }
-  return clustered;
+
+  // Apply per-merchant overrides: a user-set name (alias) and/or expected amount,
+  // editable from the suggestion row before it's even Added.
+  return clustered.map((s): Suggestion => {
+    const st = settings[s.merchant];
+    return {
+      ...s,
+      displayName: st?.alias ?? s.merchant,
+      avgAmount: st?.expectedAmount != null ? -Math.abs(st.expectedAmount) : s.avgAmount,
+    };
+  });
 }
 
 // ---- Category shelf -------------------------------------------------------

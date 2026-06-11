@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Shell from "@/components/Shell";
 import { MonthPicker, CleanupNamesButtons } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -58,6 +58,7 @@ type Cat = { id: number; name: string; color: string; icon: string };
 
 type Suggestion = {
   merchant: string;
+  displayName: string;
   reason: "variable" | "new";
   cadence: string | null;
   avgAmount: number;
@@ -106,6 +107,7 @@ export default function RecurringsPage() {
   const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
+  const [sugEdit, setSugEdit] = useState<{ merchant: string; field: "name" | "amount" } | null>(null);
 
   const load = useCallback(async (m: string) => {
     const data = await fetch(`/api/recurrings?month=${m}`).then((r) => r.json());
@@ -175,6 +177,19 @@ export default function RecurringsPage() {
         await postJson("/api/recurrings/override", { merchant: m, status: "mute" });
     } catch {
       loadSuggestions();
+    }
+  }
+
+  // Set a suggestion's name (alias) or expected amount before it's Added. The
+  // settings API merges, so only the given key changes; carried onto the
+  // recurring when Added.
+  async function editSuggestion(merchant: string, patch: SettingsPatch) {
+    setSugEdit(null);
+    try {
+      await postJson("/api/recurrings/settings", { merchant, ...patch });
+      loadSuggestions();
+    } catch {
+      toast("Couldn't save — please try again", "error");
     }
   }
 
@@ -269,7 +284,7 @@ export default function RecurringsPage() {
     (!catFilter ||
       (catFilter === "none" ? r.categoryId == null : String(r.categoryId) === catFilter));
   const matchSug = (s: Suggestion) =>
-    matchText(`${s.merchant} ${s.category?.name ?? ""}`) &&
+    matchText(`${s.displayName} ${s.merchant} ${s.category?.name ?? ""}`) &&
     (!catFilter || (catFilter === "none" ? !s.category : s.category?.name === catName));
   const shownBills = bills.filter(matchRec);
   const shownIncome = incomeBills.filter(matchRec);
@@ -415,7 +430,30 @@ export default function RecurringsPage() {
                           {s.category?.icon ?? "↻"}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{s.merchant}</div>
+                          <div className="flex items-center gap-1.5">
+                            {sugEdit?.merchant === s.merchant && sugEdit.field === "name" ? (
+                              <InlineEditField
+                                value={s.displayName}
+                                onSave={(v) => editSuggestion(s.merchant, { alias: v.trim() || null })}
+                                onCancel={() => setSugEdit(null)}
+                                className="w-48 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                              />
+                            ) : (
+                              <>
+                                <span className="truncate text-sm font-medium">{s.displayName}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSugEdit({ merchant: s.merchant, field: "name" });
+                                  }}
+                                  title="Rename"
+                                  className="shrink-0 rounded text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] focus:opacity-100 group-hover:opacity-100"
+                                >
+                                  <span className="inline-block -scale-x-100">✎</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
                           <div className="text-xs text-[var(--muted)]">
                             {s.reason === "variable"
                               ? `regular ${s.cadence ?? ""} bill · variable amount`
@@ -427,9 +465,30 @@ export default function RecurringsPage() {
                               : ""}
                           </div>
                         </div>
-                        <div className="w-20 text-right text-sm font-semibold tabular-nums text-[var(--muted)]">
-                          {usd(Math.abs(s.avgAmount))}
-                        </div>
+                        {sugEdit?.merchant === s.merchant && sugEdit.field === "amount" ? (
+                          <InlineEditField
+                            value={String(Math.abs(s.avgAmount))}
+                            prefix={<span className="text-xs text-[var(--muted)]">$</span>}
+                            onSave={(v) =>
+                              editSuggestion(s.merchant, {
+                                expectedAmount: v.trim() === "" ? null : Math.abs(Number(v)),
+                              })
+                            }
+                            onCancel={() => setSugEdit(null)}
+                            className="w-16 rounded bg-card px-1 text-right text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                          />
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSugEdit({ merchant: s.merchant, field: "amount" });
+                            }}
+                            title="Set the expected amount"
+                            className="w-20 text-right text-sm font-semibold tabular-nums text-[var(--muted)] hover:text-[var(--foreground)]"
+                          >
+                            {usd(Math.abs(s.avgAmount))}
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -479,6 +538,47 @@ export default function RecurringsPage() {
         </div>
       )}
     </Shell>
+  );
+}
+
+// Inline editor used in suggestion rows: type, Enter/blur to save, Escape to
+// cancel. Clicks/keys are stopped so the row's open-shelf handler doesn't fire.
+function InlineEditField({
+  value,
+  onSave,
+  onCancel,
+  prefix,
+  className,
+}: {
+  value: string;
+  onSave: (v: string) => void;
+  onCancel: () => void;
+  prefix?: ReactNode;
+  className: string;
+}) {
+  const skip = useRef(false);
+  return (
+    <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      {prefix}
+      <input
+        autoFocus
+        defaultValue={value}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            skip.current = true;
+            onCancel();
+          }
+        }}
+        onBlur={(e) => {
+          if (skip.current) skip.current = false;
+          else onSave(e.target.value);
+          onCancel();
+        }}
+        className={className}
+      />
+    </span>
   );
 }
 
