@@ -29,6 +29,7 @@ import {
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
+  suggestedRecurrings,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -235,6 +236,21 @@ test("a complete past month projects to its actuals, not a run-rate", () => {
   const d = dashboard("2025-06");
   assert.ok(d.budget);
   assert.equal(d.budget!.projected, d.budget!.spent, "finished month: projection = actuals");
+});
+
+test("same-vendor variable-amount suggestions cluster into one with aliases", () => {
+  // Two descriptors of one vendor (a renamed seasonal utility), both regular-but-
+  // variable so neither auto-confirms — should suggest as ONE entry.
+  const dates = ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15"];
+  const amts = [-30, -300, -50, -250]; // high CV → "variable" suggestion
+  const mk = (m: string) => amts.forEach((a, i) => tx(m, { amount: a, date: dates[i], categoryId: CAT }));
+  mk("Acme Power Bill One");
+  mk("Acme Power Bill Two");
+
+  const sugg = suggestedRecurrings().filter((s) => s.merchant.startsWith("Acme Power Bill"));
+  assert.equal(sugg.length, 1, "the two descriptors cluster into one suggestion");
+  assert.equal(sugg[0].aliases.length, 1, "the other descriptor folds in as an alias");
+  assert.equal(sugg[0].count, 8, "counts combine across descriptors");
 });
 
 test("an inactive recurring does not claim another vendor's charge by category fallback", () => {

@@ -98,96 +98,10 @@ export function mergeSuggestions(): MergeSuggestion[] {
   return out.sort((a, b) => b.total - a.total);
 }
 
-// Lowercase, strip to alphanumerics — collapses punctuation/spacing/case so
-// "Jimmy John's" and "Jimmy Johns" both become "jimmyjohns".
-const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-// --- Name similarity (the "same vendor" signal) --------------------------
-// Bank descriptors for one vendor differ by truncation/junk suffixes ("Upgrade"
-// vs "Upgrade Inc Payment"), punctuation/spacing ("Gap Outletcom" vs
-// "Gapoutlet.com"), or typos/transpositions. No single metric covers all, so
-// nameAffinity returns the MAX (0..1) of three complementary signals — the
-// record-linkage best practice of combining matchers rather than picking one:
-//   • prefix-containment — one normalized name is a prefix of the other
-//     (truncation / appended junk; what plain Jaro-Winkler under-scores)
-//   • Jaro-Winkler — typos & transpositions, prefix-weighted (good for names)
-//   • token-set overlap — reordered / subset tokens, ignoring legal/noise words
-const STOP_TOKENS = new Set([
-  "inc", "llc", "co", "corp", "ltd", "the", "com", "payment", "bill", "pay",
-]);
-
-function jaro(s1: string, s2: string): number {
-  if (s1 === s2) return 1;
-  if (!s1.length || !s2.length) return 0;
-  const md = Math.max(0, Math.floor(Math.max(s1.length, s2.length) / 2) - 1);
-  const m1 = new Array(s1.length).fill(false);
-  const m2 = new Array(s2.length).fill(false);
-  let m = 0;
-  for (let i = 0; i < s1.length; i++) {
-    for (let j = Math.max(0, i - md); j < Math.min(i + md + 1, s2.length); j++) {
-      if (!m2[j] && s1[i] === s2[j]) {
-        m1[i] = m2[j] = true;
-        m++;
-        break;
-      }
-    }
-  }
-  if (!m) return 0;
-  let t = 0;
-  for (let i = 0, k = 0; i < s1.length; i++) {
-    if (!m1[i]) continue;
-    while (!m2[k]) k++;
-    if (s1[i] !== s2[k++]) t++;
-  }
-  t /= 2;
-  return (m / s1.length + m / s2.length + (m - t) / m) / 3;
-}
-
-function jaroWinkler(a: string, b: string): number {
-  const j = jaro(a, b);
-  let p = 0;
-  while (p < 4 && p < a.length && p < b.length && a[p] === b[p]) p++;
-  return j + p * 0.1 * (1 - j);
-}
-
-function tokenize(name: string): Set<string> {
-  return new Set(
-    name
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length >= 2 && !STOP_TOKENS.has(t))
-  );
-}
-
-export function nameAffinity(a: string, b: string): number {
-  const na = normName(a);
-  const nb = normName(b);
-  if (!na || !nb) return 0;
-  const [shortS, longS] = na.length <= nb.length ? [na, nb] : [nb, na];
-
-  // 1. prefix-containment: how much of the shorter name leads the longer one.
-  let shared = 0;
-  while (shared < shortS.length && shortS[shared] === longS[shared]) shared++;
-  const prefix = shortS.length >= 5 ? shared / shortS.length : 0;
-
-  // 2. Jaro-Winkler on the normalized strings.
-  const jw = jaroWinkler(na, nb);
-
-  // 3. token-set overlap (fraction of the smaller token set that's shared).
-  const A = tokenize(a);
-  const B = tokenize(b);
-  let inter = 0;
-  for (const t of A) if (B.has(t)) inter++;
-  const tokens = A.size && B.size ? inter / Math.min(A.size, B.size) : 0;
-
-  return Math.max(prefix, jw, tokens);
-}
-
-// Thresholds for "same vendor". NAME_MATCH = confident (auto-reconcile pending↔
-// posted, top of the merge queue). LOW_MATCH = a borderline band surfaced in the
-// queue as a "possible match" for the user to confirm — never auto-applied.
-export const NAME_MATCH = 0.9;
-export const LOW_MATCH = 0.8;
+// Vendor-name similarity lives in ./similarity (a leaf module, so queries.ts can
+// use it too without an import cycle). Re-exported here for existing callers.
+import { normName, nameAffinity, NAME_MATCH, LOW_MATCH } from "./similarity";
+export { nameAffinity, NAME_MATCH, LOW_MATCH };
 
 // Behavior + name detector: a rare, non-recurring charge whose name clearly
 // echoes an active recurring's vendor (shared ≥6-char prefix) AND that posts

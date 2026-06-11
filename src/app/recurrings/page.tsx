@@ -63,6 +63,7 @@ type Suggestion = {
   count: number;
   lastDate: string;
   category: { name: string; color: string; icon: string } | null;
+  aliases: string[]; // other descriptors of the same vendor, folded in on Add
 };
 
 const CADENCE_LABEL: Record<Rec["cadence"], string> = {
@@ -150,18 +151,30 @@ export default function RecurringsPage() {
     }
   }
 
-  // Add a suggested recurring (force) or dismiss it (mute so it won't return).
-  async function resolveSuggestion(merchant: string, status: "force" | "mute") {
-    setSuggestions((s) => s.filter((x) => x.merchant !== merchant));
+  // Add a suggested recurring: fold in any clustered aliases (so the vendor's
+  // descriptor variants become one recurring), then force it.
+  async function addSuggestion(s: Suggestion) {
+    setSuggestions((arr) => arr.filter((x) => x.merchant !== s.merchant));
     try {
-      await postJson("/api/recurrings/override", { merchant, status });
-      if (status === "force") {
-        toast(`Added "${merchant}" to recurrings`, "success");
-        load(month);
-      }
+      for (const alias of s.aliases)
+        await postJson("/api/recurrings/link", { alias, primary: s.merchant });
+      await postJson("/api/recurrings/override", { merchant: s.merchant, status: "force" });
+      toast(`Added "${s.merchant}" to recurrings`, "success");
+      load(month);
     } catch {
       toast("Couldn't update — please try again", "error");
       loadSuggestions(); // restore the optimistic removal
+    }
+  }
+
+  // Dismiss a suggestion: mute every descriptor so the whole cluster stays gone.
+  async function dismissSuggestion(s: Suggestion) {
+    setSuggestions((arr) => arr.filter((x) => x.merchant !== s.merchant));
+    try {
+      for (const m of [s.merchant, ...s.aliases])
+        await postJson("/api/recurrings/override", { merchant: m, status: "mute" });
+    } catch {
+      loadSuggestions();
     }
   }
 
@@ -414,13 +427,16 @@ export default function RecurringsPage() {
                               : `looks like a subscription · ${s.count} charge${
                                   s.count === 1 ? "" : "s"
                                 } so far`}
+                            {s.aliases.length > 0
+                              ? ` · ${s.aliases.length + 1} descriptors`
+                              : ""}
                           </div>
                         </div>
                         <div className="w-20 text-right text-sm font-semibold tabular-nums text-[var(--muted)]">
                           {usd(Math.abs(s.avgAmount))}
                         </div>
                         <button
-                          onClick={() => resolveSuggestion(s.merchant, "force")}
+                          onClick={() => addSuggestion(s)}
                           className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium hover:bg-[var(--background)]"
                         >
                           Add
@@ -436,7 +452,7 @@ export default function RecurringsPage() {
                           Combine
                         </button>
                         <button
-                          onClick={() => resolveSuggestion(s.merchant, "mute")}
+                          onClick={() => dismissSuggestion(s)}
                           title="Dismiss"
                           className="shrink-0 rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-rose-500"
                         >

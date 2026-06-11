@@ -5,6 +5,7 @@ import {
   ensureRecurringTxExclusions,
 } from "./db";
 import type { TransactionWithCategory, Recurring, Category } from "./types";
+import { nameAffinity, LOW_MATCH } from "./similarity";
 
 // ---- Merchant linking ----------------------------------------------------
 // User-declared "these descriptors are the same vendor" (e.g. a gas bill whose
@@ -1062,8 +1063,9 @@ export function suggestedRecurrings() {
     count: number;
     lastDate: string;
     category: { name: string; color: string; icon: string } | null;
+    aliases: string[]; // other descriptors of the same vendor, folded in on Add
   };
-  const out: Suggestion[] = [];
+  const out: Omit<Suggestion, "aliases">[] = [];
 
   for (const [merchant, txs] of byMerchant) {
     if (overrides[merchant]) continue; // already forced or dismissed
@@ -1106,13 +1108,32 @@ export function suggestedRecurrings() {
     }
   }
 
-  // Variable (regular, confident) first, then recent new subs; richer history wins.
-  return out.sort(
+  // Sort first so the highest-count descriptor of a vendor leads its cluster.
+  out.sort(
     (a, b) =>
       (a.reason === b.reason ? 0 : a.reason === "variable" ? -1 : 1) ||
       b.count - a.count ||
       b.lastDate.localeCompare(a.lastDate)
   );
+
+  // Cluster suggestions that are the same vendor under a drifted descriptor
+  // (e.g. "2d Vectrenenergy Util Paymt" → "… Igc Ach Dr") before it ever became a
+  // confirmed recurring — so they show as ONE suggestion whose Add folds in the
+  // aliases. Greedy by name affinity; the first (highest-count) is the primary.
+  const clustered: Suggestion[] = [];
+  for (const s of out) {
+    const hit = clustered.find((c) => nameAffinity(c.merchant, s.merchant) >= LOW_MATCH);
+    if (hit) {
+      const total = hit.count + s.count;
+      hit.avgAmount = Number(((hit.avgAmount * hit.count + s.avgAmount * s.count) / total).toFixed(2));
+      hit.count = total;
+      if (s.lastDate > hit.lastDate) hit.lastDate = s.lastDate;
+      hit.aliases.push(s.merchant);
+    } else {
+      clustered.push({ ...s, aliases: [] });
+    }
+  }
+  return clustered;
 }
 
 // ---- Category shelf -------------------------------------------------------
