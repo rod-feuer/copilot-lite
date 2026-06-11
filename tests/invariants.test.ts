@@ -34,6 +34,7 @@ import {
   stripLocationSuffix,
   mergeSuggestions,
   recurringMatchSuggestions,
+  nameEqualityMergeSuggestions,
   approveMerge,
   dismissMerge,
 } from "../src/lib/merges";
@@ -376,6 +377,23 @@ test("approving a recurring-match links the orphan and fills its missing categor
     .prepare("SELECT categoryId FROM transactions WHERE merchant = ?")
     .get("Acme Power") as { categoryId: number | null };
   assert.equal(row.categoryId, CAT, "the uncategorized orphan was tagged with the recurring's category");
+});
+
+test("normalized-equality groups punctuation/spacing twins under the common spelling", () => {
+  tx("Jimmy Johns", { amount: -10, categoryId: CAT });
+  tx("Jimmy Johns", { amount: -10, categoryId: CAT });
+  tx("Jimmy John's", { amount: -11, categoryId: CAT });
+  tx("Unrelated Cafe", { amount: -5, categoryId: CAT });
+
+  const s = nameEqualityMergeSuggestions(new Set());
+  const g = s.find((x) => x.variants.some((v) => v.merchant === "Jimmy John's"));
+  assert.ok(g, "the apostrophe/no-apostrophe twins are grouped");
+  assert.equal(g!.canonical, "Jimmy Johns", "canonical is the more common spelling");
+  assert.equal(g!.variants.length, 2);
+  assert.ok(
+    !s.some((x) => x.variants.some((v) => v.merchant === "Unrelated Cafe")),
+    "a vendor with no twin is never suggested"
+  );
 });
 
 test("stripLocationSuffix peels a trailing City ST, keeps specific names, rejects the rest", () => {

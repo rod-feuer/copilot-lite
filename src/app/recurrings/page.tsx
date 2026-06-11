@@ -383,8 +383,9 @@ export default function RecurringsPage() {
                 </span>
               </div>
               <p className="mb-3 text-xs text-[var(--muted)]">
-                Same vendor posting under different bank descriptors — usually a
-                location suffix. Combine to fix recurring detection, or dismiss.
+                Same vendor posting under different bank descriptors — a location
+                suffix, a rename, or just punctuation. Combine to fix recurring
+                detection, or dismiss.
               </p>
               <ul className="flex flex-col gap-2">
                 {merges.map((g) => (

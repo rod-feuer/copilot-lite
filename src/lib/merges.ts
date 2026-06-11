@@ -97,13 +97,17 @@ export function mergeSuggestions(): MergeSuggestion[] {
   return out.sort((a, b) => b.total - a.total);
 }
 
-// Length of the shared leading run of two names once lowercased and stripped to
-// alphanumerics. "Duke Energy"/"Dukeenergy Bill Pay" → 10 ("dukeenergy"); it's 0
-// against "Carmelclerktreas Water Bill". A strong, cheap "same vendor renamed"
-// signal that behaviour (amount + timing) alone can't provide.
+// Lowercase, strip to alphanumerics — collapses punctuation/spacing/case so
+// "Jimmy John's" and "Jimmy Johns" both become "jimmyjohns".
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Length of the shared leading run of two normalized names. "Duke Energy" /
+// "Dukeenergy Bill Pay" → 10 ("dukeenergy"); it's 0 against "Carmelclerktreas
+// Water Bill". A strong, cheap "same vendor renamed" signal that behaviour
+// (amount + timing) alone can't provide.
 function nameAffinity(a: string, b: string): number {
-  const na = a.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const nb = b.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const na = normName(a);
+  const nb = normName(b);
   let i = 0;
   while (i < na.length && i < nb.length && na[i] === nb[i]) i++;
   return i;
@@ -212,13 +216,52 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
   return out;
 }
 
-// The full review queue: behaviour-based matches first (more time-sensitive),
-// then location-suffix groups. A merchant surfaced by the location detector is
-// not double-suggested here.
+// Normalized-equality detector: distinct descriptors that reduce to the SAME
+// string once punctuation/spacing/case is stripped ("Jimmy John's" vs
+// "Jimmy Johns") are unambiguously one vendor — the safe, high-precision way to
+// catch non-recurring splits the location/behaviour detectors miss. Canonical =
+// the most common spelling. `exclude` skips merchants already surfaced above.
+// Dismiss key = "eq:<normalized name>".
+export function nameEqualityMergeSuggestions(exclude: Set<string>): MergeSuggestion[] {
+  const db = getDb();
+  const dismissed = dismissedKeys(db);
+  const links = getMerchantLinks();
+  const groups: Record<string, { merchant: string; count: number }[]> = {};
+  for (const m of distinctMerchants()) {
+    if (exclude.has(m.merchant)) continue;
+    const n = normName(m.merchant);
+    if (n.length < 4) continue;
+    (groups[n] ??= []).push({ merchant: m.merchant, count: m.count });
+  }
+
+  const out: MergeSuggestion[] = [];
+  for (const [n, variants] of Object.entries(groups)) {
+    const key = "eq:" + n;
+    if (variants.length < 2 || dismissed.has(key)) continue;
+    // Skip if they already fold into one vendor.
+    if (new Set(variants.map((v) => canonicalMerchant(v.merchant, links))).size < 2) continue;
+    const sorted = [...variants].sort((a, b) => b.count - a.count);
+    out.push({
+      canonical: sorted[0].merchant, // the most common spelling wins
+      key,
+      dismissKeys: [key],
+      variants: sorted,
+      total: sorted.reduce((s, v) => s + v.count, 0),
+    });
+  }
+  return out.sort((a, b) => b.total - a.total);
+}
+
+// The full review queue: behaviour-based matches first (most time-sensitive),
+// then punctuation/spacing twins, then location-suffix groups. A merchant
+// surfaced by an earlier detector is not double-suggested by a later one.
 export function allMergeSuggestions(): MergeSuggestion[] {
   const loc = mergeSuggestions();
   const covered = new Set(loc.flatMap((g) => g.variants.map((v) => v.merchant)));
-  return [...recurringMatchSuggestions(covered), ...loc];
+  const rec = recurringMatchSuggestions(covered);
+  for (const g of rec) for (const v of g.variants) covered.add(v.merchant);
+  const eq = nameEqualityMergeSuggestions(covered);
+  return [...rec, ...eq, ...loc];
 }
 
 // Approve: fold every variant into the canonical name; for a recurring-match,
