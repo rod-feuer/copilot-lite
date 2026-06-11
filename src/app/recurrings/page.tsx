@@ -632,7 +632,7 @@ function BillList({
                           title="Rename"
                           className="shrink-0 rounded text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] focus:opacity-100 group-hover:opacity-100"
                         >
-                          ✎
+                          <span className="inline-block -scale-x-100">✎</span>
                         </button>
                       )}
                     </>
