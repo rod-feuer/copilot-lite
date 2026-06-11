@@ -6,6 +6,7 @@ import { MonthPicker, CleanupNamesButtons } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
+import { SearchBox } from "@/components/SearchBox";
 import { postJson } from "@/lib/http";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
 
@@ -295,12 +296,7 @@ export default function RecurringsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search recurrings…"
-          className="btn-ghost w-60 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-        />
+        <SearchBox value={q} onChange={setQ} placeholder="Search recurrings…" />
         <select
           value={catFilter}
           onChange={(e) => setCatFilter(e.target.value)}

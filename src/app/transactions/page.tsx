@@ -12,6 +12,7 @@ import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { MergeQueue } from "@/components/MergeQueue";
+import { SearchBox } from "@/components/SearchBox";
 import { postJson, patchJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth } from "@/lib/format";
 
@@ -334,12 +335,7 @@ export default function TransactionsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input
-          value={q}
-          onChange={(e) => search(e.target.value)}
-          placeholder="Search merchant or amount…"
-          className="btn-ghost w-60 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-        />
+        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" />
 
         {vendor && (
           <Chip onRemove={() => setVendor("")}>
