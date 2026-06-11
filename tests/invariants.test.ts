@@ -33,6 +33,7 @@ import {
 import {
   stripLocationSuffix,
   mergeSuggestions,
+  recurringMatchSuggestions,
   approveMerge,
   dismissMerge,
 } from "../src/lib/merges";
@@ -301,6 +302,51 @@ test("a recurring spanning linked descriptors dates from the globally latest cha
   assert.ok(r, "the linked descriptors form one recurring");
   assert.equal(r!.count, 4, "all four charges across both descriptors are counted");
   assert.equal(r!.lastDate, "2026-04-01", "lastDate is the globally latest charge, not the alias's");
+});
+
+test("recurring-match picks the renamed vendor by name, not a same-amount decoy", () => {
+  const day = 86_400_000;
+  const isoOff = (d: number) => new Date(Date.now() - d * day).toISOString().slice(0, 10);
+  const last = isoOff(28); // recurring's last charge 28 days ago → active monthly
+  const mkRec = (merchant: string) =>
+    Number(
+      getDb()
+        .prepare(
+          `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+           VALUES (?,?,?,?,?,?,?)`
+        )
+        .run(merchant, CAT, -100, "monthly", last, isoOff(-2), 3).lastInsertRowid
+    );
+  const rid = mkRec("Acme Power Bill");
+  tx("Acme Power Bill", { amount: -100, date: isoOff(88), categoryId: CAT, recurringId: rid });
+  tx("Acme Power Bill", { amount: -105, date: isoOff(58), categoryId: CAT, recurringId: rid });
+  tx("Acme Power Bill", { amount: -100, date: last, categoryId: CAT, recurringId: rid });
+  // A decoy bill: same amount and cadence, unrelated name.
+  const did = mkRec("Zeta Water");
+  tx("Zeta Water", { amount: -100, date: last, categoryId: CAT, recurringId: did });
+  // The orphan: a new descriptor for Acme, uncategorized, posting ~1 month later.
+  tx("Acme Power", { amount: -102, date: isoOff(0), categoryId: null });
+
+  const g = recurringMatchSuggestions(new Set()).find((x) =>
+    x.variants.some((v) => v.merchant === "Acme Power")
+  );
+  assert.ok(g, "the orphan charge is matched to a recurring");
+  assert.equal(g!.canonical, "Acme Power Bill", "matched by name, not the same-amount Zeta decoy");
+  assert.equal(g!.categoryId, CAT, "carries the recurring's category for the approve step");
+});
+
+test("approving a recurring-match links the orphan and fills its missing category", () => {
+  tx("Acme Power", { amount: -102, date: "2026-06-10", categoryId: null });
+  approveMerge("Acme Power Bill", ["Acme Power", "Acme Power Bill"], CAT);
+  assert.equal(
+    canonicalMerchant("Acme Power", getMerchantLinks()),
+    "Acme Power Bill",
+    "orphan descriptor linked to the vendor"
+  );
+  const row = getDb()
+    .prepare("SELECT categoryId FROM transactions WHERE merchant = ?")
+    .get("Acme Power") as { categoryId: number | null };
+  assert.equal(row.categoryId, CAT, "the uncategorized orphan was tagged with the recurring's category");
 });
 
 test("stripLocationSuffix peels a trailing City ST, keeps specific names, rejects the rest", () => {

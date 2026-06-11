@@ -149,13 +149,15 @@ export default function RecurringsPage() {
   }, [load, loadSuggestions, loadMerges]);
 
   async function resolveMerge(g: MergeSuggestion, action: "approve" | "dismiss") {
-    setMergeBusy(g.canonical);
-    setMerges((ms) => ms.filter((m) => m.canonical !== g.canonical)); // optimistic
+    setMergeBusy(g.key);
+    setMerges((ms) => ms.filter((m) => m.key !== g.key)); // optimistic
     try {
       await postJson("/api/merges", {
         action,
+        key: g.key,
         canonical: g.canonical,
         variants: g.variants.map((v) => v.merchant),
+        categoryId: g.categoryId,
       });
       if (action === "approve") {
         toast(`Combined into “${g.canonical}”`, "success");
@@ -387,7 +389,7 @@ export default function RecurringsPage() {
               <ul className="flex flex-col gap-2">
                 {merges.map((g) => (
                   <li
-                    key={g.canonical}
+                    key={g.key}
                     className="flex items-start justify-between gap-3 rounded-xl border border-[var(--border)] p-3"
                   >
                     <div className="min-w-0">
@@ -397,17 +399,20 @@ export default function RecurringsPage() {
                           .map((v) => `${v.merchant} (${v.count})`)
                           .join("  ·  ")}
                       </div>
+                      {g.note && (
+                        <div className="mt-1 text-xs text-[var(--accent)]">{g.note}</div>
+                      )}
                     </div>
                     <div className="flex shrink-0 gap-2">
                       <button
-                        disabled={mergeBusy === g.canonical}
+                        disabled={mergeBusy === g.key}
                         onClick={() => resolveMerge(g, "approve")}
                         className="btn-primary text-xs disabled:opacity-50"
                       >
                         Combine
                       </button>
                       <button
-                        disabled={mergeBusy === g.canonical}
+                        disabled={mergeBusy === g.key}
                         onClick={() => resolveMerge(g, "dismiss")}
                         className="btn-ghost text-xs disabled:opacity-50"
                       >
