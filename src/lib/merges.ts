@@ -280,6 +280,24 @@ export function approveMerge(canonical: string, variants: string[], categoryId?:
   }
 }
 
+// Recent charges under each given descriptor, so the queue can let the user
+// eyeball whether the variants really are one vendor before combining.
+export function mergePreview(
+  merchants: string[],
+  limit = 4
+): Record<string, { date: string; amount: number; account: string }[]> {
+  const db = getDb();
+  const stmt = db.prepare(
+    `SELECT COALESCE(effectiveDate, date) AS date, amount, account
+     FROM transactions WHERE merchant = ?
+     ORDER BY COALESCE(effectiveDate, date) DESC, id DESC LIMIT ?`
+  );
+  const out: Record<string, { date: string; amount: number; account: string }[]> = {};
+  for (const m of merchants)
+    out[m] = stmt.all(m, limit) as { date: string; amount: number; account: string }[];
+  return out;
+}
+
 // Dismiss: remember this suggestion's key so it never resurfaces.
 export function dismissMerge(key: string) {
   const db = getDb();

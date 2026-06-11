@@ -35,6 +35,7 @@ import {
   mergeSuggestions,
   recurringMatchSuggestions,
   nameEqualityMergeSuggestions,
+  mergePreview,
   approveMerge,
   dismissMerge,
 } from "../src/lib/merges";
@@ -377,6 +378,17 @@ test("approving a recurring-match links the orphan and fills its missing categor
     .prepare("SELECT categoryId FROM transactions WHERE merchant = ?")
     .get("Acme Power") as { categoryId: number | null };
   assert.equal(row.categoryId, CAT, "the uncategorized orphan was tagged with the recurring's category");
+});
+
+test("mergePreview returns each descriptor's recent charges, newest first", () => {
+  tx("Foo Bar", { amount: -5, date: "2026-01-01", categoryId: CAT, account: "Visa" });
+  tx("Foo Bar", { amount: -6, date: "2026-03-01", categoryId: CAT, account: "Visa" });
+  tx("Foo-bar", { amount: -7, date: "2026-02-01", categoryId: CAT, account: "Amex" });
+
+  const pv = mergePreview(["Foo Bar", "Foo-bar"], 5);
+  assert.equal(pv["Foo Bar"].length, 2, "each descriptor keyed separately");
+  assert.equal(pv["Foo Bar"][0].date, "2026-03-01", "newest charge first");
+  assert.equal(pv["Foo-bar"][0].account, "Amex", "carries the account for eyeballing");
 });
 
 test("normalized-equality groups punctuation/spacing twins under the common spelling", () => {
