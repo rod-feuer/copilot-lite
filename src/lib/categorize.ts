@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getDb } from "./db";
-import { categorizeByRules, learnRule } from "./core";
+import { categorizeByRules, categorizeByHistory, learnRule } from "./core";
 import type { Category } from "./types";
 
 // Categorize a batch of unknown merchants in ONE model call, then persist each
@@ -36,7 +36,8 @@ export async function categorizeUnknownMerchants(): Promise<CategorizeResult> {
   );
   const ruleTxn = db.transaction((rows: typeof uncategorized) => {
     for (const r of rows) {
-      const cat = categorizeByRules(r.merchant);
+      // Rules first, then the vendor's own categorization history — both free.
+      const cat = categorizeByRules(r.merchant) ?? categorizeByHistory(r.merchant);
       if (cat !== null) {
         applyRule.run(cat, r.id);
         byRule++;
@@ -54,7 +55,7 @@ export async function categorizeUnknownMerchants(): Promise<CategorizeResult> {
       .all() as { merchant: string }[]
   )
     .map((r) => r.merchant)
-    .filter((m) => categorizeByRules(m) === null);
+    .filter((m) => categorizeByRules(m) === null && categorizeByHistory(m) === null);
 
   if (merchants.length === 0)
     return { enabled: true, byRule, categorized: 0, skipped: 0 };

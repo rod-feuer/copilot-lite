@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getDb } from "./db";
-import { categorizeByRules } from "./core";
+import { categorizeByRules, categorizeByHistory } from "./core";
 import { normalizeMerchant } from "./merchant";
 import { nameAffinity, NAME_MATCH } from "./merges";
 
@@ -169,8 +169,9 @@ export function importPlaidTransactions(items: PlaidItem[]): {
       upsert.run({
         ...r,
         // Ignored on conflict (existing categoryId preserved); applied on
-        // fresh inserts, including re-inserted pending rows.
-        categoryId: categorizeByRules(r.merchant),
+        // fresh inserts. Rules first, then the vendor's own categorization
+        // history (a repeat vendor under a new descriptor).
+        categoryId: categorizeByRules(r.merchant) ?? categorizeByHistory(r.merchant),
       });
       if (seen.has(r.hash)) updated++;
       else {

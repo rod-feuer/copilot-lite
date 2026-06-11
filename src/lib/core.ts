@@ -7,6 +7,7 @@ import {
   getRecurringTxExclusions,
   getMerchantLinks,
   canonicalMerchant,
+  linkedAliases,
 } from "./queries";
 import type { Category, Recurring } from "./types";
 
@@ -39,6 +40,35 @@ export function categorizeByRules(merchant: string): number | null {
     if (m.includes(r.pattern)) return r.categoryId;
   }
   return null;
+}
+
+// Categorize from the user's own history: if this vendor (canonical, across all
+// linked descriptors) has been filed under one dominant category before, reuse
+// it. Deterministic and free — honors past choices without a model call, and
+// catches repeat non-recurring vendors that posted under a new descriptor (e.g.
+// Calico Corners → Home Decor). Requires ≥2 prior categorized charges and a
+// clear majority (≥60%) so a split or one-off doesn't guess.
+export function categorizeByHistory(merchant: string): number | null {
+  const db = getDb();
+  const aliases = linkedAliases(canonicalMerchant(merchant, getMerchantLinks()), getMerchantLinks());
+  const ph = aliases.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT categoryId FROM transactions
+       WHERE merchant IN (${ph}) AND categoryId IS NOT NULL AND excluded = 0`
+    )
+    .all(...aliases) as { categoryId: number }[];
+  if (rows.length < 2) return null;
+  const counts = new Map<number, number>();
+  for (const r of rows) counts.set(r.categoryId, (counts.get(r.categoryId) ?? 0) + 1);
+  let best: number | null = null;
+  let bestN = 0;
+  for (const [c, n] of counts)
+    if (n > bestN) {
+      bestN = n;
+      best = c;
+    }
+  return bestN / rows.length >= 0.6 ? best : null;
 }
 
 export function learnRule(pattern: string, categoryId: number, origin: string) {

@@ -15,7 +15,7 @@ import {
   undoRenormalizeMerchants,
   cleanupUndoAvailable,
 } from "../src/lib/db";
-import { dashboard, detectRecurrings } from "../src/lib/core";
+import { dashboard, detectRecurrings, categorizeByHistory } from "../src/lib/core";
 import {
   listTransactions,
   merchantSummary,
@@ -260,6 +260,22 @@ test("isRecurringActive: live within ~1.5 cycles of its last charge, dead beyond
   // Weekly window ≈ 7*1.5+5 = 15.5 days.
   assert.equal(isRecurringActive("2026-06-05", "weekly", now), true, "5 days → active");
   assert.equal(isRecurringActive("2026-05-20", "weekly", now), false, "21 days → inactive");
+});
+
+test("categorizeByHistory reuses a vendor's dominant past category across linked descriptors", () => {
+  linkMerchant("Calico Corners Cityindy In", "Calico Corners");
+  tx("Calico Corners", { amount: -100, categoryId: CAT });
+  tx("Calico Corners Cityindy In", { amount: -200, categoryId: CAT });
+  tx("Calico Corners", { amount: -50, categoryId: CAT_X }); // one-off in another category
+
+  // A new uncategorized charge under the same vendor → dominant past category.
+  assert.equal(categorizeByHistory("Calico Corners"), CAT, "2 of 3 → dominant category wins");
+  assert.equal(categorizeByHistory("Totally New Vendor"), null, "no history → no guess");
+
+  // A 50/50 split is not a confident signal.
+  tx("Split Vendor", { amount: -10, categoryId: CAT });
+  tx("Split Vendor", { amount: -10, categoryId: CAT_X });
+  assert.equal(categorizeByHistory("Split Vendor"), null, "no clear majority → no guess");
 });
 
 test("a charge joining a categorized recurring inherits the recurring's modal category", () => {
