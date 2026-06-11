@@ -262,6 +262,25 @@ test("isRecurringActive: live within ~1.5 cycles of its last charge, dead beyond
   assert.equal(isRecurringActive("2026-05-20", "weekly", now), false, "21 days → inactive");
 });
 
+test("a charge joining a categorized recurring inherits the recurring's modal category", () => {
+  const day = 86_400_000;
+  const iso = (off: number) => new Date(Date.now() - off * day).toISOString().slice(0, 10);
+  // Three categorized monthly charges + a newest one that's uncategorized (e.g.
+  // it posted under a new descriptor with no matching rule).
+  tx("Acme Utility", { amount: -50, date: iso(90), categoryId: CAT });
+  tx("Acme Utility", { amount: -50, date: iso(60), categoryId: CAT });
+  tx("Acme Utility", { amount: -50, date: iso(30), categoryId: CAT });
+  tx("Acme Utility", { amount: -50, date: iso(0), categoryId: null });
+
+  const r = detectRecurrings().find((x) => x.merchant === "Acme Utility");
+  assert.ok(r, "the series is detected");
+  assert.equal(r!.categoryId, CAT, "recurring category is the modal, not the latest (null) charge");
+  const newest = getDb()
+    .prepare("SELECT categoryId FROM transactions WHERE merchant=? ORDER BY date DESC LIMIT 1")
+    .get("Acme Utility") as { categoryId: number | null };
+  assert.equal(newest.categoryId, CAT, "the uncategorized member inherited the recurring's category");
+});
+
 test("a stale (renamed/stopped) recurring stops counting toward the category baseline", () => {
   // When a vendor is renamed its descriptor drifts to a new merchant and the old
   // recurring goes silent. The category recurring baseline must drop the dead

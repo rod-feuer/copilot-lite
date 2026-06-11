@@ -118,6 +118,23 @@ export function addCadence(date: string, cadence: Recurring["cadence"]): string 
   return d.toISOString().slice(0, 10);
 }
 
+// The most common category among a recurring's charges — robust to a single new
+// uncategorized member (unlike "use the latest charge's category", which a fresh
+// descriptor with no rule match would null out). Ties broken by first seen.
+function modalCategory(txs: { categoryId: number | null }[]): number | null {
+  const counts = new Map<number, number>();
+  for (const t of txs)
+    if (t.categoryId != null) counts.set(t.categoryId, (counts.get(t.categoryId) ?? 0) + 1);
+  let best: number | null = null;
+  let bestN = 0;
+  for (const [cat, n] of counts)
+    if (n > bestN) {
+      bestN = n;
+      best = cat;
+    }
+  return best;
+}
+
 export function detectRecurrings(): Recurring[] {
   const db = getDb();
   const rows = db
@@ -166,6 +183,12 @@ export function detectRecurrings(): Recurring[] {
   const link = db.prepare(
     "UPDATE transactions SET recurringId = ? WHERE merchant = ?"
   );
+  // Backfill a recurring's category onto its still-uncategorized members (e.g. a
+  // charge that posted under a new descriptor with no matching rule). Never
+  // overwrites an existing category.
+  const backfillCategory = db.prepare(
+    "UPDATE transactions SET categoryId = ? WHERE recurringId = ? AND categoryId IS NULL"
+  );
 
   for (const [merchant, all] of byMerchant) {
     if (overrides[merchant] === "mute") continue; // user said: not recurring
@@ -196,9 +219,10 @@ export function detectRecurrings(): Recurring[] {
     if (onGridFraction(gaps, PERIOD_DAYS[cadence]) < 0.6) continue;
 
     const lastDate = txs[txs.length - 1].date;
+    const categoryId = modalCategory(txs);
     const rec = {
       merchant,
-      categoryId: txs[txs.length - 1].categoryId,
+      categoryId,
       avgAmount: Number(mean.toFixed(2)),
       cadence,
       lastDate,
@@ -208,6 +232,7 @@ export function detectRecurrings(): Recurring[] {
     const info = insert.run(rec);
     for (const om of new Set(txs.map((t) => t.merchant)))
       link.run(info.lastInsertRowid, om);
+    if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
     created.add(merchant);
     out.push({ id: Number(info.lastInsertRowid), ...rec });
   }
@@ -230,9 +255,10 @@ export function detectRecurrings(): Recurring[] {
       cadence = classifyCadence(medianGap(gaps)) ?? "monthly";
     }
     const lastDate = txs[txs.length - 1].date;
+    const categoryId = modalCategory(txs);
     const rec = {
       merchant,
-      categoryId: txs[txs.length - 1].categoryId,
+      categoryId,
       avgAmount: Number(mean.toFixed(2)),
       cadence,
       lastDate,
@@ -242,6 +268,7 @@ export function detectRecurrings(): Recurring[] {
     const info = insert.run(rec);
     for (const om of new Set(txs.map((t) => t.merchant)))
       link.run(info.lastInsertRowid, om);
+    if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
     out.push({ id: Number(info.lastInsertRowid), ...rec });
   }
 
