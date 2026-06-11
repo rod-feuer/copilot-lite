@@ -368,8 +368,10 @@ export type DashboardData = {
     count: number;
     items: {
       merchant: string;
+      name: string;
       nextDate: string;
       amount: number;
+      categoryName: string | null;
       categoryColor: string | null;
       categoryIcon: string | null;
     }[];
@@ -669,6 +671,7 @@ export function dashboard(month?: string): DashboardData {
       name: r.displayName,
       nextDate: r.nextDate,
       amount: r.avgAmount,
+      categoryName: r.categoryName,
       categoryColor: r.categoryColor,
       categoryIcon: r.categoryIcon,
     })),

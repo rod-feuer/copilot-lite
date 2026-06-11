@@ -67,6 +67,7 @@ type Dash = {
       name: string;
       nextDate: string;
       amount: number;
+      categoryName: string | null;
       categoryColor: string | null;
       categoryIcon: string | null;
     }[];
@@ -82,6 +83,7 @@ type Tx = {
   categoryName: string | null;
   categoryColor: string | null;
   categoryIcon: string | null;
+  recurringId: number | null;
   // 1 when the category is excluded from totals (transfers, CC payments) — such a
   // positive amount is money moving, not income, so it shouldn't read as green.
   categoryExcluded: 0 | 1;
@@ -390,6 +392,7 @@ export default function DashboardPage() {
                         <div className="truncate text-sm font-medium">{u.name}</div>
                         <div className="text-xs text-[var(--muted)]">
                           {shortDate(u.nextDate)}
+                          {u.categoryName ? ` · ${u.categoryName}` : ""}
                         </div>
                       </div>
                       <div className="text-sm font-semibold tabular-nums">
@@ -437,7 +440,14 @@ export default function DashboardPage() {
                       {t.categoryIcon ?? "•"}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{t.displayName}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium">{t.displayName}</span>
+                        {t.recurringId != null && (
+                          <span className="shrink-0 text-xs text-[var(--accent)]" title="Recurring">
+                            ↻
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-[var(--muted)]">
                         {shortDate(t.date)} · {t.categoryName ?? "Uncategorized"}
                       </div>
