@@ -40,7 +40,8 @@ export function stripLocationSuffix(merchant: string): string | null {
 
 export type MergeSuggestion = {
   canonical: string; // the vendor everything folds into (the link target)
-  key: string; // stable id used for dismissal
+  key: string; // unique UI id for this card
+  dismissKeys: string[]; // keys to remember when the card is dismissed
   variants: { merchant: string; count: number }[];
   total: number;
   note?: string; // why it's suggested (recurring-match only)
@@ -87,7 +88,8 @@ export function mergeSuggestions(): MergeSuggestion[] {
       .sort((a, b) => b.count - a.count);
     out.push({
       canonical: canon,
-      key: canon,
+      key: "loc:" + canon,
+      dismissKeys: [canon], // bare canonical (back-compat with prior dismissals)
       variants,
       total: variants.reduce((s, v) => s + v.count, 0),
     });
@@ -158,10 +160,11 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
     (byMerchant[c.merchant] ??= []).push(c);
   }
 
-  const out: MergeSuggestion[] = [];
+  // Match each orphan merchant to its best recurring, then GROUP orphans by that
+  // recurring so several stray descriptors of one vendor become a single card.
+  const groups = new Map<string, { rec: (typeof recs)[number]; orphans: string[] }>();
   for (const [merchant, cs] of Object.entries(byMerchant)) {
-    const key = "rec:" + merchant;
-    if (exclude.has(merchant) || dismissed.has(key)) continue;
+    if (exclude.has(merchant) || dismissed.has("rec:" + merchant)) continue;
     const cm = canonicalMerchant(merchant, links);
 
     // Best recurring by name affinity (the disambiguator), confirmed by a
@@ -181,18 +184,28 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
       }
     }
     if (!best) continue;
-    const r = best.rec;
+    const g = groups.get(best.rec.merchant) ?? { rec: best.rec, orphans: [] };
+    g.orphans.push(merchant);
+    groups.set(best.rec.merchant, g);
+  }
+
+  const out: MergeSuggestion[] = [];
+  for (const { rec: r, orphans } of groups.values()) {
+    const variants = [
+      ...orphans
+        .map((m) => ({ merchant: m, count: countOf[m] ?? 0 }))
+        .sort((a, b) => b.count - a.count),
+      { merchant: r.merchant, count: countOf[r.merchant] ?? 0 },
+    ];
     out.push({
       canonical: r.merchant,
-      key,
-      variants: [
-        { merchant, count: countOf[merchant] ?? 0 },
-        { merchant: r.merchant, count: countOf[r.merchant] ?? 0 },
-      ],
-      total: (countOf[merchant] ?? 0) + (countOf[r.merchant] ?? 0),
-      note: `Lands in your ${r.cadence} “${r.merchant}” slot at a similar amount — likely the same vendor renamed. Combining makes it recurring${
-        r.categoryId != null ? " and sets its category" : ""
-      }.`,
+      key: "rec:" + r.merchant,
+      dismissKeys: orphans.map((m) => "rec:" + m),
+      variants,
+      total: variants.reduce((s, v) => s + v.count, 0),
+      note: `Lands in your ${r.cadence} “${r.merchant}” slot at a similar amount — likely the same vendor renamed. Combining makes ${
+        orphans.length > 1 ? "them" : "it"
+      } recurring${r.categoryId != null ? " and sets the category" : ""}.`,
       categoryId: r.categoryId ?? undefined,
     });
   }

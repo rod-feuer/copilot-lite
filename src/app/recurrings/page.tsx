@@ -154,7 +154,7 @@ export default function RecurringsPage() {
     try {
       await postJson("/api/merges", {
         action,
-        key: g.key,
+        keys: g.dismissKeys,
         canonical: g.canonical,
         variants: g.variants.map((v) => v.merchant),
         categoryId: g.categoryId,

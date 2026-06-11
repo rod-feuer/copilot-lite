@@ -15,11 +15,11 @@ export async function GET() {
 // regroup); dismiss remembers the rejection so the suggestion never reappears.
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const key = String(body.key ?? "").trim();
 
   if (body.action === "dismiss") {
-    if (!key) return NextResponse.json({ error: "key required" }, { status: 400 });
-    dismissMerge(key);
+    const keys = Array.isArray(body.keys) ? body.keys.map(String) : [];
+    if (!keys.length) return NextResponse.json({ error: "keys required" }, { status: 400 });
+    for (const k of keys) dismissMerge(k);
     return NextResponse.json({ ok: true });
   }
 

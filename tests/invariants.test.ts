@@ -335,6 +335,35 @@ test("recurring-match picks the renamed vendor by name, not a same-amount decoy"
   assert.equal(g!.categoryId, CAT, "carries the recurring's category for the approve step");
 });
 
+test("multiple stray descriptors of one vendor collapse into a single suggestion", () => {
+  const day = 86_400_000;
+  const isoOff = (d: number) => new Date(Date.now() - d * day).toISOString().slice(0, 10);
+  const last = isoOff(28);
+  const rid = Number(
+    getDb()
+      .prepare(
+        `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+         VALUES (?,?,?,?,?,?,?)`
+      )
+      .run("Upgrade, Inc. Payment", CAT, -100, "monthly", last, isoOff(-2), 3).lastInsertRowid
+  );
+  tx("Upgrade, Inc. Payment", { amount: -100, date: isoOff(58), categoryId: CAT, recurringId: rid });
+  tx("Upgrade, Inc. Payment", { amount: -100, date: last, categoryId: CAT, recurringId: rid });
+  // Two different stray descriptors, both Upgrade, both posting this cycle.
+  tx("Upgrade", { amount: -100, date: isoOff(1), categoryId: null });
+  tx("Upgrade, Inc. Co Entry Descr", { amount: -100, date: isoOff(2), categoryId: null });
+
+  const s = recurringMatchSuggestions(new Set());
+  const up = s.filter((g) => g.canonical === "Upgrade, Inc. Payment");
+  assert.equal(up.length, 1, "the two strays form ONE card, not two");
+  assert.equal(up[0].dismissKeys.length, 2, "dismissing the card remembers both descriptors");
+  assert.ok(
+    up[0].variants.some((v) => v.merchant === "Upgrade") &&
+      up[0].variants.some((v) => v.merchant === "Upgrade, Inc. Co Entry Descr"),
+    "both strays are listed as variants to fold in"
+  );
+});
+
 test("approving a recurring-match links the orphan and fills its missing category", () => {
   tx("Acme Power", { amount: -102, date: "2026-06-10", categoryId: null });
   approveMerge("Acme Power Bill", ["Acme Power", "Acme Power Bill"], CAT);
