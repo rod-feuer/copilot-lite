@@ -100,11 +100,26 @@ export function MergeQueue({ onChange }: { onChange?: () => void }) {
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggle(g)}
                 className="min-w-0 cursor-pointer"
               >
-                <div className="text-sm font-medium">{g.canonical}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{g.canonical}</span>
+                  {g.lowConfidence && (
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-600">
+                      possible match
+                    </span>
+                  )}
+                </div>
                 <div className="mt-0.5 text-xs text-[var(--muted)]">
                   {g.variants.map((v) => `${v.merchant} (${v.count})`).join("  ·  ")}
                 </div>
-                {g.note && <div className="mt-1 text-xs text-[var(--accent)]">{g.note}</div>}
+                {g.note && (
+                  <div
+                    className={`mt-1 text-xs ${
+                      g.lowConfidence ? "text-amber-600" : "text-[var(--accent)]"
+                    }`}
+                  >
+                    {g.note}
+                  </div>
+                )}
                 <div className="mt-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]">
                   {open === g.key ? "▾ Hide transactions" : "▸ Inspect transactions"}
                 </div>

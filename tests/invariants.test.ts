@@ -389,6 +389,31 @@ test("recurring-match picks the renamed vendor by name, not a same-amount decoy"
   assert.equal(g!.categoryId, CAT, "carries the recurring's category for the approve step");
 });
 
+test("a borderline name match surfaces as a low-confidence suggestion", () => {
+  const day = 86_400_000;
+  const iso = (off: number) => new Date(Date.now() - off * day).toISOString().slice(0, 10);
+  const last = iso(28);
+  const rid = Number(
+    getDb()
+      .prepare(
+        `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+         VALUES (?,?,?,?,?,?,?)`
+      )
+      .run("Metro Fibernet L Metfibenet", CAT, -93, "monthly", last, iso(-2), 2).lastInsertRowid
+  );
+  tx("Metro Fibernet L Metfibenet", { amount: -93, date: iso(58), categoryId: CAT, recurringId: rid });
+  tx("Metro Fibernet L Metfibenet", { amount: -93, date: last, categoryId: CAT, recurringId: rid });
+  // Orphan "Metronet" scores ~0.84 against "Metro Fibernet…" — same vendor to a
+  // human, below the 0.9 auto-bar.
+  tx("Metronet", { amount: -93, date: iso(0), categoryId: null });
+
+  const g = recurringMatchSuggestions(new Set()).find((x) =>
+    x.variants.some((v) => v.merchant === "Metronet")
+  );
+  assert.ok(g, "the borderline match is still surfaced");
+  assert.equal(g!.lowConfidence, true, "0.8–0.9 band → flagged low-confidence, not auto-applied");
+});
+
 test("multiple stray descriptors of one vendor collapse into a single suggestion", () => {
   const day = 86_400_000;
   const isoOff = (d: number) => new Date(Date.now() - d * day).toISOString().slice(0, 10);

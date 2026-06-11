@@ -46,6 +46,7 @@ export type MergeSuggestion = {
   total: number;
   note?: string; // why it's suggested (recurring-match only)
   categoryId?: number; // recurring-match: set uncategorized variant charges to this
+  lowConfidence?: boolean; // 0.8–0.9 name band — surface for confirmation, not certain
 };
 
 function dismissedKeys(db: ReturnType<typeof getDb>): Set<string> {
@@ -182,8 +183,11 @@ export function nameAffinity(a: string, b: string): number {
   return Math.max(prefix, jw, tokens);
 }
 
-// Threshold for "same vendor" — a combined-score cutoff (was a 6-char prefix).
+// Thresholds for "same vendor". NAME_MATCH = confident (auto-reconcile pending↔
+// posted, top of the merge queue). LOW_MATCH = a borderline band surfaced in the
+// queue as a "possible match" for the user to confirm — never auto-applied.
 export const NAME_MATCH = 0.9;
+export const LOW_MATCH = 0.8;
 
 // Behavior + name detector: a rare, non-recurring charge whose name clearly
 // echoes an active recurring's vendor (shared ≥6-char prefix) AND that posts
@@ -237,20 +241,24 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
 
   // Match each orphan merchant to its best recurring, then GROUP orphans by that
   // recurring so several stray descriptors of one vendor become a single card.
-  const groups = new Map<string, { rec: (typeof recs)[number]; orphans: string[] }>();
+  const groups = new Map<
+    string,
+    { rec: (typeof recs)[number]; orphans: string[]; maxAffinity: number }
+  >();
   for (const [merchant, cs] of Object.entries(byMerchant)) {
     if (exclude.has(merchant) || dismissed.has("rec:" + merchant)) continue;
     const cm = canonicalMerchant(merchant, links);
 
     // Best recurring by name affinity (the disambiguator), confirmed by a
-    // plausible amount and a charge that posts around the bill's cadence.
+    // plausible amount and a charge that posts around the bill's cadence. The
+    // LOW_MATCH..NAME_MATCH band is kept but flagged low-confidence below.
     let best: { rec: (typeof recs)[number]; affinity: number } | null = null;
     for (const c of cs) {
       const mag = Math.abs(c.amount);
       for (const r of recs) {
         if (canonicalMerchant(r.merchant, links) === cm) continue; // already same vendor
         const affinity = nameAffinity(merchant, r.merchant);
-        if (affinity < NAME_MATCH) continue; // names must echo each other
+        if (affinity < LOW_MATCH) continue; // names must at least echo each other
         if (mag < r.lo * 0.5 || mag > r.hi * 1.5) continue; // amount implausible
         const period = PERIOD[r.cadence] ?? 30;
         const gap = (Date.parse(c.d) - Date.parse(r.lastDate)) / 86_400_000;
@@ -259,13 +267,19 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
       }
     }
     if (!best) continue;
-    const g = groups.get(best.rec.merchant) ?? { rec: best.rec, orphans: [] };
+    const g = groups.get(best.rec.merchant) ?? {
+      rec: best.rec,
+      orphans: [],
+      maxAffinity: 0,
+    };
     g.orphans.push(merchant);
+    g.maxAffinity = Math.max(g.maxAffinity, best.affinity);
     groups.set(best.rec.merchant, g);
   }
 
   const out: MergeSuggestion[] = [];
-  for (const { rec: r, orphans } of groups.values()) {
+  for (const { rec: r, orphans, maxAffinity } of groups.values()) {
+    const lowConfidence = maxAffinity < NAME_MATCH;
     const variants = [
       ...orphans
         .map((m) => ({ merchant: m, count: countOf[m] ?? 0 }))
@@ -278,13 +292,17 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
       dismissKeys: orphans.map((m) => "rec:" + m),
       variants,
       total: variants.reduce((s, v) => s + v.count, 0),
-      note: `Lands in your ${r.cadence} “${r.merchant}” slot at a similar amount — likely the same vendor renamed. Combining makes ${
-        orphans.length > 1 ? "them" : "it"
-      } recurring${r.categoryId != null ? " and sets the category" : ""}.`,
+      note: lowConfidence
+        ? `Possibly the same as your ${r.cadence} “${r.merchant}” bill — similar name, posts in the same slot at a similar amount. Combine only if it's the same vendor.`
+        : `Lands in your ${r.cadence} “${r.merchant}” slot at a similar amount — likely the same vendor renamed. Combining makes ${
+            orphans.length > 1 ? "them" : "it"
+          } recurring${r.categoryId != null ? " and sets the category" : ""}.`,
       categoryId: r.categoryId ?? undefined,
+      lowConfidence,
     });
   }
-  return out;
+  // Confident matches first, borderline ones last.
+  return out.sort((a, b) => Number(a.lowConfidence) - Number(b.lowConfidence) || b.total - a.total);
 }
 
 // Normalized-equality detector: distinct descriptors that reduce to the SAME
@@ -332,7 +350,9 @@ export function allMergeSuggestions(): MergeSuggestion[] {
   const rec = recurringMatchSuggestions(covered);
   for (const g of rec) for (const v of g.variants) covered.add(v.merchant);
   const eq = nameEqualityMergeSuggestions(covered);
-  return [...rec, ...eq, ...loc];
+  const all = [...rec, ...eq, ...loc];
+  // Confident suggestions keep their natural order; borderline ones sink to the end.
+  return [...all.filter((s) => !s.lowConfidence), ...all.filter((s) => s.lowConfidence)];
 }
 
 // Approve: fold every variant into the canonical name; for a recurring-match,
