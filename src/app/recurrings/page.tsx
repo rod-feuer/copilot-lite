@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Shell from "@/components/Shell";
 import { MonthPicker, CleanupNamesButtons } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -538,6 +538,8 @@ function BillList({
   onOpen?: (merchant: string) => void;
 }) {
   const [matchEditId, setMatchEditId] = useState<number | null>(null);
+  const [renameId, setRenameId] = useState<number | null>(null);
+  const skipRenameSave = useRef(false); // set on Escape so the blur doesn't save
   const shelfActive = useShelfActive();
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize && onMute);
@@ -598,7 +600,43 @@ function BillList({
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{r.displayName}</span>
+                  {renameId === r.id && onSaveSettings ? (
+                    <input
+                      autoFocus
+                      defaultValue={r.displayName}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") {
+                          skipRenameSave.current = true;
+                          setRenameId(null);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (skipRenameSave.current) skipRenameSave.current = false;
+                        else onSaveSettings(r.merchant, { alias: e.target.value.trim() || null });
+                        setRenameId(null);
+                      }}
+                      className="w-56 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                    />
+                  ) : (
+                    <>
+                      <span className="truncate text-sm font-medium">{r.displayName}</span>
+                      {onSaveSettings && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameId(r.id);
+                          }}
+                          title="Rename"
+                          className="shrink-0 rounded text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] focus:opacity-100 group-hover:opacity-100"
+                        >
+                          ✎
+                        </button>
+                      )}
+                    </>
+                  )}
                   <span className="shrink-0 text-xs text-[var(--muted)]">
                     {CADENCE_LABEL[r.cadence]}
                   </span>
