@@ -105,7 +105,7 @@ const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 // "Dukeenergy Bill Pay" → 10 ("dukeenergy"); it's 0 against "Carmelclerktreas
 // Water Bill". A strong, cheap "same vendor renamed" signal that behaviour
 // (amount + timing) alone can't provide.
-function nameAffinity(a: string, b: string): number {
+export function nameAffinity(a: string, b: string): number {
   const na = normName(a);
   const nb = normName(b);
   let i = 0;

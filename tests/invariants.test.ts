@@ -40,6 +40,7 @@ import {
   dismissMerge,
 } from "../src/lib/merges";
 import { createSplitRule, applySplitRules } from "../src/lib/splits";
+import { importPlaidTransactions } from "../src/lib/plaid";
 
 let CAT: number, CAT_INC: number, CAT_EXC: number, CAT_X: number;
 
@@ -378,6 +379,32 @@ test("approving a recurring-match links the orphan and fills its missing categor
     .prepare("SELECT categoryId FROM transactions WHERE merchant = ?")
     .get("Acme Power") as { categoryId: number | null };
   assert.equal(row.categoryId, CAT, "the uncategorized orphan was tagged with the recurring's category");
+});
+
+test("plaid sync reconciles a pending charge against its posted twin, sparing coincidences", () => {
+  // Plaid returns both versions of a charge mid-transition (different ids, drifted
+  // name). The pending Gap twin should be dropped; two coincidental $11.99 charges
+  // from different vendors must both survive.
+  const item = {
+    accounts: [{ account_id: "a1", name: "Amex Gold" }],
+    transactions: [
+      { transaction_id: "g-posted", account_id: "a1", date: "2026-06-07", name: "Gapoutlet.com", merchant_name: "Gapoutlet.com", amount: -53.47, pending: false },
+      { transaction_id: "g-pending", account_id: "a1", date: "2026-06-07", name: "Gap Outletcom", merchant_name: "Gap Outletcom", amount: -53.47, pending: true },
+      { transaction_id: "jj-pending", account_id: "a1", date: "2026-06-09", name: "Jimmy Johns", merchant_name: "Jimmy Johns", amount: 11.99, pending: true },
+      { transaction_id: "bf-posted", account_id: "a1", date: "2026-06-10", name: "Benjamin Franklin Pl", merchant_name: "Benjamin Franklin Pl", amount: 11.99, pending: false },
+    ],
+  };
+  const res = importPlaidTransactions([item]);
+  const all = getDb()
+    .prepare("SELECT amount, pending FROM transactions WHERE source='plaid'")
+    .all() as { amount: number; pending: number }[];
+
+  assert.equal(res.reconciled, 1, "the pending Gap twin is reconciled away");
+  assert.equal(all.length, 3, "4 pulled, 1 pending duplicate dropped");
+  assert.equal(all.filter((r) => r.amount === 53.47).length, 1, "only the posted Gap refund remains");
+  assert.equal(all.find((r) => r.amount === 53.47)!.pending, 0, "and it's the posted one");
+  assert.equal(all.filter((r) => r.amount === -11.99).length, 2, "both coincidental $11.99 charges survive");
+  assert.equal(all.filter((r) => r.pending === 1).length, 1, "only the un-twinned pending remains");
 });
 
 test("mergePreview returns each descriptor's recent charges, newest first", () => {

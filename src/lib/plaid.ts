@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { getDb } from "./db";
 import { categorizeByRules } from "./core";
 import { normalizeMerchant } from "./merchant";
+import { nameAffinity } from "./merges";
 
 const run = promisify(execFile);
 const CLI = process.env.PLAID_CLI_PATH || "plaid";
@@ -87,6 +88,7 @@ export function plaidSyncStartDate(): string {
 export function importPlaidTransactions(items: PlaidItem[]): {
   inserted: number;
   updated: number;
+  reconciled: number;
 } {
   const db = getDb();
   // Hashes we already have, captured BEFORE the pending wipe so counts are
@@ -96,10 +98,8 @@ export function importPlaidTransactions(items: PlaidItem[]): {
       hash: string;
     }[]).map((r) => r.hash)
   );
-  // Clear transient pending Plaid rows before re-importing the window. Plaid
-  // gives a posted transaction a NEW transaction_id than its pending version,
-  // and `transactions list` omits pending_transaction_id — so without this, a
-  // pending row and its later posted row would both survive (a duplicate).
+  // Clear transient pending Plaid rows before re-importing the window — this
+  // drops a pending charge that has fully posted (Plaid stops returning it).
   // Posted rows are stable and keep their categoryId via the upsert below.
   const clearPending = db.prepare(
     "DELETE FROM transactions WHERE source = 'plaid' AND pending = 1"
@@ -115,36 +115,70 @@ export function importPlaidTransactions(items: PlaidItem[]): {
        account = excluded.account,
        pending = excluded.pending`
   );
+  // A posted twin for a pending charge: same account + amount, within 3 days.
+  // Name affinity (checked in JS) then confirms it's the same vendor.
+  const findPosted = db.prepare(
+    `SELECT merchant FROM transactions
+     WHERE source = 'plaid' AND pending = 0 AND account = @account AND amount = @amount
+       AND ABS(julianday(COALESCE(effectiveDate, date)) - julianday(@date)) <= 3`
+  );
 
   let inserted = 0;
   let updated = 0;
+  let reconciled = 0;
   const tx = db.transaction((rows: PlaidItem[]) => {
     clearPending.run();
-    for (const item of rows) {
+
+    // Flatten + normalize, then import POSTED before PENDING so a pending row
+    // can see its posted twin already in the table.
+    const flat = rows.flatMap((item) => {
       const acctName = new Map(item.accounts.map((a) => [a.account_id, a.name]));
-      for (const t of item.transactions) {
+      return item.transactions.map((t) => {
         const rawMerchant = t.merchant_name || t.name;
-        const merchant = normalizeMerchant(rawMerchant);
-        upsert.run({
+        return {
           date: t.date,
-          merchant,
+          merchant: normalizeMerchant(rawMerchant),
           rawMerchant,
           amount: -t.amount,
-          // Ignored on conflict (existing categoryId preserved); applied on
-          // fresh inserts, including re-inserted pending rows.
-          categoryId: categorizeByRules(merchant),
           account: acctName.get(t.account_id) ?? t.account_id,
           pending: t.pending ? 1 : 0,
           hash: t.transaction_id,
-        });
-        if (seen.has(t.transaction_id)) updated++;
-        else {
-          inserted++;
-          seen.add(t.transaction_id);
+        };
+      });
+    });
+    flat.sort((a, b) => a.pending - b.pending); // posted (0) first
+
+    for (const r of flat) {
+      // In-pull pending→posted reconciliation: Plaid returns BOTH versions of a
+      // charge during the transition (different transaction_ids) and
+      // `transactions list` omits pending_transaction_id — so skip a pending row
+      // whose posted twin is already present. Same account+amount+near-date AND
+      // a matching name (so a coincidental same-amount charge from another
+      // vendor is spared). This approximates Plaid's pending_transaction_id link.
+      if (r.pending) {
+        const twin = (findPosted.all({
+          account: r.account,
+          amount: r.amount,
+          date: r.date,
+        }) as { merchant: string }[]).some((q) => nameAffinity(r.merchant, q.merchant) >= 6);
+        if (twin) {
+          reconciled++;
+          continue;
         }
+      }
+      upsert.run({
+        ...r,
+        // Ignored on conflict (existing categoryId preserved); applied on
+        // fresh inserts, including re-inserted pending rows.
+        categoryId: categorizeByRules(r.merchant),
+      });
+      if (seen.has(r.hash)) updated++;
+      else {
+        inserted++;
+        seen.add(r.hash);
       }
     }
   });
   tx(items);
-  return { inserted, updated };
+  return { inserted, updated, reconciled };
 }
