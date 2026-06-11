@@ -353,7 +353,9 @@ export default function DashboardPage() {
                 <h3 className="text-sm font-semibold">Spending by category</h3>
                 <SeeAll href="/categories" />
               </div>
-              {data.budget && <BudgetSummary budget={data.budget} />}
+              {data.budget && (
+                <BudgetSummary budget={data.budget} totalExpenses={data.expenses} />
+              )}
               <CategoryBars rows={data.byCategory} month={month} />
             </div>
           </div>
@@ -815,16 +817,21 @@ function CategoryBars({
 // plus a run-rate projection to month-end and whether it lands over/under.
 function BudgetSummary({
   budget,
+  totalExpenses,
 }: {
   budget: { total: number; spent: number; projected: number | null };
+  totalExpenses: number;
 }) {
   const pct = budget.total > 0 ? Math.round((budget.spent / budget.total) * 100) : 0;
   const overNow = budget.spent > budget.total;
   const projDelta = budget.projected != null ? budget.projected - budget.total : null;
+  // Spend in categories that have no budget — reconciles this card's "budgeted"
+  // figure with the all-expenses total shown in the Expenses stat / pace chart.
+  const unbudgeted = Math.max(0, Number((totalExpenses - budget.spent).toFixed(2)));
   return (
     <div className="mb-4 rounded-xl bg-[var(--background)] p-3">
       <div className="flex items-center justify-between text-sm">
-        <span className="font-medium">Budget</span>
+        <span className="font-medium">Budgeted spend</span>
         <span>
           <span className={overNow ? "font-semibold text-rose-600" : "font-semibold"}>
             {usd(budget.spent, { cents: false })}
@@ -855,6 +862,15 @@ function BudgetSummary({
           " · too early to project"
         )}
       </div>
+      {unbudgeted >= 1 && (
+        <div className="mt-1 text-xs text-[var(--muted)]">
+          + {usd(unbudgeted, { cents: false })} in categories without a budget ={" "}
+          <span className="font-medium text-[var(--foreground)]">
+            {usd(totalExpenses, { cents: false })}
+          </span>{" "}
+          spent
+        </div>
+      )}
     </div>
   );
 }
