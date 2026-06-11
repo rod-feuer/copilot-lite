@@ -36,6 +36,8 @@ import {
   recurringMatchSuggestions,
   nameEqualityMergeSuggestions,
   mergePreview,
+  nameAffinity,
+  NAME_MATCH,
   approveMerge,
   dismissMerge,
 } from "../src/lib/merges";
@@ -305,6 +307,20 @@ test("a recurring spanning linked descriptors dates from the globally latest cha
   assert.ok(r, "the linked descriptors form one recurring");
   assert.equal(r!.count, 4, "all four charges across both descriptors are counted");
   assert.equal(r!.lastDate, "2026-04-01", "lastDate is the globally latest charge, not the alias's");
+});
+
+test("nameAffinity matches vendor renames but rejects distinct same-prefix vendors", () => {
+  const same = (a: string, b: string) => nameAffinity(a, b) >= NAME_MATCH;
+  // Descriptor drift for one vendor → match (prefix / punctuation / Jaro-Winkler).
+  assert.ok(same("Gap Outletcom", "Gapoutlet.com"), "spacing/punctuation twin");
+  assert.ok(same("Duke Energy", "Dukeenergy Bill Pay"), "appended junk suffix");
+  assert.ok(same("Upgrade", "Upgrade, Inc. Payment"), "subset of tokens");
+  assert.ok(same("Netflix", "Netflix.com"));
+  // Distinct vendors that merely share a prefix must NOT match — the old 6-char
+  // prefix rule wrongly matched these on "carmel".
+  assert.ok(!same("Carmel Dental", "Carmel Clay Schools"), "shared city prefix is not a match");
+  assert.ok(!same("Jimmy Johns", "Benjamin Franklin Pl"));
+  assert.ok(!same("Wendys", "Arbys"));
 });
 
 test("recurring-match picks the renamed vendor by name, not a same-amount decoy", () => {

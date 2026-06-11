@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { getDb } from "./db";
 import { categorizeByRules } from "./core";
 import { normalizeMerchant } from "./merchant";
-import { nameAffinity } from "./merges";
+import { nameAffinity, NAME_MATCH } from "./merges";
 
 const run = promisify(execFile);
 const CLI = process.env.PLAID_CLI_PATH || "plaid";
@@ -160,7 +160,7 @@ export function importPlaidTransactions(items: PlaidItem[]): {
           account: r.account,
           amount: r.amount,
           date: r.date,
-        }) as { merchant: string }[]).some((q) => nameAffinity(r.merchant, q.merchant) >= 6);
+        }) as { merchant: string }[]).some((q) => nameAffinity(r.merchant, q.merchant) >= NAME_MATCH);
         if (twin) {
           reconciled++;
           continue;
