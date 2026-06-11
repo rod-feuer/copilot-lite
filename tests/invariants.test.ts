@@ -99,6 +99,17 @@ after(() => {
   for (const ext of ["", "-wal", "-shm"]) fs.rmSync(p + ext, { force: true });
 });
 
+test("merchantSummary lists descriptor names; only linked aliases are unlinkable", () => {
+  linkMerchant("South Co", "Main Co");
+  tx("Main Co", { amount: -10, categoryId: CAT });
+  tx("South Co", { amount: -11, categoryId: CAT });
+
+  const byName = Object.fromEntries(merchantSummary("Main Co").names.map((n) => [n.name, n]));
+  assert.ok(byName["Main Co"] && byName["South Co"], "both descriptors are listed");
+  assert.equal(byName["South Co"].canUnlink, true, "the linked alias can be split off");
+  assert.equal(byName["Main Co"].canUnlink, false, "the primary has no link to remove");
+});
+
 test("display name resolves consistently in drawer and transactions list", () => {
   tx("Jpmorgan Chase Chase Ach", { amount: -4800, categoryId: CAT_X });
   setRecurringSetting("Jpmorgan Chase Chase Ach", { alias: "Chase Mortgage (Lake)" });

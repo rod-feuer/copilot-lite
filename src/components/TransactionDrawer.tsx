@@ -48,6 +48,7 @@ type Summary = {
   categoryId: number | null;
   categoryName: string | null;
   categoryColor: string | null;
+  names: { name: string; count: number; canUnlink: boolean }[];
   recent: Recent[];
 };
 type CatSummary = {
@@ -236,6 +237,19 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function unlinkName(alias: string) {
+    if (target?.kind !== "merchant") return;
+    const merchant = target.merchant;
+    try {
+      await postJson("/api/recurrings/link", { alias, unlink: true });
+      toast(`Unlinked “${alias}”`, "success");
+      fetchMerchant(merchant);
+      onChange.current?.();
+    } catch {
+      toast("Couldn't unlink — please try again", "error");
+    }
+  }
+
   async function toggleRecurring() {
     if (target?.kind !== "merchant" || !mData) return;
     const merchant = target.merchant;
@@ -297,7 +311,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 </button>
               )}
               {target.kind === "merchant" ? (
-                <MerchantHeader merchant={target.merchant} data={mData} />
+                <MerchantHeader merchant={target.merchant} data={mData} onUnlink={unlinkName} />
               ) : (
                 <CategoryHeader data={cData} month={target.month} />
               )}
@@ -355,7 +369,16 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function MerchantHeader({ merchant, data }: { merchant: string; data: Summary | null }) {
+function MerchantHeader({
+  merchant,
+  data,
+  onUnlink,
+}: {
+  merchant: string;
+  data: Summary | null;
+  onUnlink: (alias: string) => void;
+}) {
+  const [showNames, setShowNames] = useState(false);
   return (
     <>
       <div className="truncate text-sm font-semibold">{data?.displayName ?? merchant}</div>
@@ -372,9 +395,43 @@ function MerchantHeader({ merchant, data }: { merchant: string; data: Summary | 
                 timeZone: "UTC",
               })}`
             : ""}
-          {data.nameVariants > 1 ? ` · ${data.nameVariants} names` : ""}
+          {data.nameVariants > 1 ? (
+            <>
+              {" · "}
+              <button
+                onClick={() => setShowNames((s) => !s)}
+                className="underline decoration-dotted underline-offset-2 hover:text-[var(--foreground)]"
+                title="The bank descriptors grouped under this vendor"
+              >
+                {data.nameVariants} names {showNames ? "▾" : "▸"}
+              </button>
+            </>
+          ) : null}
           {data.recurring ? " · recurring ↻" : ""}
         </div>
+      )}
+      {data && showNames && data.names.length > 1 && (
+        <ul className="mt-2 flex flex-col divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
+          {data.names.map((n) => (
+            <li key={n.name} className="flex items-center gap-2 px-2.5 py-1.5 text-xs">
+              <span className="min-w-0 flex-1 truncate" title={n.name}>
+                {n.name}
+              </span>
+              <span className="shrink-0 tabular-nums text-[var(--muted)]">{n.count}</span>
+              {n.canUnlink ? (
+                <button
+                  onClick={() => onUnlink(n.name)}
+                  title="Unlink this descriptor — split it back into its own vendor"
+                  className="shrink-0 rounded px-1 text-[var(--muted)] hover:text-rose-500"
+                >
+                  ✕
+                </button>
+              ) : (
+                <span className="w-[18px] shrink-0" aria-hidden />
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </>
   );

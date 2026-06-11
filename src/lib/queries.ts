@@ -417,6 +417,19 @@ export function merchantSummary(merchant: string) {
   const db = getDb();
   const variants = merchantVariants(merchant);
   const ph = variants.map(() => "?").join(",");
+  // The descriptor variants with per-name counts. canUnlink is true only for
+  // explicit merchant_links aliases (those can be split off); the canonical and
+  // the automatic first-2-token key-rollups have no link to remove.
+  const links = getMerchantLinks();
+  const variantCounts = db
+    .prepare(`SELECT merchant, COUNT(*) n FROM transactions WHERE merchant IN (${ph}) GROUP BY merchant`)
+    .all(...variants) as { merchant: string; n: number }[];
+  const countByName: Record<string, number> = Object.fromEntries(
+    variantCounts.map((r) => [r.merchant, r.n])
+  );
+  const names = variants
+    .map((v) => ({ name: v, count: countByName[v] ?? 0, canUnlink: links[v] != null }))
+    .sort((a, b) => b.count - a.count);
   const agg = db
     .prepare(
       `SELECT COUNT(*) AS n,
@@ -548,6 +561,7 @@ export function merchantSummary(merchant: string) {
     merchant,
     displayName: merchantDisplayName(merchant, getRecurringSettings(), getMerchantLinks()),
     nameVariants: variants.length,
+    names,
     count: agg.n,
     spent: Number(agg.spent.toFixed(2)),
     received: Number(agg.received.toFixed(2)),
