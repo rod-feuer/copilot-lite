@@ -252,6 +252,7 @@ export default function CategoriesPage() {
         onDelete={remove}
         onBudget={saveBudget}
         onToggleExclude={toggleExclude}
+        onChange={() => load(month)}
         confirmingId={confirmingDelete}
       />
       {/* While an attention filter is active, hide unrelated sections to focus. */}
@@ -262,6 +263,7 @@ export default function CategoriesPage() {
             month={month}
             cats={income}
             onDelete={remove}
+            onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
         </div>
@@ -275,6 +277,7 @@ export default function CategoriesPage() {
             cats={excluded}
             onDelete={remove}
             onToggleExclude={toggleExclude}
+            onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
         </div>
@@ -402,6 +405,7 @@ function Group({
   onDelete,
   onBudget,
   onToggleExclude,
+  onChange,
   confirmingId,
 }: {
   title: string;
@@ -411,6 +415,9 @@ function Group({
   onDelete: (c: Cat) => void;
   onBudget?: (id: number, amount: number | null) => void;
   onToggleExclude?: (id: number, exclude: boolean) => void;
+  // Reload the list when a transaction is edited inside the category shelf, so
+  // totals/budgets update in place instead of needing a manual refresh.
+  onChange?: () => void;
   confirmingId?: number | null;
 }) {
   const openCategory = useCategoryShelf();
@@ -439,7 +446,7 @@ function Group({
             <div
               key={c.id}
               data-drawer-row
-              onClick={() => openCategory(c.id, month)}
+              onClick={() => openCategory(c.id, month, { onChange })}
               className="group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)]"
             >
               <span
