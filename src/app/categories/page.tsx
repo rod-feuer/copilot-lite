@@ -7,6 +7,7 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { usd, defaultMonth } from "@/lib/format";
+import { CATEGORY_EMOJIS } from "@/lib/emoji";
 
 type Cat = {
   id: number;
@@ -217,12 +218,7 @@ export default function CategoriesPage() {
           </button>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <input
-            value={icon}
-            onChange={(e) => setIcon(e.target.value)}
-            className="btn-ghost w-14 text-center text-lg"
-            aria-label="Icon"
-          />
+          <EmojiButton value={icon} onPick={setIcon} />
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -645,6 +641,93 @@ function Group({
   );
 }
 
+// A searchable grid of curated category emojis. Picking one calls onPick. The
+// search box also accepts a pasted emoji that isn't in the curated set — it's
+// offered as a "use this" tile, so the escape hatch for any emoji survives.
+function EmojiPicker({ value, onPick }: { value?: string; onPick: (emoji: string) => void }) {
+  const [q, setQ] = useState("");
+  const raw = q.trim();
+  const ql = raw.toLowerCase();
+  const shown = ql
+    ? CATEGORY_EMOJIS.filter((e) => e.keywords.includes(ql) || e.char === raw)
+    : CATEGORY_EMOJIS;
+  // A non-empty query that's clearly an emoji (not plain ascii words) and isn't
+  // in the curated list → let the user pick exactly what they pasted.
+  const pasted =
+    raw && !/^[\w\s]+$/.test(raw) && !CATEGORY_EMOJIS.some((e) => e.char === raw) ? raw : null;
+  const tile = (char: string, key: string) => (
+    <button
+      key={key}
+      onClick={() => onPick(char)}
+      title={char}
+      className={`flex h-7 w-7 items-center justify-center rounded text-lg hover:bg-[var(--background)] ${
+        value === char ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/40" : ""
+      }`}
+    >
+      {char}
+    </button>
+  );
+  return (
+    <div className="w-full" onClick={(e) => e.stopPropagation()}>
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search or paste an emoji…"
+        className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+      />
+      <div className="grid max-h-40 grid-cols-8 gap-0.5 overflow-y-auto">
+        {pasted && tile(pasted, "pasted")}
+        {shown.map((e) => tile(e.char, e.char))}
+        {!pasted && shown.length === 0 && (
+          <span className="col-span-8 px-1 py-3 text-center text-[11px] text-[var(--muted)]">
+            No matches — paste any emoji to use it.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A button showing the current emoji that opens the EmojiPicker in a popover —
+// used by the New-category form (where there's no badge to click).
+function EmojiButton({ value, onPick }: { value: string; onPick: (emoji: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="Choose icon"
+        className="btn-ghost w-14 text-center text-lg"
+        aria-label="Choose icon"
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-12 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
+          <EmojiPicker
+            value={value}
+            onPick={(e) => {
+              onPick(e);
+              setOpen(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // The category's round icon badge. When editable (onSave given), clicking it
 // opens a small popover to pick an emoji and a color — the only place to set a
 // category's appearance after creation. Read-only when onSave is absent.
@@ -694,27 +777,9 @@ function CategoryBadge({
         {icon}
       </button>
       {open && (
-        <div className="absolute left-0 top-11 z-20 w-56 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
-          <div className="mb-2 flex items-center gap-2">
-            <input
-              autoFocus
-              defaultValue={icon}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-                if (e.key === "Escape") setOpen(false);
-              }}
-              onBlur={(e) => {
-                const v = e.target.value.trim();
-                if (v && v !== icon) onSave({ icon: v });
-              }}
-              aria-label="Emoji"
-              className="w-12 rounded-lg border border-[var(--border)] bg-[var(--background)] py-1 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-            />
-            <span className="text-[11px] leading-tight text-[var(--muted)]">
-              Type or paste any emoji
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="absolute left-0 top-11 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
+          <EmojiPicker value={icon} onPick={(e) => onSave({ icon: e })} />
+          <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-[var(--border)] pt-2.5">
             {PALETTE.map((p) => (
               <button
                 key={p}
