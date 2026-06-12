@@ -4,6 +4,38 @@ import { normalizeMerchant } from "../src/lib/merchant";
 import { classifyCadence, addCadence, txHash } from "../src/lib/core";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
+import { createLatestGuard } from "../src/lib/latestGuard";
+
+test("createLatestGuard discards a paged fetch superseded by a newer load", () => {
+  // The transactions list relies on this: a loadMore still in flight when the
+  // filter changes (a new page-1 load) must NOT append under the new filter.
+  const g = createLatestGuard();
+
+  // Page-1 load A starts; a loadMore for A rides the same generation.
+  const loadA = g.begin();
+  const moreA = g.current();
+  assert.equal(g.isCurrent(loadA), true);
+  assert.equal(g.isCurrent(moreA), true, "a loadMore rides the current result set");
+
+  // Filter changes → page-1 load B supersedes A.
+  const loadB = g.begin();
+  assert.equal(g.isCurrent(loadA), false, "A's page-1 response is now stale");
+  assert.equal(g.isCurrent(moreA), false, "A's in-flight loadMore must be discarded");
+  assert.equal(g.isCurrent(loadB), true, "B is the live result set");
+
+  // A loadMore for B still applies.
+  assert.equal(g.isCurrent(g.current()), true);
+});
+
+test("createLatestGuard keeps only the newest of out-of-order loads", () => {
+  // Two rapid filter changes: even if the first resolves last, only the second
+  // may apply.
+  const g = createLatestGuard();
+  const first = g.begin();
+  const second = g.begin();
+  assert.equal(g.isCurrent(first), false, "the earlier load is superseded");
+  assert.equal(g.isCurrent(second), true, "the latest load wins");
+});
 
 test("CATEGORY_EMOJIS are unique and keyword-searchable", () => {
   // Duplicate chars would collide React keys in the picker grid; uppercase
