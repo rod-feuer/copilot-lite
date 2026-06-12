@@ -223,7 +223,7 @@ function vendorSearchMerchants(ql: string): string[] {
   return out;
 }
 
-export function listTransactions(opts: {
+export type TxFilter = {
   month?: string;
   categoryId?: number | "none";
   q?: string;
@@ -233,12 +233,11 @@ export function listTransactions(opts: {
   minAmount?: number;
   maxAmount?: number;
   recurring?: boolean;
-  sort?: "date" | "amount" | "merchant";
-  dir?: "asc" | "desc";
-  limit?: number;
-}): TransactionWithCategory[] {
-  const db = getDb();
-  ensureRecurringTxExclusions(db);
+};
+
+// Shared WHERE builder for the transactions list and its summary, so the paged
+// rows and the count/net total always filter on byte-identical criteria.
+function buildTxFilter(opts: TxFilter): { whereSql: string; params: Record<string, unknown> } {
   const where: string[] = [];
   const params: Record<string, unknown> = {};
   if (opts.month) {
@@ -300,6 +299,20 @@ export function listTransactions(opts: {
   }
   if (opts.recurring === true) where.push("t.recurringId IS NOT NULL");
   else if (opts.recurring === false) where.push("t.recurringId IS NULL");
+  return { whereSql: where.length ? "WHERE " + where.join(" AND ") : "", params };
+}
+
+export function listTransactions(
+  opts: TxFilter & {
+    sort?: "date" | "amount" | "merchant";
+    dir?: "asc" | "desc";
+    limit?: number;
+    offset?: number;
+  }
+): TransactionWithCategory[] {
+  const db = getDb();
+  ensureRecurringTxExclusions(db);
+  const { whereSql, params } = buildTxFilter(opts);
   // Whitelisted sort column + direction (never interpolate user strings).
   const sortCol =
     opts.sort === "amount"
@@ -308,20 +321,47 @@ export function listTransactions(opts: {
       ? "LOWER(t.merchant)"
       : "COALESCE(t.effectiveDate, t.date)";
   const dir = opts.dir === "asc" ? "ASC" : "DESC";
+  let pagination = "";
+  if (opts.limit != null) {
+    // Parameterized LIMIT/OFFSET (id tiebreak keeps the page boundary stable).
+    pagination = "LIMIT @__lim OFFSET @__off";
+    params.__lim = opts.limit;
+    params.__off = opts.offset ?? 0;
+  }
   const sql = `
     SELECT t.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon,
            COALESCE(c.excludeFromTotals, 0) AS categoryExcluded,
            (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
     FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
-    ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    ${whereSql}
     ORDER BY ${sortCol} ${dir}, t.id DESC
-    ${opts.limit ? "LIMIT " + opts.limit : ""}`;
+    ${pagination}`;
   const rows = db.prepare(sql).all(params) as (TransactionWithCategory & {
     recurringExcluded: number;
   })[];
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
   return rows.map((r) => ({ ...r, displayName: merchantDisplayName(r.merchant, settings, links) }));
+}
+
+// Count and net total over the FULL filtered set. The list is paged, so the
+// header's "N shown" and net figure can't be derived from the loaded rows.
+// Net mirrors the dashboard: excluded rows and excluded-from-totals categories
+// don't count.
+export function transactionsSummary(opts: TxFilter): { count: number; net: number } {
+  const db = getDb();
+  ensureRecurringTxExclusions(db);
+  const { whereSql, params } = buildTxFilter(opts);
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS count,
+        COALESCE(SUM(CASE WHEN t.excluded = 1 OR COALESCE(c.excludeFromTotals, 0) = 1
+                          THEN 0 ELSE t.amount END), 0) AS net
+       FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
+       ${whereSql}`
+    )
+    .get(params) as { count: number; net: number };
+  return { count: row.count, net: Number(row.net.toFixed(2)) };
 }
 
 // Recurring-detection overrides (merchant -> 'force' | 'mute'), applied by

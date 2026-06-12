@@ -69,9 +69,13 @@ export default function TransactionsPage() {
   const [months, setMonths] = useState<string[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
+  // txs accumulates the pages fetched so far (server-side pagination). count/net
+  // describe the FULL filtered set (the header figures), since the list is paged.
   const [txs, setTxs] = useState<Tx[]>([]);
-  // How many rows are currently mounted (incremental rendering — see PAGE).
-  const [visibleCount, setVisibleCount] = useState(PAGE);
+  const [totalCount, setTotalCount] = useState(0);
+  const [netTotal, setNetTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false); // synchronous guard against double-fetch
   // Review-queue widgets are deferred to after first paint so their fetches
   // (esp. the ~155ms merge scan) don't compete with the list on load.
   const [showQueues, setShowQueues] = useState(false);
@@ -155,7 +159,8 @@ export default function TransactionsPage() {
     setReady(true);
   }, []);
 
-  const load = useCallback(async (f: Filters) => {
+  // Query string for one page of the current filter set.
+  const buildTxQuery = useCallback((f: Filters, offset: number) => {
     const p = new URLSearchParams();
     if (f.month) p.set("month", f.month);
     if (f.cat) p.set("category", f.cat);
@@ -168,10 +173,52 @@ export default function TransactionsPage() {
     if (f.recurring) p.set("recurring", f.recurring);
     p.set("sort", f.sort);
     p.set("dir", f.dir);
-    const data = await fetch(`/api/transactions?${p}`).then((r) => r.json());
-    setTxs(data);
-    setVisibleCount(PAGE); // new result set → start from the first page
+    // A vendor (statement) view is bounded — load it whole so its totals and
+    // grouping are exact. Otherwise page the list server-side.
+    if (!f.vendor) {
+      p.set("limit", String(PAGE));
+      if (offset) p.set("offset", String(offset));
+    }
+    return p.toString();
   }, []);
+
+  // Latest filters + loaded count, so loadMore (fired from the scroll observer)
+  // always pages the current view without re-subscribing on every render.
+  const filtersRef = useRef<Filters | null>(null);
+  const loadedCountRef = useRef(0);
+  useEffect(() => {
+    loadedCountRef.current = txs.length;
+  }, [txs.length]);
+
+  // Page 1: replace the list and capture the full-set count + net total.
+  const load = useCallback(
+    async (f: Filters) => {
+      filtersRef.current = f;
+      const data = await fetch(`/api/transactions?${buildTxQuery(f, 0)}`).then((r) => r.json());
+      setTxs(data.rows ?? []);
+      setTotalCount(data.count ?? data.rows?.length ?? 0);
+      setNetTotal(data.net ?? 0);
+    },
+    [buildTxQuery]
+  );
+
+  // Append the next page. Guarded (ref) so overlapping scroll triggers can't
+  // double-fetch the same offset.
+  const loadMore = useCallback(async () => {
+    const f = filtersRef.current;
+    if (!f || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const data = await fetch(
+        `/api/transactions?${buildTxQuery(f, loadedCountRef.current)}`
+      ).then((r) => r.json());
+      setTxs((prev) => [...prev, ...(data.rows ?? [])]);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [buildTxQuery]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -195,21 +242,21 @@ export default function TransactionsPage() {
     return () => clearTimeout(id);
   }, []);
 
-  // Append the next page of rows when the bottom sentinel scrolls into view —
-  // incremental rendering without mounting the whole result set up front.
+  // Fetch the next page when the bottom sentinel scrolls into view.
+  const hasMore = txs.length < totalCount;
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || visibleCount >= txs.length) return;
+    if (!el || !hasMore) return;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) setVisibleCount((c) => c + PAGE);
+        if (entries[0]?.isIntersecting) loadMore();
       },
       { rootMargin: "600px" } // start loading before it's actually visible
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [visibleCount, txs.length]);
+  }, [hasMore, loadMore]);
 
   // Debounced reload whenever any filter (or a forced refresh) changes.
   useEffect(() => {
@@ -345,26 +392,16 @@ export default function TransactionsPage() {
     [openTx]
   );
 
-  // Net mirrors Copilot: excluded rows (incl. internal transfers) don't count.
-  const total = useMemo(
-    () => txs.reduce((a, t) => a + (t.excluded || t.categoryExcluded ? 0 : t.amount), 0),
-    [txs]
-  );
-
-  // Only the first `visibleCount` rows are mounted; the rest append on scroll.
-  // Grouping/headers operate on the visible slice; `total` (above) stays over the
-  // full match set so the header figure is correct regardless of how much is shown.
-  const visibleTxs = useMemo(() => txs.slice(0, visibleCount), [txs, visibleCount]);
-  const hasMore = visibleCount < txs.length;
-
   // Group the list under day headers when it's in date order (the rows are
   // already date-sorted by the server, so consecutive runs share a day). Other
   // sorts (amount, merchant) stay a flat list — a date header would be nonsense.
+  // Grouping operates on the loaded pages; the header's net/count come from the
+  // server (netTotal/totalCount) and span the full filtered set.
   const grouping = sort === "date";
   const grouped = useMemo(() => {
-    if (!grouping) return [{ key: "__all", label: "", total: 0, rows: visibleTxs }];
+    if (!grouping) return [{ key: "__all", label: "", total: 0, rows: txs }];
     const out: { key: string; label: string; total: number; rows: Tx[] }[] = [];
-    for (const t of visibleTxs) {
+    for (const t of txs) {
       const day = t.effectiveDate ?? t.date;
       let g = out[out.length - 1];
       if (!g || g.key !== day) {
@@ -375,7 +412,7 @@ export default function TransactionsPage() {
       if (!(t.excluded || t.categoryExcluded)) g.total += t.amount;
     }
     return out;
-  }, [visibleTxs, grouping]);
+  }, [txs, grouping]);
 
   // Statement mode: when the vendor filter is active, every row is the same
   // merchant — and usually the same category/account. Collapse that constant
@@ -444,7 +481,7 @@ export default function TransactionsPage() {
   return (
     <Shell
       title="Transactions"
-      subtitle={`${txs.length} shown · net ${usd(total, { sign: true })}`}
+      subtitle={`${totalCount} shown · net ${usd(netTotal, { sign: true })}`}
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={setMonth} allowAll />
@@ -680,10 +717,13 @@ export default function TransactionsPage() {
               className="flex items-center justify-center border-t border-[var(--border)] p-3"
             >
               <button
-                onClick={() => setVisibleCount((c) => c + PAGE)}
-                className="text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] hover:underline"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] hover:underline disabled:opacity-50"
               >
-                Show more · {txs.length - visibleCount} of {txs.length} remaining
+                {loadingMore
+                  ? "Loading…"
+                  : `Show more · ${totalCount - txs.length} of ${totalCount} remaining`}
               </button>
             </div>
           )}

@@ -108,7 +108,7 @@ export default function DashboardPage() {
         fetch(`/api/transactions${m ? `?month=${m}&` : "?"}limit=8`).then((x) => x.json()),
       ]);
       setData(d);
-      setRecent(r);
+      setRecent(r.rows ?? r); // route now returns { rows, count, net }
     } finally {
       // Always clear loading, even on a failed/empty read, so the page can't
       // hang on the spinner forever.

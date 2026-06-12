@@ -31,6 +31,7 @@ import {
   setTransactionNote,
   updateCategory,
   recurringEnded,
+  transactionsSummary,
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
@@ -193,6 +194,25 @@ test("display name resolves consistently in drawer and transactions list", () =>
   const rows = listTransactions({});
   const r = rows.find((x) => x.merchant === "Jpmorgan Chase Chase Ach");
   assert.equal(r!.displayName, "Chase Mortgage (Lake)");
+});
+
+test("paginated list returns disjoint pages; summary spans the full filtered set", () => {
+  // WHY: the list is fetched page by page, so the header's count + net total
+  // can't be derived from the loaded rows — the server must report them over the
+  // whole filtered set, with the same excluded-aware net the dashboard uses.
+  for (let i = 1; i <= 5; i++)
+    tx(`Shop ${i}`, { amount: -10 * i, date: `2025-06-1${i}`, categoryId: CAT });
+  tx("Transfer X", { amount: -1000, date: "2025-06-16", categoryId: CAT_EXC }); // excludeFromTotals
+
+  const s = transactionsSummary({ month: "2025-06" });
+  assert.equal(s.count, 6, "count spans every matched row, including the excluded one");
+  assert.equal(s.net, -150, "net excludes the excludeFromTotals category (−10−20−30−40−50)");
+
+  const p1 = listTransactions({ month: "2025-06", sort: "date", dir: "desc", limit: 2, offset: 0 });
+  const p2 = listTransactions({ month: "2025-06", sort: "date", dir: "desc", limit: 2, offset: 2 });
+  assert.equal(p1.length, 2, "first page is one page worth");
+  assert.equal(p2.length, 2, "second page continues from the offset");
+  assert.equal(new Set([...p1, ...p2].map((r) => r.id)).size, 4, "pages don't overlap");
 });
 
 test("excluded rows and excluded categories never count toward totals", () => {
