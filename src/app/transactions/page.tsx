@@ -30,6 +30,7 @@ type Tx = {
   categoryColor: string | null;
   categoryIcon: string | null;
   categoryExcluded: number;
+  note: string | null;
 };
 
 type Cat = { id: number; name: string; color: string; icon: string; kind: string };
@@ -54,6 +55,7 @@ export default function TransactionsPage() {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Filters
@@ -87,6 +89,9 @@ export default function TransactionsPage() {
   const [dir, setDir] = useState("desc");
   const [added, setAdded] = useState<string[]>([]); // filters explicitly added but maybe not yet valued
   const [menuOpen, setMenuOpen] = useState(false);
+  // Gate the URL←→filter sync until the initial deep-link has been read, so the
+  // sync never wipes the incoming params before loadStatic applies them.
+  const [ready, setReady] = useState(false);
   const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
@@ -122,6 +127,7 @@ export default function TransactionsPage() {
     apply("recurring", setRecurring);
     apply("minAmount", setMinAmount);
     apply("maxAmount", setMaxAmount);
+    setReady(true);
   }, []);
 
   const load = useCallback(async (f: Filters) => {
@@ -168,6 +174,26 @@ export default function TransactionsPage() {
     return () => clearTimeout(t);
   }, [month, catFilter, q, vendor, type, account, minAmount, maxAmount, recurring, sort, dir, refreshKey, load]);
 
+  // Keep the browser URL in sync with the live filters, so clearing a filter
+  // (e.g. the Uncategorized deep-link) actually sticks across reloads and a
+  // plain /transactions nav starts clean. Replace (not push) to avoid history
+  // spam. sort/dir stay out — they're view prefs, not deep-linkable filters.
+  useEffect(() => {
+    if (!ready) return;
+    const p = new URLSearchParams();
+    if (month) p.set("month", month);
+    if (catFilter) p.set("category", catFilter);
+    if (q) p.set("q", q);
+    if (vendor) p.set("vendor", vendor);
+    if (type) p.set("type", type);
+    if (account) p.set("account", account);
+    if (minAmount) p.set("minAmount", minAmount);
+    if (maxAmount) p.set("maxAmount", maxAmount);
+    if (recurring) p.set("recurring", recurring);
+    const qs = p.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [ready, month, catFilter, q, vendor, type, account, minAmount, maxAmount, recurring]);
+
   async function setCategory(id: number, categoryId: number | null) {
     setTxs((prev) =>
       prev.map((t) =>
@@ -187,6 +213,19 @@ export default function TransactionsPage() {
     } catch {
       toast("Couldn't save category — please try again", "error");
       setRefreshKey((k) => k + 1); // re-sync the optimistic update from the server
+    }
+  }
+
+  // Set/clear a transaction's free-text note. Empty clears it. Optimistic, with
+  // a server re-sync on failure (same pattern as setCategory).
+  async function saveNote(id: number, raw: string) {
+    const note = raw.trim() || null;
+    setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, note } : t)));
+    try {
+      await patchJson(`/api/transactions/${id}`, { note });
+    } catch {
+      toast("Couldn't save note — please try again", "error");
+      setRefreshKey((k) => k + 1);
     }
   }
 
@@ -702,7 +741,54 @@ export default function TransactionsPage() {
                         <span>· {t.account}</span>
                       </>
                     )}
+                    {/* Empty-note affordance lives INLINE in the meta row (like
+                        "edit date") so revealing it on hover never changes the
+                        row height — avoids list-wide jitter as the pointer moves. */}
+                    {!t.note && editingNoteId !== t.id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingNoteId(t.id);
+                        }}
+                        title="Add a note"
+                        className="hidden hover:text-[var(--foreground)] hover:underline group-hover:inline"
+                      >
+                        · + note
+                      </button>
+                    )}
                   </div>
+                  {/* A set note (or the editor) takes its own line below — that's
+                      persistent content, not a hover reveal, so it doesn't jitter. */}
+                  {editingNoteId === t.id ? (
+                    <input
+                      autoFocus
+                      defaultValue={t.note ?? ""}
+                      placeholder="What was this for?"
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => {
+                        saveNote(t.id, e.target.value);
+                        setEditingNoteId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") setEditingNoteId(null);
+                      }}
+                      className="mt-0.5 w-full max-w-md rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+                    />
+                  ) : t.note ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingNoteId(t.id);
+                      }}
+                      title="Edit note"
+                      className="mt-0.5 flex max-w-full items-baseline gap-1 text-left text-xs italic text-[var(--muted)] hover:text-[var(--foreground)]"
+                    >
+                      <span className="shrink-0 not-italic opacity-70">✎</span>
+                      <span className="truncate">{t.note}</span>
+                    </button>
+                  ) : null}
                     </>
                   )}
                 </div>

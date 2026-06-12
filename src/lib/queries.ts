@@ -653,6 +653,16 @@ export function setTransactionCategory(id: number, categoryId: number | null) {
     .run(categoryId, id);
 }
 
+// Per-transaction free-text note (e.g. what a generic Venmo charge was for).
+// null/empty clears it. Survives Plaid re-sync — the importer's upsert never
+// touches this column, like effectiveDate.
+export function setTransactionNote(id: number, note: string | null) {
+  const trimmed = note?.trim() || null;
+  getDb()
+    .prepare("UPDATE transactions SET note = ? WHERE id = ?")
+    .run(trimmed, id);
+}
+
 // Recategorize every transaction of a merchant (used when editing a recurring's
 // category on the Recurrings page). Returns the rows changed.
 export function setMerchantCategory(merchant: string, categoryId: number | null) {

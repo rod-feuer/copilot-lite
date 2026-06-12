@@ -20,6 +20,7 @@ export type Transaction = {
   excluded: 0 | 1; // mirrors Copilot's "excluded" + internal transfers; omitted from totals
   recurringId: number | null;
   source: string; // "seed" | "csv" | "mcp"
+  note: string | null; // free-text per-transaction memo (null = none)
   hash: string; // dedupe key
 };
 

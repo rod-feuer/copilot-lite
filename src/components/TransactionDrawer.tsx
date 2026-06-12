@@ -226,6 +226,12 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     const onDown = (e: MouseEvent) => {
       const el = e.target as Element | null;
       if (!el) return;
+      // An in-shelf control can remove the clicked element synchronously on
+      // mousedown (e.g. the combine picker closes its dropdown when you pick a
+      // vendor). By the time this bubbles to window the node is detached, so a
+      // contains() check would wrongly read it as an outside click and close the
+      // shelf. A disconnected target came from our own re-render — never close.
+      if (!el.isConnected) return;
       if (asideRef.current?.contains(el)) return;
       if (el.closest("[data-drawer-row]")) return;
       close();
