@@ -28,6 +28,7 @@ import {
   setBudget,
   getBudgets,
   getBudgetsFull,
+  setTransactionNote,
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
@@ -129,6 +130,30 @@ test("a vendor's alias reads from the canonical merchant, whichever descriptor o
     assert.equal(s.displayName, "Charleston's", `displayName must come from the canonical, via ${m}`);
     assert.equal(s.alias, "Charleston's", `alias must come from the canonical, via ${m}`);
   }
+});
+
+test("a per-transaction note is trimmed, isolated to its row, and cleared by whitespace", () => {
+  // WHY: a generic payment vendor (Venmo) covers many unrelated purchases. A note
+  // explaining one charge must attach to THAT transaction only — never bleed to
+  // the vendor's other rows (the whole point of a per-transaction memo).
+  tx("Venmo", { amount: -40, categoryId: CAT_EXC });
+  tx("Venmo", { amount: -25, categoryId: CAT_EXC });
+  const rows = listTransactions({});
+  const a = rows.find((r) => r.amount === -40)!;
+  const b = rows.find((r) => r.amount === -25)!;
+
+  setTransactionNote(a.id, "  basketball coaching for my son  ");
+  let after = listTransactions({});
+  assert.equal(
+    after.find((r) => r.id === a.id)!.note,
+    "basketball coaching for my son",
+    "note is saved trimmed"
+  );
+  assert.equal(after.find((r) => r.id === b.id)!.note, null, "the other Venmo row is untouched");
+
+  setTransactionNote(a.id, "   ");
+  after = listTransactions({});
+  assert.equal(after.find((r) => r.id === a.id)!.note, null, "whitespace-only clears the note");
 });
 
 test("display name resolves consistently in drawer and transactions list", () => {

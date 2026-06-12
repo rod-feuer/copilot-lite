@@ -3,6 +3,7 @@ import {
   setTransactionCategory,
   setTransactionEffectiveDate,
   setTransactionRecurringExcluded,
+  setTransactionNote,
 } from "@/lib/queries";
 import { detectRecurrings } from "@/lib/core";
 
@@ -21,6 +22,12 @@ export async function PATCH(
   if ("recurringExcluded" in body) {
     setTransactionRecurringExcluded(Number(id), !!body.recurringExcluded);
     detectRecurrings();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Set/clear the free-text note.
+  if ("note" in body) {
+    setTransactionNote(Number(id), body.note == null ? null : String(body.note));
     return NextResponse.json({ ok: true });
   }
 

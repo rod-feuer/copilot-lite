@@ -30,6 +30,7 @@ type Tx = {
   categoryColor: string | null;
   categoryIcon: string | null;
   categoryExcluded: number;
+  note: string | null;
 };
 
 type Cat = { id: number; name: string; color: string; icon: string; kind: string };
@@ -54,6 +55,7 @@ export default function TransactionsPage() {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Filters
@@ -187,6 +189,19 @@ export default function TransactionsPage() {
     } catch {
       toast("Couldn't save category — please try again", "error");
       setRefreshKey((k) => k + 1); // re-sync the optimistic update from the server
+    }
+  }
+
+  // Set/clear a transaction's free-text note. Empty clears it. Optimistic, with
+  // a server re-sync on failure (same pattern as setCategory).
+  async function saveNote(id: number, raw: string) {
+    const note = raw.trim() || null;
+    setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, note } : t)));
+    try {
+      await patchJson(`/api/transactions/${id}`, { note });
+    } catch {
+      toast("Couldn't save note — please try again", "error");
+      setRefreshKey((k) => k + 1);
     }
   }
 
@@ -703,6 +718,50 @@ export default function TransactionsPage() {
                       </>
                     )}
                   </div>
+                  {/* Per-transaction note: what a generic charge (e.g. a Venmo
+                      transfer) was actually for. Inline-editable; shown italic
+                      when set, a hover affordance when empty. */}
+                  {editingNoteId === t.id ? (
+                    <input
+                      autoFocus
+                      defaultValue={t.note ?? ""}
+                      placeholder="What was this for?"
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => {
+                        saveNote(t.id, e.target.value);
+                        setEditingNoteId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") setEditingNoteId(null);
+                      }}
+                      className="mt-0.5 w-full max-w-md rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+                    />
+                  ) : t.note ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingNoteId(t.id);
+                      }}
+                      title="Edit note"
+                      className="mt-0.5 flex max-w-full items-baseline gap-1 text-left text-xs italic text-[var(--muted)] hover:text-[var(--foreground)]"
+                    >
+                      <span className="shrink-0 not-italic opacity-70">✎</span>
+                      <span className="truncate">{t.note}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingNoteId(t.id);
+                      }}
+                      title="Add a note"
+                      className="mt-0.5 hidden text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:underline group-hover:inline-block"
+                    >
+                      + note
+                    </button>
+                  )}
                     </>
                   )}
                 </div>

@@ -40,6 +40,7 @@ function init(db: Database.Database) {
       excluded INTEGER NOT NULL DEFAULT 0,
       recurringId INTEGER REFERENCES recurrings(id),
       source TEXT NOT NULL DEFAULT 'seed',
+      note TEXT,
       hash TEXT NOT NULL UNIQUE
     );
 
@@ -102,6 +103,11 @@ function init(db: Database.Database) {
   // Migration: add `effectiveDate` override (the accounting date; null = use date).
   if (!cols.some((c) => c.name === "effectiveDate")) {
     db.exec("ALTER TABLE transactions ADD COLUMN effectiveDate TEXT");
+  }
+
+  // Migration: add a per-transaction `note` (a free-text memo; null = none).
+  if (!cols.some((c) => c.name === "note")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN note TEXT");
   }
 
   // Migration: add `excludeFromTotals` to categories created before it existed.
