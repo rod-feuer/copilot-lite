@@ -1142,6 +1142,24 @@ export function createCategory(c: {
     .run(c);
 }
 
+// Update a category's display attributes (icon/color/name). Only the keys
+// present in `patch` are changed; kind is fixed at creation and not editable.
+export function updateCategory(
+  id: number,
+  patch: { icon?: string; color?: string; name?: string }
+) {
+  const sets: string[] = [];
+  const vals: (string | number)[] = [];
+  if (patch.icon !== undefined) (sets.push("icon = ?"), vals.push(patch.icon));
+  if (patch.color !== undefined) (sets.push("color = ?"), vals.push(patch.color));
+  if (patch.name !== undefined) (sets.push("name = ?"), vals.push(patch.name));
+  if (!sets.length) return;
+  vals.push(id);
+  getDb()
+    .prepare(`UPDATE categories SET ${sets.join(", ")} WHERE id = ?`)
+    .run(...vals);
+}
+
 export function deleteCategory(id: number) {
   const db = getDb();
   db.prepare("UPDATE transactions SET categoryId = NULL WHERE categoryId = ?").run(id);

@@ -4,6 +4,7 @@ import {
   setBudget,
   deleteBudget,
   setCategoryExcluded,
+  updateCategory,
 } from "@/lib/queries";
 
 export const runtime = "nodejs";
@@ -29,6 +30,20 @@ export async function PATCH(
   // Toggle exclude-from-totals.
   if ("excludeFromTotals" in body) {
     setCategoryExcluded(Number(id), Boolean(body.excludeFromTotals));
+    return NextResponse.json({ ok: true });
+  }
+
+  // Edit display attributes (icon / color / name). Only sent keys are changed.
+  if ("icon" in body || "color" in body || "name" in body) {
+    const patch: { icon?: string; color?: string; name?: string } = {};
+    if ("icon" in body) patch.icon = String(body.icon).trim() || "🏷️";
+    if ("color" in body) patch.color = String(body.color).trim();
+    if ("name" in body) {
+      const name = String(body.name).trim();
+      if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+      patch.name = name;
+    }
+    updateCategory(Number(id), patch);
     return NextResponse.json({ ok: true });
   }
 
