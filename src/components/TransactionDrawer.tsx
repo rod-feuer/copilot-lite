@@ -275,10 +275,19 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // (used when the user picks a custom name). The component resolves which is the
   // survivor from the name they chose, so "canonical" is never surfaced. Close the
   // shelf afterward — its target may now be the folded-away descriptor.
-  async function combineMerchant(loser: string, primary: string, alias?: string) {
+  async function combineMerchant(
+    loser: string,
+    primary: string,
+    alias?: string,
+    categoryId?: number | null
+  ) {
     try {
       await postJson("/api/recurrings/link", { alias: loser, primary });
       if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
+      // Unify the category when the user chose to, so a combined vendor isn't
+      // left split across categories. Recategorize covers all linked descriptors.
+      if (categoryId != null)
+        await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId });
       toast("Vendors combined", "success");
       onChange.current?.();
       close();
@@ -631,7 +640,7 @@ function MerchantBody({
   ) => void;
   amountHint?: number | null;
   merchants: string[];
-  onCombine: (loser: string, primary: string, alias?: string) => void;
+  onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
 }) {
   const [combining, setCombining] = useState(false);
   const d = data.recurringDetail;
@@ -742,7 +751,14 @@ function MerchantBody({
         </div>
         {combining && (
           <CombineControl
-            current={{ merchant: data.merchant, name: data.displayName, count: data.count }}
+            current={{
+              merchant: data.merchant,
+              name: data.displayName,
+              count: data.count,
+              categoryId: data.categoryId,
+              categoryName: data.categoryName,
+            }}
+            cats={cats}
             merchants={merchants}
             onCombine={onCombine}
             onClose={() => setCombining(false)}
@@ -1085,27 +1101,40 @@ function ShelfRow({
 // NAME — which silently determines the survivor (canonical), so the user never
 // reasons about "primary". Defaults to the cleaner name; a preview shows the
 // combined charge count; and the merge is reversible (split via the header).
+type CombineVendor = {
+  merchant: string;
+  name: string;
+  count: number;
+  categoryId: number | null;
+  categoryName: string | null;
+};
+
 function CombineControl({
   current,
+  cats,
   merchants,
   onCombine,
   onClose,
 }: {
-  current: { merchant: string; name: string; count: number };
+  current: CombineVendor;
+  cats: Cat[];
   merchants: string[];
-  onCombine: (loser: string, primary: string, alias?: string) => void;
+  onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
   onClose: () => void;
 }) {
   const [pick, setPick] = useState("");
-  const [other, setOther] = useState<{ merchant: string; name: string; count: number } | null>(null);
+  const [other, setOther] = useState<CombineVendor | null>(null);
   const [choice, setChoice] = useState<"current" | "other" | "custom">("current");
   const [custom, setCustom] = useState("");
+  // The category to apply to all the combined charges, or "asis" to leave them.
+  const [unifyCat, setUnifyCat] = useState<number | "asis">("asis");
 
   const reset = () => {
     setPick("");
     setOther(null);
     setCustom("");
     setChoice("current");
+    setUnifyCat("asis");
     onClose();
   };
 
@@ -1113,25 +1142,41 @@ function CombineControl({
   // tend to be long, multi-word, and id-laden). Returns true if `a` is cleaner.
   const score = (s: string) => s.trim().split(/\s+/).length * 100 + s.length + (/\d/.test(s) ? 50 : 0);
   const currentCleaner = () => !other || score(current.name) <= score(other.name);
+  // Categories differ → offer to unify them (a combined vendor shouldn't stay
+  // split across categories).
+  const categoriesDiffer = !!other && current.categoryId !== other.categoryId;
 
   async function chooseOther() {
     const m = pick.trim();
     if (!m || m === current.merchant || !merchants.includes(m)) return;
     const o = await fetch(`/api/merchant?name=${encodeURIComponent(m)}`).then((r) => r.json());
-    setOther({ merchant: m, name: o.displayName as string, count: o.count as number });
-    setChoice(score(current.name) <= score(o.displayName) ? "current" : "other");
+    const next: CombineVendor = {
+      merchant: m,
+      name: o.displayName as string,
+      count: o.count as number,
+      categoryId: (o.categoryId ?? null) as number | null,
+      categoryName: (o.categoryName ?? null) as string | null,
+    };
+    setOther(next);
+    const curCleaner = score(current.name) <= score(next.name);
+    setChoice(curCleaner ? "current" : "other");
+    // Default the unify target to the survivor's category, else the other's.
+    const survivor = curCleaner ? current.categoryId : next.categoryId;
+    const fallback = curCleaner ? next.categoryId : current.categoryId;
+    setUnifyCat(survivor ?? fallback ?? "asis");
   }
 
   function combine() {
     if (!other) return;
-    if (choice === "current") onCombine(other.merchant, current.merchant);
-    else if (choice === "other") onCombine(current.merchant, other.merchant);
+    const cat = categoriesDiffer && unifyCat !== "asis" ? unifyCat : undefined;
+    if (choice === "current") onCombine(other.merchant, current.merchant, undefined, cat);
+    else if (choice === "other") onCombine(current.merchant, other.merchant, undefined, cat);
     else {
       const name = custom.trim();
       if (!name) return;
       const primary = currentCleaner() ? current.merchant : other.merchant;
       const loser = primary === current.merchant ? other.merchant : current.merchant;
-      onCombine(loser, primary, name);
+      onCombine(loser, primary, name, cat);
     }
     reset();
   }
@@ -1196,6 +1241,29 @@ function CombineControl({
               className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5"
             />
           </label>
+          {categoriesDiffer && (
+            <div className="flex flex-col gap-1 border-t border-dashed border-[var(--border)] pt-2">
+              <span className="text-[var(--muted)]">
+                Different categories: {current.categoryName ?? "Uncategorized"} ·{" "}
+                {other.categoryName ?? "Uncategorized"}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-[var(--muted)]">Set all charges to</span>
+                <select
+                  value={unifyCat === "asis" ? "asis" : String(unifyCat)}
+                  onChange={(e) => setUnifyCat(e.target.value === "asis" ? "asis" : Number(e.target.value))}
+                  className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-1"
+                >
+                  {cats.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon} {c.name}
+                    </option>
+                  ))}
+                  <option value="asis">Leave as-is</option>
+                </select>
+              </div>
+            </div>
+          )}
           <div className="text-[var(--muted)]">
             {current.count + other.count} charges combined · you can split them apart anytime
           </div>
