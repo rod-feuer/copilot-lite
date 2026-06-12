@@ -56,6 +56,10 @@ export default function TransactionsPage() {
   const [txs, setTxs] = useState<Tx[]>([]);
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  // Which row's category <select> has its full option list mounted. At rest a
+  // row renders only its current value (1 option), not all ~27 categories — so a
+  // long month builds ~1 option/row instead of ~28, the page's main render cost.
+  const [activeCatSelect, setActiveCatSelect] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Filters
@@ -818,6 +822,13 @@ export default function TransactionsPage() {
                 <select
                   value={t.categoryId ?? ""}
                   onClick={(e) => e.stopPropagation()}
+                  // Mount the full option list before the native menu opens
+                  // (mousedown/focus both fire first); React flushes the update
+                  // synchronously for these discrete events, so the options are
+                  // present when the dropdown appears.
+                  onMouseDown={() => setActiveCatSelect(t.id)}
+                  onFocus={() => setActiveCatSelect(t.id)}
+                  onBlur={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
                   onChange={(e) =>
                     setCategory(t.id, e.target.value ? Number(e.target.value) : null)
                   }
@@ -833,12 +844,24 @@ export default function TransactionsPage() {
                       : undefined
                   }
                 >
-                  <option value="">Uncategorized</option>
-                  {cats.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.icon} {c.name}
+                  {activeCatSelect === t.id ? (
+                    <>
+                      <option value="">Uncategorized</option>
+                      {cats.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.icon} {c.name}
+                        </option>
+                      ))}
+                    </>
+                  ) : t.categoryId != null ? (
+                    // At rest: just the current value, so the pill shows correctly.
+                    <option value={t.categoryId}>
+                      {t.categoryIcon ? `${t.categoryIcon} ` : ""}
+                      {t.categoryName}
                     </option>
-                  ))}
+                  ) : (
+                    <option value="">Uncategorized</option>
+                  )}
                 </select>
                 )}
                 <div
