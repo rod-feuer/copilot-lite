@@ -1364,8 +1364,11 @@ function CadenceCorrection({
         onChange={(e) => onSave(e.target.value === "__auto" ? null : e.target.value)}
         className="btn-ghost w-full cursor-pointer text-sm"
       >
+        {/* The "auto" row shows what detection currently reads. "detected" is
+            redundant with the AUTO tag above and overflowed the half-width
+            select (e.g. "Auto · detected Every 6 months"), so it's dropped. */}
         <option value="__auto">
-          Auto{detected ? ` · detected ${CADENCE_LABELS[detected] ?? detected}` : ""}
+          Auto{detected ? ` · ${CADENCE_LABELS[detected] ?? detected}` : ""}
         </option>
         {Object.entries(CADENCE_LABELS).map(([v, label]) => (
           <option key={v} value={v}>
