@@ -17,6 +17,7 @@ import { postJson, patchJson } from "@/lib/http";
 import { usd, shortDate, shortDatePad, monthDayYear } from "@/lib/format";
 
 type Cat = { id: number; name: string; color: string; icon: string };
+type Vendor = { merchant: string; displayName: string };
 type Recent = {
   id: number;
   date: string;
@@ -119,7 +120,8 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [back, setBack] = useState<Target | null>(null);
   const [amountHint, setAmountHint] = useState<number | null>(null);
   const [cats, setCats] = useState<Cat[]>([]);
-  const [merchants, setMerchants] = useState<string[]>([]); // for the Combine picker
+  // Vendors (one per canonical merchant, with display name) for the Combine picker.
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const onChange = useRef<(() => void) | undefined>(undefined);
   const asideRef = useRef<HTMLElement>(null);
   const toast = useToast();
@@ -128,9 +130,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     fetch("/api/categories")
       .then((r) => r.json())
       .then(setCats);
-    fetch("/api/merchants")
+    fetch("/api/vendors")
       .then((r) => r.json())
-      .then((rows: { merchant: string }[]) => setMerchants(rows.map((r) => r.merchant)));
+      .then(setVendors);
   }, []);
 
   const fetchMerchant = useCallback((m: string) => {
@@ -404,7 +406,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onToggleRecurring={toggleRecurring}
                 onSaveSettings={saveMerchantSettings}
                 amountHint={amountHint}
-                merchants={merchants}
+                vendors={vendors}
                 onCombine={combineMerchant}
               />
             ) : target.kind === "category" && cData ? (
@@ -627,7 +629,7 @@ function MerchantBody({
   onToggleRecurring,
   onSaveSettings,
   amountHint,
-  merchants,
+  vendors,
   onCombine,
 }: {
   data: Summary;
@@ -639,7 +641,7 @@ function MerchantBody({
     message: string
   ) => void;
   amountHint?: number | null;
-  merchants: string[];
+  vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
 }) {
   const [combining, setCombining] = useState(false);
@@ -759,7 +761,7 @@ function MerchantBody({
               categoryName: data.categoryName,
             }}
             cats={cats}
-            merchants={merchants}
+            vendors={vendors}
             onCombine={onCombine}
             onClose={() => setCombining(false)}
           />
@@ -1112,13 +1114,13 @@ type CombineVendor = {
 function CombineControl({
   current,
   cats,
-  merchants,
+  vendors,
   onCombine,
   onClose,
 }: {
   current: CombineVendor;
   cats: Cat[];
-  merchants: string[];
+  vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
   onClose: () => void;
 }) {
@@ -1140,11 +1142,17 @@ function CombineControl({
     onClose();
   };
 
-  // Live matches for the custom picker dropdown (native <datalist> truncates long
-  // names at a browser-controlled width/font; this renders at the panel width).
+  // Live matches for the custom picker dropdown — one row per vendor, shown by
+  // friendly display name (filters on the name or the raw descriptor).
   const q = pick.trim().toLowerCase();
   const matches = q
-    ? merchants.filter((m) => m !== current.merchant && m.toLowerCase().includes(q)).slice(0, 50)
+    ? vendors
+        .filter(
+          (v) =>
+            v.merchant !== current.merchant &&
+            (v.displayName.toLowerCase().includes(q) || v.merchant.toLowerCase().includes(q))
+        )
+        .slice(0, 50)
     : [];
 
   // Cleaner = fewer words, then shorter, with a digit penalty (bank descriptors
@@ -1156,8 +1164,9 @@ function CombineControl({
   const categoriesDiffer = !!other && current.categoryId !== other.categoryId;
 
   async function chooseOther(merchant?: string) {
-    const m = (merchant ?? pick).trim();
-    if (!m || m === current.merchant || !merchants.includes(m)) return;
+    // A clicked row passes its canonical merchant; Enter/Next takes the top match.
+    const m = merchant ?? matches[0]?.merchant;
+    if (!m || m === current.merchant || !vendors.some((v) => v.merchant === m)) return;
     setShowList(false);
     const o = await fetch(`/api/merchant?name=${encodeURIComponent(m)}`).then((r) => r.json());
     const next: CombineVendor = {
@@ -1211,18 +1220,18 @@ function CombineControl({
             />
             {showList && matches.length > 0 && (
               <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-lg border border-[var(--border)] bg-card py-1 shadow-lg">
-                {matches.map((m) => (
-                  <li key={m}>
+                {matches.map((v) => (
+                  <li key={v.merchant}>
                     <button
                       // mousedown (not click) + preventDefault so selecting fires
                       // before the input's blur closes the list.
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        chooseOther(m);
+                        chooseOther(v.merchant);
                       }}
                       className="block w-full px-2 py-1.5 text-left leading-snug hover:bg-[var(--background)]"
                     >
-                      {m}
+                      {v.displayName}
                     </button>
                   </li>
                 ))}
