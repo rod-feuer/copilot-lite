@@ -76,6 +76,30 @@ export function distinctMerchants(): { merchant: string; count: number }[] {
     .all() as { merchant: string; count: number }[];
 }
 
+// One entry per VENDOR (canonical merchant, descriptors folded together) with its
+// friendly display name — for the combine picker, so it lists "Central Indiana
+// Academy of Dance" once instead of every raw bank descriptor.
+export function distinctVendors(): { merchant: string; displayName: string; count: number }[] {
+  const db = getDb();
+  const links = getMerchantLinks();
+  const settings = getRecurringSettings();
+  const rows = db
+    .prepare("SELECT merchant, COUNT(*) AS count FROM transactions GROUP BY merchant")
+    .all() as { merchant: string; count: number }[];
+  const byCanon = new Map<string, number>();
+  for (const r of rows) {
+    const canon = canonicalMerchant(r.merchant, links);
+    byCanon.set(canon, (byCanon.get(canon) ?? 0) + r.count);
+  }
+  return [...byCanon.entries()]
+    .map(([merchant, count]) => ({
+      merchant,
+      displayName: merchantDisplayName(merchant, settings, links),
+      count,
+    }))
+    .sort((a, b) => b.count - a.count || a.displayName.localeCompare(b.displayName));
+}
+
 export type MatchRule = {
   matchMode: "exact" | "contains";
   matchText: string | null;
