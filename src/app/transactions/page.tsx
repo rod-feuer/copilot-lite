@@ -2,16 +2,13 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Shell from "@/components/Shell";
-import {
-  MonthPicker,
-  ImportButton,
-  CategorizeButton,
-  CleanupNamesButtons,
-} from "@/components/Actions";
+import { MonthPicker, ImportButton } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { MergeQueue } from "@/components/MergeQueue";
+import { NameCleanupQueue } from "@/components/NameCleanupQueue";
+import { CategorizeQueue } from "@/components/CategorizeQueue";
 import { SearchBox } from "@/components/SearchBox";
 import { postJson, patchJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth } from "@/lib/format";
@@ -326,10 +323,6 @@ export default function TransactionsPage() {
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={setMonth} allowAll />
-          <CleanupNamesButtons
-            onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))}
-          />
-          <CategorizeButton onDone={() => setRefreshKey((k) => k + 1)} />
           <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
         </>
       }
@@ -469,6 +462,10 @@ export default function TransactionsPage() {
           <option value="merchant-asc">Merchant A–Z</option>
         </select>
       </div>
+
+      <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+
+      <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
       <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
