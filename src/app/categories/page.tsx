@@ -18,6 +18,7 @@ type Cat = {
   txCount: number;
   budget: number | null;
   recurringBaseline: number;
+  suggestedBudget: number;
   excludeFromTotals: 0 | 1;
 };
 
@@ -39,6 +40,9 @@ export default function CategoriesPage() {
   // Default to budget pressure so the categories nearest/over their budget rise
   // to the top — the thing a budget exists to surface. "spent" is the old order.
   const [sort, setSort] = useState<"pressure" | "spent" | "name">("pressure");
+  // Attention filter, driven by clicking the summary counts: narrow the expense
+  // list to the categories that need action (over budget / not yet budgeted).
+  const [filter, setFilter] = useState<"over" | "unbudgeted" | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const toast = useToast();
 
@@ -141,6 +145,13 @@ export default function CategoriesPage() {
   const expense = sortCats(
     cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals)
   );
+  // The attention filter only narrows expenses (where budgets live).
+  const shownExpense =
+    filter === "over"
+      ? expense.filter((c) => c.budget != null && c.total > c.budget)
+      : filter === "unbudgeted"
+      ? expense.filter((c) => c.budget == null)
+      : expense;
   const income = sortCats(
     cats.filter((c) => c.kind === "income" && !c.excludeFromTotals)
   );
@@ -161,7 +172,11 @@ export default function CategoriesPage() {
         </>
       }
     >
-      <BudgetSummary cats={cats} />
+      <BudgetSummary
+        cats={cats}
+        filter={filter}
+        onFilter={(f) => setFilter((cur) => (cur === f ? null : f))}
+      />
 
       {showAddForm && (
       <div className="card mb-5 p-4">
@@ -231,26 +246,29 @@ export default function CategoriesPage() {
       </div>
 
       <Group
-        title="Expenses"
+        title={filter === "over" ? "Over budget" : filter === "unbudgeted" ? "Not budgeted" : "Expenses"}
         month={month}
-        cats={expense}
+        cats={shownExpense}
         onDelete={remove}
         onBudget={saveBudget}
         onToggleExclude={toggleExclude}
+        onChange={() => load(month)}
         confirmingId={confirmingDelete}
       />
-      {income.length > 0 && (
+      {/* While an attention filter is active, hide unrelated sections to focus. */}
+      {!filter && income.length > 0 && (
         <div className="mt-5">
           <Group
             title="Income"
             month={month}
             cats={income}
             onDelete={remove}
+            onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
         </div>
       )}
-      {excluded.length > 0 && (
+      {!filter && excluded.length > 0 && (
         <div className="mt-5">
           <Group
             title="Excluded from totals"
@@ -259,6 +277,7 @@ export default function CategoriesPage() {
             cats={excluded}
             onDelete={remove}
             onToggleExclude={toggleExclude}
+            onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
         </div>
@@ -271,7 +290,15 @@ export default function CategoriesPage() {
 // plus the two things that need attention (categories over budget, categories
 // with no budget). Scoped to budgeted expense categories so the bar compares
 // like-for-like; unbudgeted spend is surfaced separately rather than distorting it.
-function BudgetSummary({ cats }: { cats: Cat[] }) {
+function BudgetSummary({
+  cats,
+  filter,
+  onFilter,
+}: {
+  cats: Cat[];
+  filter: "over" | "unbudgeted" | null;
+  onFilter: (f: "over" | "unbudgeted") => void;
+}) {
   const expense = cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals);
   if (expense.length === 0) return null;
   const budgeted = expense.filter((c) => c.budget != null);
@@ -294,7 +321,12 @@ function BudgetSummary({ cats }: { cats: Cat[] }) {
   }
 
   const spent = budgeted.reduce((s, c) => s + c.total, 0);
-  const overCount = budgeted.filter((c) => c.total > (c.budget ?? 0)).length;
+  const overCats = budgeted.filter((c) => c.total > (c.budget ?? 0));
+  const overCount = overCats.length;
+  // Name the over-budget categories when there are only a couple — far more
+  // useful than a bare count; fall back to a count when there are several.
+  const overLabel =
+    overCount <= 2 ? `${overCats.map((c) => c.name).join(" & ")} over budget` : `${overCount} categories over budget`;
   const remaining = budget - spent;
   const over = remaining < 0;
   const pct = Math.min((spent / budget) * 100, 100);
@@ -326,15 +358,40 @@ function BudgetSummary({ cats }: { cats: Cat[] }) {
           style={{ width: `${pct}%`, background: over ? "#e11d48" : "var(--accent)" }}
         />
       </div>
-      <div className="mt-2.5 text-xs text-[var(--muted)]">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-xs">
         {overCount > 0 ? (
-          <span className="font-medium text-rose-600">
-            {overCount} categor{overCount === 1 ? "y" : "ies"} over budget
-          </span>
+          <button
+            onClick={() => onFilter("over")}
+            className={`font-medium text-rose-600 hover:underline ${filter === "over" ? "underline" : ""}`}
+            title="Show the categories over budget"
+          >
+            {overLabel}
+          </button>
         ) : (
-          <span>On track — nothing over budget</span>
+          <span className="text-[var(--muted)]">On track — nothing over budget</span>
         )}
-        {unbudgeted.length > 0 && <span> · {unbudgeted.length} not budgeted</span>}
+        {unbudgeted.length > 0 && (
+          <>
+            <span className="text-[var(--muted)]">·</span>
+            <button
+              onClick={() => onFilter("unbudgeted")}
+              className={`text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
+                filter === "unbudgeted" ? "text-[var(--foreground)] underline" : ""
+              }`}
+              title="Show the categories with no budget, to set one"
+            >
+              {unbudgeted.length} not budgeted
+            </button>
+          </>
+        )}
+        {filter && (
+          <button
+            onClick={() => onFilter(filter)}
+            className="ml-1 text-[var(--muted)] hover:text-[var(--foreground)]"
+          >
+            ✕ clear
+          </button>
+        )}
       </div>
     </div>
   );
@@ -348,6 +405,7 @@ function Group({
   onDelete,
   onBudget,
   onToggleExclude,
+  onChange,
   confirmingId,
 }: {
   title: string;
@@ -357,6 +415,9 @@ function Group({
   onDelete: (c: Cat) => void;
   onBudget?: (id: number, amount: number | null) => void;
   onToggleExclude?: (id: number, exclude: boolean) => void;
+  // Reload the list when a transaction is edited inside the category shelf, so
+  // totals/budgets update in place instead of needing a manual refresh.
+  onChange?: () => void;
   confirmingId?: number | null;
 }) {
   const openCategory = useCategoryShelf();
@@ -385,7 +446,7 @@ function Group({
             <div
               key={c.id}
               data-drawer-row
-              onClick={() => openCategory(c.id, month)}
+              onClick={() => openCategory(c.id, month, { onChange })}
               className="group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)]"
             >
               <span
@@ -416,6 +477,7 @@ function Group({
                         <BudgetInput
                           key={`b-${c.id}-${c.budget ?? "none"}`}
                           budget={c.budget}
+                          suggested={c.suggestedBudget}
                           onSave={(v) => onBudget(c.id, v)}
                         />
                       </span>
@@ -530,9 +592,11 @@ function Group({
 // budget status are shown by the row's bar + caption, not here.
 function BudgetInput({
   budget,
+  suggested = 0,
   onSave,
 }: {
   budget: number | null;
+  suggested?: number;
   onSave: (amount: number | null) => void;
 }) {
   function commit(raw: string) {
@@ -541,8 +605,13 @@ function BudgetInput({
     const n = Number(t.replace(/[^0-9.]/g, ""));
     if (Number.isFinite(n) && n >= 0 && n !== budget) onSave(n);
   }
+  // No budget yet, but we have a typical-spend figure → offer it as a single
+  // one-tap chip ("Use $20") rather than stuffing the number into the input
+  // (suggest, you confirm). The input stays empty so you can type your own. The
+  // chip lives in a fixed-width slot that's reserved even when there's no
+  // suggestion, so the "—"/amount columns line up across all unbudgeted rows.
   return (
-    <span className="inline-flex items-baseline text-[var(--muted)]">
+    <span className="inline-flex items-baseline gap-1.5 text-[var(--muted)]">
       of&nbsp;$
       <input
         defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
@@ -556,6 +625,22 @@ function BudgetInput({
         title="Monthly budget"
         className="w-14 rounded bg-transparent text-right font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
       />
+      {budget === null && (
+        <span className="flex w-20 shrink-0 justify-end">
+          {suggested > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSave(suggested);
+              }}
+              title={`Set this month's budget to your ~$${suggested.toLocaleString("en-US")}/mo average`}
+              className="whitespace-nowrap rounded-md bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
+            >
+              Use ${suggested.toLocaleString("en-US")}
+            </button>
+          )}
+        </span>
+      )}
     </span>
   );
 }
