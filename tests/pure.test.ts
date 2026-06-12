@@ -3,6 +3,23 @@ import assert from "node:assert/strict";
 import { normalizeMerchant } from "../src/lib/merchant";
 import { classifyCadence, addCadence, txHash } from "../src/lib/core";
 import { canonicalMerchant } from "../src/lib/queries";
+import { CATEGORY_EMOJIS } from "../src/lib/emoji";
+
+test("CATEGORY_EMOJIS are unique and keyword-searchable", () => {
+  // Duplicate chars would collide React keys in the picker grid; uppercase
+  // keywords would never match the lowercased search query.
+  const chars = CATEGORY_EMOJIS.map((e) => e.char);
+  assert.equal(new Set(chars).size, chars.length, "no duplicate emoji");
+  for (const e of CATEGORY_EMOJIS) {
+    assert.ok(e.keywords.trim().length > 0, `${e.char} must carry keywords`);
+    assert.equal(e.keywords, e.keywords.toLowerCase(), "keywords must be lowercase");
+  }
+  // A representative search resolves to the expected glyph.
+  assert.ok(
+    CATEGORY_EMOJIS.some((e) => e.keywords.includes("car") && e.char === "🚗"),
+    "searching 'car' surfaces 🚗"
+  );
+});
 
 test("normalizeMerchant strips wallet prefixes, ids, dates; title-cases", () => {
   assert.equal(normalizeMerchant("Aplpay Target"), "Target");
