@@ -458,7 +458,11 @@ export function merchantSummary(merchant: string) {
   // the automatic first-2-token key-rollups have no link to remove.
   const links = getMerchantLinks();
   const settings = getRecurringSettings();
-  const sett = settings[merchant] ?? null;
+  // Per-vendor settings (alias, expected amount, cadence) live on the canonical
+  // merchant, so they read consistently no matter which descriptor opened the
+  // shelf. Keying on the raw `merchant` here split the alias from the displayed
+  // name when the shelf was opened on a folded-in variant.
+  const sett = settings[canonicalMerchant(merchant, links)] ?? null;
   const variantCounts = db
     .prepare(`SELECT merchant, COUNT(*) n FROM transactions WHERE merchant IN (${ph}) GROUP BY merchant`)
     .all(...variants) as { merchant: string; n: number }[];
