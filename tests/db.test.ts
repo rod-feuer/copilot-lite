@@ -13,7 +13,13 @@ import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { getDb, migrateMerchants } from "../src/lib/db";
 import { detectRecurrings } from "../src/lib/core";
-import { recurringsForMonth, linkMerchant, setRecurringSetting } from "../src/lib/queries";
+import {
+  recurringsForMonth,
+  linkMerchant,
+  setRecurringSetting,
+  deleteCategory,
+  categoriesWithTotals,
+} from "../src/lib/queries";
 import { applyNameCleanup, undoRenormalizeMerchants } from "../src/lib/db";
 import { nameCleanupSuggestions } from "../src/lib/nameCleanup";
 import { categorizeSuggestions, applyCategorization, dismissCategorize } from "../src/lib/categorizeSuggest";
@@ -77,6 +83,44 @@ test("a forced plan-change recurring uses the current cadence and price, not the
   assert.equal(r!.cadence, "yearly", "current rhythm is annual, not the median quarterly");
   assert.equal(r!.avgAmount, -69.99, "current price, not the $41.49 mean");
   assert.equal(r!.nextDate, "2027-03-07", "next due a year after the last charge");
+});
+
+test("budget suggestion is per-active-month, not /12 (a $259 bill seen once suggests $259)", () => {
+  const db = getDb();
+  const catId = Number(
+    db.prepare("INSERT INTO categories (name,color,icon,kind) VALUES ('Premiums','#888','🛡️','expense')").run()
+      .lastInsertRowid
+  );
+  const month = new Date().toISOString().slice(0, 7); // within the trailing window
+  db.prepare(
+    "INSERT INTO transactions (date,merchant,amount,account,source,hash,categoryId) VALUES (?,?,?,?,?,?,?)"
+  ).run(`${month}-15`, "Acme Life", -259, "Checking", "prem1", "prem1", catId);
+  const c = categoriesWithTotals(month).find((x) => x.id === catId)!;
+  assert.equal(c.suggestedBudget, 259, "one $259 active month suggests $259, not $259/12");
+});
+
+test("deleting a category clears a recurring that referenced it (FK no longer blocks the delete)", () => {
+  const db = getDb();
+  const catId = Number(
+    db.prepare("INSERT INTO categories (name,color,icon,kind) VALUES ('Temp Cat','#888','🏷️','expense')").run()
+      .lastInsertRowid
+  );
+  // A recurring pinned to it — the foreign key that used to make the delete fail.
+  db.prepare(
+    "INSERT INTO recurrings (merchant,categoryId,avgAmount,cadence,lastDate,nextDate,count) VALUES ('X',?,-10,'monthly','2026-01-01','2026-02-01',3)"
+  ).run(catId);
+  assert.doesNotThrow(() => deleteCategory(catId), "FK no longer blocks the delete");
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) c FROM categories WHERE id=?").get(catId) as { c: number }).c,
+    0,
+    "category is removed"
+  );
+  assert.equal(
+    (db.prepare("SELECT categoryId FROM recurrings WHERE merchant='X'").get() as { categoryId: number | null })
+      .categoryId,
+    null,
+    "the recurring is cleared to uncategorized"
+  );
 });
 
 test("category suggestions: proposes from the vendor's history, applies (fills + learns), and dismiss hides it", () => {

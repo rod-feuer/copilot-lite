@@ -103,7 +103,11 @@ export default function CategoriesPage() {
       return;
     }
     setConfirmingDelete(null);
-    await fetch(`/api/categories/${c.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/categories/${c.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      toast(`Couldn't delete "${c.name}" — please try again`, "error");
+      return;
+    }
     toast(
       `Deleted "${c.name}" · ${c.txCount} transaction${
         c.txCount === 1 ? "" : "s"
@@ -150,7 +154,7 @@ export default function CategoriesPage() {
     filter === "over"
       ? expense.filter((c) => c.budget != null && c.total > c.budget)
       : filter === "unbudgeted"
-      ? expense.filter((c) => c.budget == null)
+      ? expense.filter((c) => c.budget == null && c.name !== "Uncategorized")
       : expense;
   const income = sortCats(
     cats.filter((c) => c.kind === "income" && !c.excludeFromTotals)
@@ -302,7 +306,9 @@ function BudgetSummary({
   const expense = cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals);
   if (expense.length === 0) return null;
   const budgeted = expense.filter((c) => c.budget != null);
-  const unbudgeted = expense.filter((c) => c.budget == null);
+  // "Uncategorized" is a catch-all, not a real budget line — don't count it as
+  // needing a budget.
+  const unbudgeted = expense.filter((c) => c.budget == null && c.name !== "Uncategorized");
   const budget = budgeted.reduce((s, c) => s + (c.budget ?? 0), 0);
 
   if (budget === 0) {
@@ -472,7 +478,7 @@ function Group({
                     >
                       {usd(c.total, { cents: false })}
                     </span>
-                    {onBudget && (
+                    {onBudget && c.name !== "Uncategorized" && (
                       <span onClick={(e) => e.stopPropagation()}>
                         <BudgetInput
                           key={`b-${c.id}-${c.budget ?? "none"}`}
