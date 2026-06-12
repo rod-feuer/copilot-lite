@@ -29,6 +29,7 @@ import {
   getBudgets,
   getBudgetsFull,
   setTransactionNote,
+  updateCategory,
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
@@ -154,6 +155,34 @@ test("a per-transaction note is trimmed, isolated to its row, and cleared by whi
   setTransactionNote(a.id, "   ");
   after = listTransactions({});
   assert.equal(after.find((r) => r.id === a.id)!.note, null, "whitespace-only clears the note");
+});
+
+test("updateCategory changes only the attributes given, never clobbering the rest", () => {
+  // WHY: setting an icon on an existing category (the only post-creation edit)
+  // must not silently reset its color or name — a partial PATCH stays partial.
+  const id = addCat("Cody"); // addCat seeds color "#888", icon "•"
+  const read = () =>
+    getDb().prepare("SELECT name, icon, color FROM categories WHERE id = ?").get(id) as {
+      name: string;
+      icon: string;
+      color: string;
+    };
+
+  updateCategory(id, { icon: "🏀" });
+  let c = read();
+  assert.equal(c.icon, "🏀", "icon updated");
+  assert.equal(c.color, "#888", "color untouched when only icon changes");
+  assert.equal(c.name, "Cody", "name untouched");
+
+  updateCategory(id, { color: "#ef4444" });
+  c = read();
+  assert.equal(c.color, "#ef4444", "color updated");
+  assert.equal(c.icon, "🏀", "icon retained across a later color edit");
+
+  updateCategory(id, {}); // empty patch is a no-op, not a wipe
+  c = read();
+  assert.equal(c.icon, "🏀");
+  assert.equal(c.color, "#ef4444");
 });
 
 test("display name resolves consistently in drawer and transactions list", () => {

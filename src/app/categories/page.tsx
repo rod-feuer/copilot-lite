@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEvent, useCallback, useEffect, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
@@ -147,6 +147,16 @@ export default function CategoriesPage() {
     load(month);
   }
 
+  // Edit a category's icon and/or color (the appearance of its row badge).
+  async function saveAppearance(id: number, patch: { icon?: string; color?: string }) {
+    await fetch(`/api/categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    load(month);
+  }
+
   // Budget pressure: fraction of budget spent. Unbudgeted categories have no
   // pressure, so they sort below budgeted ones (and among themselves by spend).
   const pressure = (c: Cat) => (c.budget && c.budget > 0 ? budgetSpent(c) / c.budget : -1);
@@ -268,6 +278,7 @@ export default function CategoriesPage() {
         onDelete={remove}
         onBudget={saveBudget}
         onToggleExclude={toggleExclude}
+        onEditAppearance={saveAppearance}
         onChange={() => load(month)}
         confirmingId={confirmingDelete}
       />
@@ -279,6 +290,7 @@ export default function CategoriesPage() {
             month={month}
             cats={income}
             onDelete={remove}
+            onEditAppearance={saveAppearance}
             onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
@@ -293,6 +305,7 @@ export default function CategoriesPage() {
             cats={excluded}
             onDelete={remove}
             onToggleExclude={toggleExclude}
+            onEditAppearance={saveAppearance}
             onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
@@ -436,6 +449,7 @@ function Group({
   onDelete,
   onBudget,
   onToggleExclude,
+  onEditAppearance,
   onChange,
   confirmingId,
 }: {
@@ -446,6 +460,7 @@ function Group({
   onDelete: (c: Cat) => void;
   onBudget?: (id: number, amount: number | null, period: "monthly" | "annual") => void;
   onToggleExclude?: (id: number, exclude: boolean) => void;
+  onEditAppearance?: (id: number, patch: { icon?: string; color?: string }) => void;
   // Reload the list when a transaction is edited inside the category shelf, so
   // totals/budgets update in place instead of needing a manual refresh.
   onChange?: () => void;
@@ -486,12 +501,11 @@ function Group({
               onClick={() => openCategory(c.id, month, { onChange })}
               className="group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)]"
             >
-              <span
-                className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
-                style={{ background: c.color + "22" }}
-              >
-                {c.icon}
-              </span>
+              <CategoryBadge
+                icon={c.icon}
+                color={c.color}
+                onSave={onEditAppearance ? (patch) => onEditAppearance(c.id, patch) : undefined}
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="truncate text-sm font-medium">{c.name}</span>
@@ -627,6 +641,94 @@ function Group({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// The category's round icon badge. When editable (onSave given), clicking it
+// opens a small popover to pick an emoji and a color — the only place to set a
+// category's appearance after creation. Read-only when onSave is absent.
+function CategoryBadge({
+  icon,
+  color,
+  onSave,
+}: {
+  icon: string;
+  color: string;
+  onSave?: (patch: { icon?: string; color?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close the popover when clicking anywhere outside it.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const badgeClass =
+    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base";
+
+  if (!onSave) {
+    return (
+      <span className={badgeClass} style={{ background: color + "22" }}>
+        {icon}
+      </span>
+    );
+  }
+
+  return (
+    // stopPropagation so editing the badge never opens the category shelf (the
+    // row's click handler).
+    <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Change icon & color"
+        className={`${badgeClass} cursor-pointer ring-[var(--border)] transition hover:ring-2`}
+        style={{ background: color + "22" }}
+      >
+        {icon}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-11 z-20 w-56 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
+          <div className="mb-2 flex items-center gap-2">
+            <input
+              autoFocus
+              defaultValue={icon}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") setOpen(false);
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v && v !== icon) onSave({ icon: v });
+              }}
+              aria-label="Emoji"
+              className="w-12 rounded-lg border border-[var(--border)] bg-[var(--background)] py-1 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+            />
+            <span className="text-[11px] leading-tight text-[var(--muted)]">
+              Type or paste any emoji
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {PALETTE.map((p) => (
+              <button
+                key={p}
+                onClick={() => onSave({ color: p })}
+                className={`h-6 w-6 rounded-full ${
+                  color === p ? "ring-2 ring-offset-2 ring-[var(--foreground)]" : ""
+                }`}
+                style={{ background: p }}
+                aria-label={`color ${p}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
