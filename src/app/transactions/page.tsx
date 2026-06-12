@@ -89,6 +89,9 @@ export default function TransactionsPage() {
   const [dir, setDir] = useState("desc");
   const [added, setAdded] = useState<string[]>([]); // filters explicitly added but maybe not yet valued
   const [menuOpen, setMenuOpen] = useState(false);
+  // Gate the URL←→filter sync until the initial deep-link has been read, so the
+  // sync never wipes the incoming params before loadStatic applies them.
+  const [ready, setReady] = useState(false);
   const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
@@ -124,6 +127,7 @@ export default function TransactionsPage() {
     apply("recurring", setRecurring);
     apply("minAmount", setMinAmount);
     apply("maxAmount", setMaxAmount);
+    setReady(true);
   }, []);
 
   const load = useCallback(async (f: Filters) => {
@@ -169,6 +173,26 @@ export default function TransactionsPage() {
     );
     return () => clearTimeout(t);
   }, [month, catFilter, q, vendor, type, account, minAmount, maxAmount, recurring, sort, dir, refreshKey, load]);
+
+  // Keep the browser URL in sync with the live filters, so clearing a filter
+  // (e.g. the Uncategorized deep-link) actually sticks across reloads and a
+  // plain /transactions nav starts clean. Replace (not push) to avoid history
+  // spam. sort/dir stay out — they're view prefs, not deep-linkable filters.
+  useEffect(() => {
+    if (!ready) return;
+    const p = new URLSearchParams();
+    if (month) p.set("month", month);
+    if (catFilter) p.set("category", catFilter);
+    if (q) p.set("q", q);
+    if (vendor) p.set("vendor", vendor);
+    if (type) p.set("type", type);
+    if (account) p.set("account", account);
+    if (minAmount) p.set("minAmount", minAmount);
+    if (maxAmount) p.set("maxAmount", maxAmount);
+    if (recurring) p.set("recurring", recurring);
+    const qs = p.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [ready, month, catFilter, q, vendor, type, account, minAmount, maxAmount, recurring]);
 
   async function setCategory(id: number, categoryId: number | null) {
     setTxs((prev) =>
@@ -717,10 +741,24 @@ export default function TransactionsPage() {
                         <span>· {t.account}</span>
                       </>
                     )}
+                    {/* Empty-note affordance lives INLINE in the meta row (like
+                        "edit date") so revealing it on hover never changes the
+                        row height — avoids list-wide jitter as the pointer moves. */}
+                    {!t.note && editingNoteId !== t.id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingNoteId(t.id);
+                        }}
+                        title="Add a note"
+                        className="hidden hover:text-[var(--foreground)] hover:underline group-hover:inline"
+                      >
+                        · + note
+                      </button>
+                    )}
                   </div>
-                  {/* Per-transaction note: what a generic charge (e.g. a Venmo
-                      transfer) was actually for. Inline-editable; shown italic
-                      when set, a hover affordance when empty. */}
+                  {/* A set note (or the editor) takes its own line below — that's
+                      persistent content, not a hover reveal, so it doesn't jitter. */}
                   {editingNoteId === t.id ? (
                     <input
                       autoFocus
@@ -750,18 +788,7 @@ export default function TransactionsPage() {
                       <span className="shrink-0 not-italic opacity-70">✎</span>
                       <span className="truncate">{t.note}</span>
                     </button>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingNoteId(t.id);
-                      }}
-                      title="Add a note"
-                      className="mt-0.5 hidden text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:underline group-hover:inline-block"
-                    >
-                      + note
-                    </button>
-                  )}
+                  ) : null}
                     </>
                   )}
                 </div>
