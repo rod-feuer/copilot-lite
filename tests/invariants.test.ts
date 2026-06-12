@@ -26,6 +26,8 @@ import {
   recurringMonthlyByCategory,
   isRecurringActive,
   setBudget,
+  getBudgets,
+  getBudgetsFull,
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
@@ -92,7 +94,7 @@ before(() => {
   CAT_X = addCat("Home");
 });
 beforeEach(() => {
-  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log", "recurring_tx_exclusions", "merchant_merge_dismissals"])
+  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log", "recurring_tx_exclusions", "merchant_merge_dismissals", "budgets"])
     getDb().exec(`DELETE FROM ${t}`);
 });
 after(() => {
@@ -180,6 +182,30 @@ test("a complete past month still compares full-vs-full (throughDay null)", () =
   assert.ok(d.prev);
   assert.equal(d.prev!.throughDay, null, "no day-bounding for a complete month");
   assert.equal(d.prev!.expenses, 380, "full May counts (80 + 300)");
+});
+
+test("an annual budget tracks calendar-YTD spend, not a single month, and reads as monthly-equivalent", () => {
+  // WHY: a once-a-year-ish bill (e.g. a $259/mo policy paid in lumps) budgeted
+  // annually must be judged on the whole year's spend — comparing this month's
+  // charge to a $3,108 annual cap would always look wildly under budget. The top
+  // summary, which compares a single month, instead needs the annual cap divided
+  // back to a monthly-equivalent so every budget sits on one basis.
+  const year = new Date().getUTCFullYear();
+  const cat = addCat("Life Insurance");
+  tx("Northwestern Mutual", { amount: -259, date: `${year}-01-15`, categoryId: cat });
+  tx("Northwestern Mutual", { amount: -259, date: `${year}-03-15`, categoryId: cat });
+  tx("Northwestern Mutual", { amount: -259, date: `${year - 1}-11-15`, categoryId: cat }); // prior year
+
+  setBudget(cat, 3108, "annual"); // 259 × 12
+
+  assert.deepEqual(getBudgetsFull()[cat], { amount: 3108, period: "annual" }, "full config keeps the period");
+  assert.equal(getBudgets()[cat], 259, "single-month consumers see the annual cap ÷ 12");
+
+  const row = categoriesWithTotals(`${year}-03`).find((c) => c.id === cat)!;
+  assert.equal(row.budget, 3108, "the row carries the full annual amount");
+  assert.equal(row.budgetPeriod, "annual");
+  assert.equal(row.total, 259, "month total is still the viewed month's single charge");
+  assert.equal(row.ytdSpent, 518, "calendar-YTD sums this year's charges only; last year is excluded");
 });
 
 test("a lumpy recurring bill is not amplified into the budget projection", () => {

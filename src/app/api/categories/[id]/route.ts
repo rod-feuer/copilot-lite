@@ -41,6 +41,7 @@ export async function PATCH(
   if (!Number.isFinite(amount) || amount < 0) {
     return NextResponse.json({ error: "invalid budget" }, { status: 400 });
   }
-  setBudget(Number(id), amount);
+  const period = body.period === "annual" ? "annual" : "monthly";
+  setBudget(Number(id), amount, period);
   return NextResponse.json({ ok: true });
 }

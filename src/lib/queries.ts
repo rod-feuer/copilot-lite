@@ -897,24 +897,37 @@ export function upcomingRecurringExpenses(
     .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
 }
 
-// Monthly limit per category, keyed by categoryId. Flat (applies to every
-// month); a per-month/override model can layer on later.
-export function getBudgets(): Record<number, number> {
+export type BudgetPeriod = "monthly" | "annual";
+
+// Full budget config per category: the amount and whether it's a monthly or
+// annual limit. Keyed by categoryId.
+export function getBudgetsFull(): Record<number, { amount: number; period: BudgetPeriod }> {
   const rows = getDb()
-    .prepare("SELECT categoryId, amount FROM budgets")
-    .all() as { categoryId: number; amount: number }[];
-  const out: Record<number, number> = {};
-  for (const r of rows) out[r.categoryId] = r.amount;
+    .prepare("SELECT categoryId, amount, period FROM budgets")
+    .all() as { categoryId: number; amount: number; period: string }[];
+  const out: Record<number, { amount: number; period: BudgetPeriod }> = {};
+  for (const r of rows)
+    out[r.categoryId] = { amount: r.amount, period: r.period === "annual" ? "annual" : "monthly" };
   return out;
 }
 
-export function setBudget(categoryId: number, amount: number) {
+// Monthly-EQUIVALENT budget per category (an annual budget counts as amount/12),
+// so single-month consumers (dashboard, category shelf) put every budget on one
+// comparable basis. The categories page uses getBudgetsFull for period-aware UI.
+export function getBudgets(): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (const [id, b] of Object.entries(getBudgetsFull()))
+    out[Number(id)] = b.period === "annual" ? Number((b.amount / 12).toFixed(2)) : b.amount;
+  return out;
+}
+
+export function setBudget(categoryId: number, amount: number, period: BudgetPeriod = "monthly") {
   getDb()
     .prepare(
-      `INSERT INTO budgets (categoryId, amount) VALUES (?, ?)
-       ON CONFLICT(categoryId) DO UPDATE SET amount = excluded.amount`
+      `INSERT INTO budgets (categoryId, amount, period) VALUES (?, ?, ?)
+       ON CONFLICT(categoryId) DO UPDATE SET amount = excluded.amount, period = excluded.period`
     )
-    .run(categoryId, amount);
+    .run(categoryId, amount, period === "annual" ? "annual" : "monthly");
 }
 
 export function deleteBudget(categoryId: number) {
@@ -991,8 +1004,11 @@ export function categoriesWithTotals(month?: string): (Category & {
   total: number;
   txCount: number;
   budget: number | null;
+  budgetPeriod: BudgetPeriod;
+  ytdSpent: number;
   recurringBaseline: number;
   suggestedBudget: number;
+  suggestedAnnualBudget: number;
 })[] {
   const db = getDb();
   const monthFilter = month ? "AND substr(COALESCE(t.effectiveDate, t.date),1,7) = @month" : "";
@@ -1018,8 +1034,27 @@ export function categoriesWithTotals(month?: string): (Category & {
        ORDER BY c.kind DESC, COALESCE(c.excludeFromTotals, 0) ASC, total DESC`
     )
     .all({ month }) as (Category & { total: number; txCount: number })[];
-  const budgets = getBudgets();
+  const budgets = getBudgetsFull();
   const baseline = recurringMonthlyByCategory();
+
+  // Calendar year-to-date spend per category — the comparison basis for annual
+  // budgets ("$X of $Y this year"). Same sign convention as `total` above.
+  const yearStart = `${new Date().getUTCFullYear()}-01-01`;
+  const ytdRows = db
+    .prepare(
+      `SELECT t.categoryId AS id,
+        COALESCE(SUM(
+          CASE
+            WHEN c.kind = 'expense' AND t.amount < 0 THEN -t.amount
+            WHEN c.kind = 'income'  AND t.amount > 0 THEN  t.amount
+            ELSE 0
+          END), 0) AS spent
+       FROM transactions t JOIN categories c ON c.id = t.categoryId
+       WHERE t.excluded = 0 AND COALESCE(t.effectiveDate, t.date) >= @yearStart
+       GROUP BY t.categoryId`
+    )
+    .all({ yearStart }) as { id: number; spent: number }[];
+  const ytdById = new Map(ytdRows.map((r) => [r.id, r.spent]));
 
   // Suggested budget = the trailing-12-month average monthly spend (total spend
   // over the window ÷ 12, so an annual or sporadic expense smooths into a
@@ -1052,6 +1087,8 @@ export function categoriesWithTotals(month?: string): (Category & {
     )
     .all({ cutoff }) as { id: number; spent: number; months: number }[];
   const avgById = new Map(avgRows.map((r) => [r.id, r.months > 0 ? r.spent / r.months : 0]));
+  // Trailing-12 total spend per category — the basis for an annual suggestion.
+  const trailing12ById = new Map(avgRows.map((r) => [r.id, r.spent]));
 
   return rows.map((c) => {
     // Prefer the known recurring monthly cost (cadence-aware); else the average
@@ -1059,12 +1096,21 @@ export function categoriesWithTotals(month?: string): (Category & {
     // the real figure. "Uncategorized" is a catch-all, never a budget line.
     const baselineAmt = baseline[c.id] ?? 0;
     const monthly = baselineAmt > 0 ? baselineAmt : avgById.get(c.id) ?? 0;
-    const suggestedBudget = c.name !== "Uncategorized" && monthly >= 5 ? Math.round(monthly) : 0;
+    const isBudgetable = c.name !== "Uncategorized";
+    const suggestedBudget = isBudgetable && monthly >= 5 ? Math.round(monthly) : 0;
+    // Annual suggestion = trailing-12 actual spend (a recurring monthly baseline
+    // implies 12× that), rounded to the nearest dollar.
+    const annual = baselineAmt > 0 ? baselineAmt * 12 : trailing12ById.get(c.id) ?? 0;
+    const suggestedAnnualBudget = isBudgetable && annual >= 5 ? Math.round(annual) : 0;
+    const b = budgets[c.id];
     return {
       ...c,
-      budget: budgets[c.id] ?? null,
+      budget: b?.amount ?? null,
+      budgetPeriod: b?.period ?? "monthly",
+      ytdSpent: Number((ytdById.get(c.id) ?? 0).toFixed(2)),
       recurringBaseline: Number(baselineAmt.toFixed(2)),
       suggestedBudget,
+      suggestedAnnualBudget,
     };
   });
 }

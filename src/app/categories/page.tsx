@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
@@ -17,10 +17,18 @@ type Cat = {
   total: number;
   txCount: number;
   budget: number | null;
+  budgetPeriod: "monthly" | "annual";
+  ytdSpent: number;
   recurringBaseline: number;
   suggestedBudget: number;
+  suggestedAnnualBudget: number;
   excludeFromTotals: 0 | 1;
 };
+
+// Spend to compare a category against its own budget: an annual budget tracks
+// calendar year-to-date; a monthly budget tracks the viewed month.
+const budgetSpent = (c: Cat) => (c.budgetPeriod === "annual" ? c.ytdSpent : c.total);
+const isOver = (c: Cat) => c.budget != null && budgetSpent(c) > c.budget;
 
 const PALETTE = [
   "#6366f1", "#22c55e", "#f97316", "#0ea5e9", "#a855f7",
@@ -117,11 +125,15 @@ export default function CategoriesPage() {
     load(month);
   }
 
-  async function saveBudget(id: number, amount: number | null) {
+  async function saveBudget(
+    id: number,
+    amount: number | null,
+    period: "monthly" | "annual" = "monthly"
+  ) {
     await fetch(`/api/categories/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ budget: amount }),
+      body: JSON.stringify({ budget: amount, period }),
     });
     load(month);
   }
@@ -137,7 +149,7 @@ export default function CategoriesPage() {
 
   // Budget pressure: fraction of budget spent. Unbudgeted categories have no
   // pressure, so they sort below budgeted ones (and among themselves by spend).
-  const pressure = (c: Cat) => (c.budget && c.budget > 0 ? c.total / c.budget : -1);
+  const pressure = (c: Cat) => (c.budget && c.budget > 0 ? budgetSpent(c) / c.budget : -1);
   const sortCats = (list: Cat[]) => {
     const arr = [...list];
     if (sort === "name") return arr.sort((a, b) => a.name.localeCompare(b.name));
@@ -152,7 +164,7 @@ export default function CategoriesPage() {
   // The attention filter only narrows expenses (where budgets live).
   const shownExpense =
     filter === "over"
-      ? expense.filter((c) => c.budget != null && c.total > c.budget)
+      ? expense.filter(isOver)
       : filter === "unbudgeted"
       ? expense.filter((c) => c.budget == null && c.name !== "Uncategorized")
       : expense;
@@ -309,7 +321,11 @@ function BudgetSummary({
   // "Uncategorized" is a catch-all, not a real budget line — don't count it as
   // needing a budget.
   const unbudgeted = expense.filter((c) => c.budget == null && c.name !== "Uncategorized");
-  const budget = budgeted.reduce((s, c) => s + (c.budget ?? 0), 0);
+  // Monthly-equivalent: an annual budget contributes amount/12, so this month's
+  // spend compares like-for-like against a single combined monthly figure.
+  const monthlyEquiv = (c: Cat) =>
+    c.budgetPeriod === "annual" ? (c.budget ?? 0) / 12 : c.budget ?? 0;
+  const budget = budgeted.reduce((s, c) => s + monthlyEquiv(c), 0);
 
   if (budget === 0) {
     const totalSpent = expense.reduce((s, c) => s + c.total, 0);
@@ -327,7 +343,9 @@ function BudgetSummary({
   }
 
   const spent = budgeted.reduce((s, c) => s + c.total, 0);
-  const overCats = budgeted.filter((c) => c.total > (c.budget ?? 0));
+  // Over-budget is period-aware (annual categories judged on calendar-YTD), so
+  // the chip and the list filter agree.
+  const overCats = budgeted.filter(isOver);
   const overCount = overCats.length;
   // Name the over-budget categories when there are only a couple — far more
   // useful than a bare count; fall back to a count when there are several.
@@ -336,6 +354,7 @@ function BudgetSummary({
   const remaining = budget - spent;
   const over = remaining < 0;
   const pct = Math.min((spent / budget) * 100, 100);
+  const hasAnnual = budgeted.some((c) => c.budgetPeriod === "annual");
   return (
     <div className="card mb-5 p-5">
       <div className="flex items-end justify-between">
@@ -399,6 +418,12 @@ function BudgetSummary({
           </button>
         )}
       </div>
+      {hasAnnual && (
+        <p className="mt-2 text-[11px] text-[var(--muted)]">
+          Annual budgets counted at 1⁄12 per month here; each annual category
+          tracks its own calendar-year total in the list below.
+        </p>
+      )}
     </div>
   );
 }
@@ -419,7 +444,7 @@ function Group({
   month: string;
   cats: Cat[];
   onDelete: (c: Cat) => void;
-  onBudget?: (id: number, amount: number | null) => void;
+  onBudget?: (id: number, amount: number | null, period: "monthly" | "annual") => void;
   onToggleExclude?: (id: number, exclude: boolean) => void;
   // Reload the list when a transaction is edited inside the category shelf, so
   // totals/budgets update in place instead of needing a manual refresh.
@@ -444,10 +469,16 @@ function Group({
         {cats.map((c) => {
           const budgeted = onBudget != null && c.budget != null;
           const budget = c.budget ?? 0;
-          const over = budgeted && c.total > budget;
+          const annual = c.budgetPeriod === "annual";
+          // An annual budget tracks calendar-YTD spend; a monthly one tracks the
+          // viewed month. The recurring baseline is monthly, so annualize it to
+          // compare against an annual budget.
+          const spentNow = annual ? c.ytdSpent : c.total;
+          const recur = annual ? c.recurringBaseline * 12 : c.recurringBaseline;
+          const over = budgeted && spentNow > budget;
           // Nearing the limit but not over yet — amber, between identity and red.
-          const atRisk = budgeted && !over && budget > 0 && c.total / budget >= 0.9;
-          const remaining = budget - c.total;
+          const atRisk = budgeted && !over && budget > 0 && spentNow / budget >= 0.9;
+          const remaining = budget - spentNow;
           return (
             <div
               key={c.id}
@@ -476,15 +507,24 @@ function Group({
                           : ""
                       }`}
                     >
-                      {usd(c.total, { cents: false })}
+                      {usd(spentNow, { cents: false })}
                     </span>
+                    {/* Annual budgets read year-to-date, not the viewed month —
+                        mark the figure so it isn't mistaken for monthly spend. */}
+                    {budgeted && annual && (
+                      <span className="text-[10px] font-medium uppercase text-[var(--muted)]">
+                        ytd
+                      </span>
+                    )}
                     {onBudget && c.name !== "Uncategorized" && (
                       <span onClick={(e) => e.stopPropagation()}>
                         <BudgetInput
-                          key={`b-${c.id}-${c.budget ?? "none"}`}
+                          key={`b-${c.id}-${c.budget ?? "none"}-${c.budgetPeriod}`}
                           budget={c.budget}
+                          period={c.budgetPeriod}
                           suggested={c.suggestedBudget}
-                          onSave={(v) => onBudget(c.id, v)}
+                          suggestedAnnual={c.suggestedAnnualBudget}
+                          onSave={(v, p) => onBudget(c.id, v, p)}
                         />
                       </span>
                     )}
@@ -496,15 +536,15 @@ function Group({
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${Math.min((c.total / budget) * 100, 100)}%`,
+                        width: `${Math.min((spentNow / budget) * 100, 100)}%`,
                         background: over ? "#e11d48" : atRisk ? "#f59e0b" : c.color,
                       }}
                     />
-                    {c.recurringBaseline > 0 && (
+                    {recur > 0 && (
                       <div
                         className="absolute top-0 h-2 w-0.5 rounded bg-[var(--foreground)]/40"
-                        style={{ left: `${Math.min((c.recurringBaseline / budget) * 100, 100)}%` }}
-                        title={`${usd(c.recurringBaseline, { cents: false })} recurring`}
+                        style={{ left: `${Math.min((recur / budget) * 100, 100)}%` }}
+                        title={`${usd(recur, { cents: false })} recurring${annual ? "/yr" : ""}`}
                       />
                     )}
                   </div>
@@ -544,21 +584,20 @@ function Group({
                       {remaining >= 0
                         ? `${usd(remaining, { cents: false })} left`
                         : `${usd(-remaining, { cents: false })} over`}
-                      {c.recurringBaseline > 0 && (
+                      {annual ? " this year" : ""}
+                      {recur > 0 && (
                         <span
                           className={`font-normal ${
-                            c.recurringBaseline > budget
-                              ? "text-amber-600"
-                              : "text-[var(--muted)]"
+                            recur > budget ? "text-amber-600" : "text-[var(--muted)]"
                           }`}
                           title={
-                            c.recurringBaseline > budget
+                            recur > budget
                               ? "Budget is below this category's known recurring cost"
                               : "Recurring cost in this category"
                           }
                         >
                           {" · "}
-                          {usd(c.recurringBaseline, { cents: false })} recurring
+                          {usd(recur, { cents: false })} recurring{annual ? "/yr" : ""}
                         </span>
                       )}
                     </span>
@@ -592,32 +631,56 @@ function Group({
   );
 }
 
-// Inline monthly-budget editor, rendered as "/ $<amount>" next to the spent
-// figure. Uncontrolled + remounted via `key` when the saved value changes, so we
+// Inline budget editor, rendered as "of $<amount> /mo|/yr" next to the spent
+// figure. A monthly or annual period can be chosen via the unit toggle.
+// Uncontrolled + remounted via `key` when the saved value/period changes, so we
 // avoid syncing prop→state in an effect. The recurring baseline and spent-vs-
 // budget status are shown by the row's bar + caption, not here.
 function BudgetInput({
   budget,
+  period: initialPeriod = "monthly",
   suggested = 0,
+  suggestedAnnual = 0,
   onSave,
 }: {
   budget: number | null;
+  period?: "monthly" | "annual";
   suggested?: number;
-  onSave: (amount: number | null) => void;
+  suggestedAnnual?: number;
+  onSave: (amount: number | null, period: "monthly" | "annual") => void;
 }) {
+  const [period, setPeriod] = useState<"monthly" | "annual">(initialPeriod);
+  const unit = period === "annual" ? "/yr" : "/mo";
+  const sug = period === "annual" ? suggestedAnnual : suggested;
+
   function commit(raw: string) {
     const t = raw.trim();
-    if (t === "") return budget === null ? undefined : onSave(null);
+    if (t === "") return budget === null ? undefined : onSave(null, period);
     const n = Number(t.replace(/[^0-9.]/g, ""));
-    if (Number.isFinite(n) && n >= 0 && n !== budget) onSave(n);
+    if (Number.isFinite(n) && n >= 0 && (n !== budget || period !== initialPeriod))
+      onSave(n, period);
   }
+
+  // Toggle monthly ⇄ annual. When a budget is already set, convert the amount so
+  // the real budgeted dollars stay the same (e.g. $259/mo ⇄ $3,108/yr) and save
+  // immediately. When empty, just switch which suggestion/unit applies next.
+  function togglePeriod(e: MouseEvent) {
+    e.stopPropagation();
+    const next = period === "annual" ? "monthly" : "annual";
+    setPeriod(next);
+    if (budget !== null) {
+      const converted = next === "annual" ? budget * 12 : budget / 12;
+      onSave(Number(converted.toFixed(2)), next);
+    }
+  }
+
   // No budget yet, but we have a typical-spend figure → offer it as a single
   // one-tap chip ("Use $20") rather than stuffing the number into the input
   // (suggest, you confirm). The input stays empty so you can type your own. The
   // chip lives in a fixed-width slot that's reserved even when there's no
   // suggestion, so the "—"/amount columns line up across all unbudgeted rows.
   return (
-    <span className="inline-flex items-baseline gap-1.5 text-[var(--muted)]">
+    <span className="inline-flex items-baseline gap-1 text-[var(--muted)]">
       of&nbsp;$
       <input
         defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
@@ -627,22 +690,33 @@ function BudgetInput({
         }}
         placeholder="—"
         inputMode="decimal"
-        aria-label="Monthly budget"
-        title="Monthly budget"
+        aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
+        title={period === "annual" ? "Annual budget" : "Monthly budget"}
         className="w-14 rounded bg-transparent text-right font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
       />
+      <button
+        onClick={togglePeriod}
+        title={period === "annual" ? "Annual budget — click for monthly" : "Monthly budget — click for annual"}
+        className="rounded px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+      >
+        {unit}
+      </button>
       {budget === null && (
         <span className="flex w-20 shrink-0 justify-end">
-          {suggested > 0 && (
+          {sug > 0 && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onSave(suggested);
+                onSave(sug, period);
               }}
-              title={`Set this month's budget to your ~$${suggested.toLocaleString("en-US")}/mo average`}
+              title={
+                period === "annual"
+                  ? `Set an annual budget of your ~$${sug.toLocaleString("en-US")}/yr spend`
+                  : `Set this month's budget to your ~$${sug.toLocaleString("en-US")}/mo average`
+              }
               className="whitespace-nowrap rounded-md bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
             >
-              Use ${suggested.toLocaleString("en-US")}
+              Use ${sug.toLocaleString("en-US")}
             </button>
           )}
         </span>

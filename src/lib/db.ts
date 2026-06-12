@@ -63,7 +63,8 @@ function init(db: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS budgets (
       categoryId INTEGER PRIMARY KEY REFERENCES categories(id),
-      amount REAL NOT NULL CHECK (amount >= 0)
+      amount REAL NOT NULL CHECK (amount >= 0),
+      period TEXT NOT NULL DEFAULT 'monthly' CHECK (period IN ('monthly','annual'))
     );
 
     -- Auto-split rules: when a transaction matches (merchant pattern + total
@@ -111,6 +112,12 @@ function init(db: Database.Database) {
     db.exec(
       "ALTER TABLE categories ADD COLUMN excludeFromTotals INTEGER NOT NULL DEFAULT 0"
     );
+  }
+
+  // Migration: add a budget `period` (monthly vs annual) to older DBs.
+  const budgetCols = db.prepare("PRAGMA table_info(budgets)").all() as { name: string }[];
+  if (budgetCols.length && !budgetCols.some((c) => c.name === "period")) {
+    db.exec("ALTER TABLE budgets ADD COLUMN period TEXT NOT NULL DEFAULT 'monthly'");
   }
 
   migrateMerchants(db);
