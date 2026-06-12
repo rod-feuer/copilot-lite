@@ -60,11 +60,21 @@ type Filters = {
   dir: string;
 };
 
+// Render the list in pages of this many rows, appending more as the user scrolls
+// (or via "Show more"). Caps the initial React mount regardless of match count —
+// a single month or a 10k-row all-history search both mount one page first.
+const PAGE = 60;
+
 export default function TransactionsPage() {
   const [months, setMonths] = useState<string[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
+  // How many rows are currently mounted (incremental rendering — see PAGE).
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  // Review-queue widgets are deferred to after first paint so their fetches
+  // (esp. the ~155ms merge scan) don't compete with the list on load.
+  const [showQueues, setShowQueues] = useState(false);
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   // Which row's category <select> has its full option list mounted. At rest a
@@ -160,12 +170,46 @@ export default function TransactionsPage() {
     p.set("dir", f.dir);
     const data = await fetch(`/api/transactions?${p}`).then((r) => r.json());
     setTxs(data);
+    setVisibleCount(PAGE); // new result set → start from the first page
   }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStatic();
   }, [loadStatic]);
+
+  // Defer the review-queue widgets until the browser is idle after first paint,
+  // so the list renders first and the queues' fetches (esp. the merge scan)
+  // don't contend on load.
+  useEffect(() => {
+    const w = window as typeof window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const reveal = () => setShowQueues(true);
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(reveal);
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(reveal, 200);
+    return () => clearTimeout(id);
+  }, []);
+
+  // Append the next page of rows when the bottom sentinel scrolls into view —
+  // incremental rendering without mounting the whole result set up front.
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || visibleCount >= txs.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setVisibleCount((c) => c + PAGE);
+      },
+      { rootMargin: "600px" } // start loading before it's actually visible
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visibleCount, txs.length]);
 
   // Debounced reload whenever any filter (or a forced refresh) changes.
   useEffect(() => {
@@ -307,14 +351,20 @@ export default function TransactionsPage() {
     [txs]
   );
 
+  // Only the first `visibleCount` rows are mounted; the rest append on scroll.
+  // Grouping/headers operate on the visible slice; `total` (above) stays over the
+  // full match set so the header figure is correct regardless of how much is shown.
+  const visibleTxs = useMemo(() => txs.slice(0, visibleCount), [txs, visibleCount]);
+  const hasMore = visibleCount < txs.length;
+
   // Group the list under day headers when it's in date order (the rows are
   // already date-sorted by the server, so consecutive runs share a day). Other
   // sorts (amount, merchant) stay a flat list — a date header would be nonsense.
   const grouping = sort === "date";
   const grouped = useMemo(() => {
-    if (!grouping) return [{ key: "__all", label: "", total: 0, rows: txs }];
+    if (!grouping) return [{ key: "__all", label: "", total: 0, rows: visibleTxs }];
     const out: { key: string; label: string; total: number; rows: Tx[] }[] = [];
-    for (const t of txs) {
+    for (const t of visibleTxs) {
       const day = t.effectiveDate ?? t.date;
       let g = out[out.length - 1];
       if (!g || g.key !== day) {
@@ -325,7 +375,7 @@ export default function TransactionsPage() {
       if (!(t.excluded || t.categoryExcluded)) g.total += t.amount;
     }
     return out;
-  }, [txs, grouping]);
+  }, [visibleTxs, grouping]);
 
   // Statement mode: when the vendor filter is active, every row is the same
   // merchant — and usually the same category/account. Collapse that constant
@@ -538,11 +588,15 @@ export default function TransactionsPage() {
         </select>
       </div>
 
-      <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+      {showQueues && (
+        <>
+          <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
-      <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
-      <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+        </>
+      )}
 
       <div className="card overflow-hidden">
         {txs.length === 0 ? (
@@ -618,6 +672,21 @@ export default function TransactionsPage() {
               );
             })}
           </ul>
+          {hasMore && (
+            // Sentinel: scrolling near here auto-loads the next page. The button
+            // is the keyboard/no-IntersectionObserver fallback and a clear count.
+            <div
+              ref={sentinelRef}
+              className="flex items-center justify-center border-t border-[var(--border)] p-3"
+            >
+              <button
+                onClick={() => setVisibleCount((c) => c + PAGE)}
+                className="text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] hover:underline"
+              >
+                Show more · {txs.length - visibleCount} of {txs.length} remaining
+              </button>
+            </div>
+          )}
           </>
         )}
       </div>
