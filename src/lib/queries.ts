@@ -936,6 +936,7 @@ export function categoriesWithTotals(month?: string): (Category & {
   txCount: number;
   budget: number | null;
   recurringBaseline: number;
+  suggestedBudget: number;
 })[] {
   const db = getDb();
   const monthFilter = month ? "AND substr(COALESCE(t.effectiveDate, t.date),1,7) = @month" : "";
@@ -963,10 +964,42 @@ export function categoriesWithTotals(month?: string): (Category & {
     .all({ month }) as (Category & { total: number; txCount: number })[];
   const budgets = getBudgets();
   const baseline = recurringMonthlyByCategory();
+
+  // Suggested budget = the trailing-12-month average monthly spend (total spend
+  // over the window ÷ 12, so an annual or sporadic expense smooths into a
+  // sensible monthly figure), rounded to the nearest $5. Drives the one-tap
+  // "use" on unbudgeted categories. Window is "now", independent of the viewed
+  // month, so the suggestion reflects real recent behaviour.
+  const now = new Date();
+  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
+    .toISOString()
+    .slice(0, 10);
+  const avgRows = db
+    .prepare(
+      `SELECT t.categoryId AS id,
+        COALESCE(SUM(
+          CASE
+            WHEN c.kind = 'expense' AND t.amount < 0 THEN -t.amount
+            WHEN c.kind = 'income'  AND t.amount > 0 THEN  t.amount
+            ELSE 0
+          END), 0) AS spent
+       FROM transactions t JOIN categories c ON c.id = t.categoryId
+       WHERE t.excluded = 0 AND COALESCE(t.effectiveDate, t.date) >= @cutoff
+       GROUP BY t.categoryId`
+    )
+    .all({ cutoff }) as { id: number; spent: number }[];
+  const suggestById = new Map(
+    avgRows.map((r) => {
+      const monthly = r.spent / 12;
+      return [r.id, monthly >= 2.5 ? Math.round(monthly / 5) * 5 : 0];
+    })
+  );
+
   return rows.map((c) => ({
     ...c,
     budget: budgets[c.id] ?? null,
     recurringBaseline: Number((baseline[c.id] ?? 0).toFixed(2)),
+    suggestedBudget: suggestById.get(c.id) ?? 0,
   }));
 }
 
