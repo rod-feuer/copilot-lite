@@ -15,9 +15,12 @@ export function normalizeMerchant(raw: string): string {
   const original = (raw ?? "").trim();
   let s = original;
 
-  // Leading wallet / processor prefixes (may stack, e.g. "Aplpay Sp Rothys").
+  // Leading wallet / processor prefixes (may stack, e.g. "Aplpay Sp Rothys"):
+  // the Apple Pay word, or any short payment-gateway code of the form "LETTERS*"
+  // (SQ*, TST*, MDC*, DNH*, IC*, FSP*, PROPAY*, …), with or without a trailing
+  // space ("Dnh*godaddy", "Mdc*south Central…").
   for (let i = 0; i < 3; i++) {
-    const next = s.replace(/^(aplpay|sq ?\*|tst\*?|pp\*|paypal ?\*?|gpc\*?)\s+/i, "");
+    const next = s.replace(/^((aplpay|paypal)\s+|[a-z]{2,6}\s?\*\s*)/i, "");
     if (next === s) break;
     s = next;
   }
