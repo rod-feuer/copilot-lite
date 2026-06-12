@@ -190,11 +190,19 @@ export default function TransactionsPage() {
     loadedCountRef.current = txs.length;
   }, [txs.length]);
 
+  // A monotonic token bumped by every page-1 load. Each fetch captures the token
+  // it started under and applies its result only if the token is still current —
+  // so an out-of-order page-1 response, or a loadMore still in flight when the
+  // filter changes, is discarded instead of corrupting a newer result set.
+  const loadGenRef = useRef(0);
+
   // Page 1: replace the list and capture the full-set count + net total.
   const load = useCallback(
     async (f: Filters) => {
       filtersRef.current = f;
+      const gen = ++loadGenRef.current;
       const data = await fetch(`/api/transactions?${buildTxQuery(f, 0)}`).then((r) => r.json());
+      if (gen !== loadGenRef.current) return; // a newer load superseded this one
       setTxs(data.rows ?? []);
       setTotalCount(data.count ?? data.rows?.length ?? 0);
       setNetTotal(data.net ?? 0);
@@ -203,16 +211,19 @@ export default function TransactionsPage() {
   );
 
   // Append the next page. Guarded (ref) so overlapping scroll triggers can't
-  // double-fetch the same offset.
+  // double-fetch, and tied to the current load generation so a page that resolves
+  // after a filter change is dropped rather than appended under the new filter.
   const loadMore = useCallback(async () => {
     const f = filtersRef.current;
     if (!f || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    const gen = loadGenRef.current;
     try {
       const data = await fetch(
         `/api/transactions?${buildTxQuery(f, loadedCountRef.current)}`
       ).then((r) => r.json());
+      if (gen !== loadGenRef.current) return; // filters changed mid-flight — discard
       setTxs((prev) => [...prev, ...(data.rows ?? [])]);
     } finally {
       loadingMoreRef.current = false;
