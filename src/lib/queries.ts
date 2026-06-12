@@ -640,6 +640,10 @@ export function merchantSummary(merchant: string) {
     count12,
     firstSeen,
     recurring: !!recurringDetail,
+    // Whether the user marked this recurring ended/canceled (and nothing has
+    // charged since), plus the date — so the shelf can show the same toggle.
+    ended: rec ? recurringEnded(sett?.endedDate, rec.lastDate) : false,
+    endedDate: sett?.endedDate ?? null,
     recurringDetail,
     byYear,
     priceChange,
