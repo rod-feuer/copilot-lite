@@ -20,6 +20,7 @@ const ALL_NULL_SETTINGS = {
   expectedAmount: null,
   cadence: null,
   nextDate: null,
+  endedDate: null,
 } as const;
 
 // Update a recurring's per-merchant settings. Only keys present in the body are
@@ -53,15 +54,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.clear) {
-    setRecurringSetting(merchant, {
-      matchMode: null,
-      matchText: null,
-      amountTolerance: null,
-      alias: null,
-      expectedAmount: null,
-      cadence: null,
-      nextDate: null,
-    });
+    setRecurringSetting(merchant, { ...ALL_NULL_SETTINGS });
     return NextResponse.json({ ok: true });
   }
 
@@ -76,6 +69,8 @@ export async function POST(req: NextRequest) {
     patch.cadence = CADENCES.includes(body.cadence) ? body.cadence : null;
   if ("nextDate" in body)
     patch.nextDate = body.nextDate ? String(body.nextDate).slice(0, 10) : null;
+  if ("endedDate" in body)
+    patch.endedDate = body.endedDate ? String(body.endedDate).slice(0, 10) : null;
   if ("matchMode" in body)
     patch.matchMode = body.matchMode === "contains" ? "contains" : body.matchMode === "exact" ? "exact" : null;
   if ("matchText" in body)

@@ -177,9 +177,15 @@ export function ensureRecurringSettings(db: Database.Database) {
       alias TEXT,
       expectedAmount REAL,
       cadence TEXT,
-      nextDate TEXT
+      nextDate TEXT,
+      endedDate TEXT
     )
   `);
+  // Migration: add `endedDate` (a canceled subscription's end date) to older DBs.
+  const cols = db.prepare("PRAGMA table_info(recurring_settings)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "endedDate")) {
+    db.exec("ALTER TABLE recurring_settings ADD COLUMN endedDate TEXT");
+  }
   const old = db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='recurring_match_rules'")
     .get();

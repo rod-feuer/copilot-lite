@@ -51,6 +51,8 @@ type Rec = {
   linkedMerchants: string[];
   displayName: string;
   expectedAmount: number;
+  ended: boolean;
+  endedDate: string | null;
   settings: Settings | null;
 };
 
@@ -86,8 +88,11 @@ const CADENCE_DAYS: Record<Rec["cadence"], number> = {
   yearly: 365,
 };
 
-// Active = charged within ~1.5 cycles (plus grace); else treated as stopped.
+// Active = charged within ~1.5 cycles (plus grace); else treated as stopped. A
+// user-ended (canceled) subscription is inactive immediately, regardless of how
+// recently it last charged.
 function isActive(r: Rec): boolean {
+  if (r.ended) return false;
   const days = (Date.now() - new Date(r.lastDate + "T00:00:00Z").getTime()) / 86_400_000;
   return days <= CADENCE_DAYS[r.cadence] * 1.5 + 5;
 }
@@ -211,6 +216,22 @@ export default function RecurringsPage() {
     try {
       await postJson("/api/recurrings/override", { merchant, status: "mute" });
       toast(`"${merchant}" marked not recurring`, "success");
+      load(month);
+    } catch {
+      toast("Couldn't update — please try again", "error");
+    }
+  }
+
+  // Mark a subscription as ended/canceled as of today: it stops counting as an
+  // upcoming bill and toward expected outflow immediately, keeps its history,
+  // and moves to Inactive. Reactivate clears it.
+  async function setEnded(merchant: string, ended: boolean) {
+    try {
+      await postJson("/api/recurrings/settings", {
+        merchant,
+        endedDate: ended ? new Date().toISOString().slice(0, 10) : null,
+      });
+      toast(ended ? `"${merchant}" marked ended` : `"${merchant}" reactivated`, "success");
       load(month);
     } catch {
       toast("Couldn't update — please try again", "error");
@@ -356,6 +377,7 @@ export default function RecurringsPage() {
             cats={cats}
             onRecategorize={recategorize}
             onMute={markNotRecurring}
+            onEnd={setEnded}
             onSaveSettings={saveSettings}
             onLink={linkMerchants}
             merchantOptions={merchantOptions}
@@ -367,6 +389,7 @@ export default function RecurringsPage() {
             cats={cats}
             onRecategorize={recategorize}
             onMute={markNotRecurring}
+            onEnd={setEnded}
             onSaveSettings={saveSettings}
             onLink={linkMerchants}
             merchantOptions={merchantOptions}
@@ -476,6 +499,7 @@ export default function RecurringsPage() {
                   title=""
                   recs={shownInactive}
                   dim
+                  onEnd={setEnded}
                   onOpen={(m) => openTx(m, { onChange: () => load(month) })}
                 />
               )}
@@ -494,6 +518,7 @@ function BillList({
   cats,
   onRecategorize,
   onMute,
+  onEnd,
   onSaveSettings,
   onLink,
   merchantOptions,
@@ -505,6 +530,7 @@ function BillList({
   cats?: Cat[];
   onRecategorize?: (merchant: string, categoryId: number | null) => void;
   onMute?: (merchant: string) => void;
+  onEnd?: (merchant: string, ended: boolean) => void;
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
   onLink?: (alias: string, primary: string, unlink?: boolean) => void;
   merchantOptions?: string[];
@@ -613,9 +639,44 @@ function BillList({
                   <span className="shrink-0 text-xs text-[var(--muted)]">
                     {CADENCE_LABEL[r.cadence]}
                   </span>
+                  {r.ended && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+                      title="You marked this subscription ended — it no longer counts as upcoming or expected"
+                    >
+                      Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
+                    </span>
+                  )}
                 </div>
               </div>
-              {editable && onMute && (
+              {/* End / reactivate a subscription. "mark ended" rides the active
+                  lists (not the dim/inactive one); "reactivate" shows wherever an
+                  ended recurring is listed. */}
+              {onEnd && !r.ended && !dim && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEnd(r.merchant, true);
+                  }}
+                  title="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
+                  className="shrink-0 rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover:opacity-100"
+                >
+                  mark ended
+                </button>
+              )}
+              {onEnd && r.ended && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEnd(r.merchant, false);
+                  }}
+                  title="Reactivate this subscription"
+                  className="shrink-0 rounded px-1.5 text-xs text-[var(--accent)] opacity-0 transition-opacity hover:underline group-hover:opacity-100"
+                >
+                  reactivate
+                </button>
+              )}
+              {editable && onMute && !r.ended && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
