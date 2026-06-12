@@ -113,6 +113,24 @@ test("merchantSummary lists descriptor names; only linked aliases are unlinkable
   assert.equal(byName["Main Co"].canUnlink, false, "the primary has no link to remove");
 });
 
+test("a vendor's alias reads from the canonical merchant, whichever descriptor opened the shelf", () => {
+  // WHY: per-vendor settings (alias, expected amount, cadence) belong to the
+  // vendor, not the descriptor. The bug keyed them on whatever descriptor opened
+  // the shelf, so opening on a folded-in variant ("Charlest") split the displayed
+  // name from the saved alias — the header showed the old name and re-typing the
+  // alias was a silent no-op (next === currentAlias).
+  tx("Charlestons Carmel", { amount: -50, categoryId: CAT });
+  tx("Charlest", { amount: -48, categoryId: CAT });
+  linkMerchant("Charlest", "Charlestons Carmel"); // canonical = Charlestons Carmel
+  setRecurringSetting("Charlestons Carmel", { alias: "Charleston's" });
+
+  for (const m of ["Charlestons Carmel", "Charlest"]) {
+    const s = merchantSummary(m);
+    assert.equal(s.displayName, "Charleston's", `displayName must come from the canonical, via ${m}`);
+    assert.equal(s.alias, "Charleston's", `alias must come from the canonical, via ${m}`);
+  }
+});
+
 test("display name resolves consistently in drawer and transactions list", () => {
   tx("Jpmorgan Chase Chase Ach", { amount: -4800, categoryId: CAT_X });
   setRecurringSetting("Jpmorgan Chase Chase Ach", { alias: "Chase Mortgage (Lake)" });
