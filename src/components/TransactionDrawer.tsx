@@ -1126,6 +1126,7 @@ function CombineControl({
   const [other, setOther] = useState<CombineVendor | null>(null);
   const [choice, setChoice] = useState<"current" | "other" | "custom">("current");
   const [custom, setCustom] = useState("");
+  const [showList, setShowList] = useState(false); // vendor-picker dropdown open
   // The category to apply to all the combined charges, or "asis" to leave them.
   const [unifyCat, setUnifyCat] = useState<number | "asis">("asis");
 
@@ -1135,8 +1136,16 @@ function CombineControl({
     setCustom("");
     setChoice("current");
     setUnifyCat("asis");
+    setShowList(false);
     onClose();
   };
+
+  // Live matches for the custom picker dropdown (native <datalist> truncates long
+  // names at a browser-controlled width/font; this renders at the panel width).
+  const q = pick.trim().toLowerCase();
+  const matches = q
+    ? merchants.filter((m) => m !== current.merchant && m.toLowerCase().includes(q)).slice(0, 50)
+    : [];
 
   // Cleaner = fewer words, then shorter, with a digit penalty (bank descriptors
   // tend to be long, multi-word, and id-laden). Returns true if `a` is cleaner.
@@ -1146,9 +1155,10 @@ function CombineControl({
   // split across categories).
   const categoriesDiffer = !!other && current.categoryId !== other.categoryId;
 
-  async function chooseOther() {
-    const m = pick.trim();
+  async function chooseOther(merchant?: string) {
+    const m = (merchant ?? pick).trim();
     if (!m || m === current.merchant || !merchants.includes(m)) return;
+    setShowList(false);
     const o = await fetch(`/api/merchant?name=${encodeURIComponent(m)}`).then((r) => r.json());
     const next: CombineVendor = {
       merchant: m,
@@ -1185,34 +1195,51 @@ function CombineControl({
     <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 text-xs">
       {!other ? (
         <>
-          <div className="flex items-center gap-2">
+          <div className="relative">
             <input
-              list="combine-merchants"
               autoFocus
               value={pick}
-              onChange={(e) => setPick(e.target.value)}
+              onChange={(e) => {
+                setPick(e.target.value);
+                setShowList(true);
+              }}
+              onFocus={() => setShowList(true)}
               onKeyDown={(e) => e.key === "Enter" && chooseOther()}
+              onBlur={() => setTimeout(() => setShowList(false), 150)}
               placeholder="Find a vendor to combine…"
-              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-1"
+              className="w-full rounded-lg border border-[var(--border)] bg-card px-2 py-1"
             />
-            <datalist id="combine-merchants">
-              {merchants
-                .filter((m) => m !== current.merchant)
-                .slice(0, 1000)
-                .map((m) => (
-                  <option key={m} value={m} />
+            {showList && matches.length > 0 && (
+              <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-lg border border-[var(--border)] bg-card py-1 shadow-lg">
+                {matches.map((m) => (
+                  <li key={m}>
+                    <button
+                      // mousedown (not click) + preventDefault so selecting fires
+                      // before the input's blur closes the list.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        chooseOther(m);
+                      }}
+                      className="block w-full px-2 py-1.5 text-left leading-snug hover:bg-[var(--background)]"
+                    >
+                      {m}
+                    </button>
+                  </li>
                 ))}
-            </datalist>
+              </ul>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={chooseOther}
+              onClick={() => chooseOther()}
               className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 hover:bg-card"
             >
               Next
             </button>
+            <button onClick={reset} className="text-[var(--muted)] hover:text-[var(--foreground)]">
+              Cancel
+            </button>
           </div>
-          <button onClick={reset} className="self-start text-[var(--muted)] hover:text-[var(--foreground)]">
-            Cancel
-          </button>
         </>
       ) : (
         <>
