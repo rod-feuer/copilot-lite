@@ -6,6 +6,12 @@ import { canonicalMerchant } from "../src/lib/queries";
 
 test("normalizeMerchant strips wallet prefixes, ids, dates; title-cases", () => {
   assert.equal(normalizeMerchant("Aplpay Target"), "Target");
+  // Any short "LETTERS*" payment-gateway prefix, spaced or glued.
+  assert.equal(normalizeMerchant("Mdc*south Central Indiana"), "South Central Indiana");
+  assert.equal(normalizeMerchant("Sub*washpost"), "Washpost");
+  assert.equal(normalizeMerchant("Ic* Instacart"), "Instacart");
+  assert.equal(normalizeMerchant("McDonald's"), "Mcdonald's"); // "Mc" (no *) is not a prefix
+  assert.equal(normalizeMerchant("Paypal Inst Xfer Pypl"), "Inst Xfer Pypl"); // word prefix, no *
   assert.equal(
     normalizeMerchant("JPMORGAN CHASE CHASE ACH PPD ID: 1000008113"),
     "Jpmorgan Chase Chase Ach"
