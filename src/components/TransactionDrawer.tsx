@@ -28,6 +28,10 @@ type Recent = {
 type Summary = {
   merchant: string;
   displayName: string;
+  alias: string | null; // user-set name override (null = using the bank descriptor)
+  expectedAmount: number | null; // user-set go-forward amount (null = detected)
+  cadence: string | null; // user-set cadence override (null = using detected)
+  detectedCadence: string | null; // what detection found, for the "detected X" hint
   nameVariants: number;
   count: number;
   spent: number;
@@ -76,7 +80,9 @@ type CatSummary = {
   }[];
 };
 
-type OpenOpts = { onChange?: () => void };
+// amountHint lets the caller (e.g. a suggestion row) seed the expected-amount
+// placeholder with the exact figure it displays, so the two never disagree.
+type OpenOpts = { onChange?: () => void; amountHint?: number | null };
 type Target =
   | { kind: "merchant"; merchant: string }
   | { kind: "category"; categoryId: number; month: string };
@@ -111,7 +117,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [mData, setMData] = useState<Summary | null>(null);
   const [cData, setCData] = useState<CatSummary | null>(null);
   const [back, setBack] = useState<Target | null>(null);
+  const [amountHint, setAmountHint] = useState<number | null>(null);
   const [cats, setCats] = useState<Cat[]>([]);
+  const [merchants, setMerchants] = useState<string[]>([]); // for the Combine picker
   const onChange = useRef<(() => void) | undefined>(undefined);
   const asideRef = useRef<HTMLElement>(null);
   const toast = useToast();
@@ -120,6 +128,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     fetch("/api/categories")
       .then((r) => r.json())
       .then(setCats);
+    fetch("/api/merchants")
+      .then((r) => r.json())
+      .then((rows: { merchant: string }[]) => setMerchants(rows.map((r) => r.merchant)));
   }, []);
 
   const fetchMerchant = useCallback((m: string) => {
@@ -140,6 +151,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => {
     setTarget(null);
     setBack(null);
+    setAmountHint(null);
   }, []);
 
   const openMerchant = useCallback(
@@ -151,6 +163,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         return;
       }
       onChange.current = opts?.onChange;
+      setAmountHint(opts?.amountHint ?? null);
       setBack(null);
       setCData(null);
       setTarget({ kind: "merchant", merchant: m });
@@ -169,6 +182,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         return;
       }
       onChange.current = opts?.onChange;
+      setAmountHint(null);
       setBack(null);
       setMData(null);
       setTarget({ kind: "category", categoryId, month });
@@ -181,6 +195,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // category so the panel can offer a "← Back".
   const drillToMerchant = (m: string) => {
     setBack(target);
+    setAmountHint(null);
     setCData(null);
     setTarget({ kind: "merchant", merchant: m });
     fetchMerchant(m);
@@ -237,16 +252,51 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Save a per-merchant override (name and/or go-forward amount) edited right in
+  // the shelf, where the recent charges that justify the value are on screen.
+  async function saveMerchantSettings(
+    patch: { alias?: string | null; expectedAmount?: number | null; cadence?: string | null },
+    message: string
+  ) {
+    if (target?.kind !== "merchant") return;
+    const merchant = target.merchant;
+    try {
+      await postJson("/api/recurrings/settings", { merchant, ...patch });
+      toast(message, "success");
+      fetchMerchant(merchant);
+      onChange.current?.();
+    } catch {
+      toast("Couldn't save — please try again", "error");
+    }
+  }
+
+  // Merge two vendors into one. `loser` folds into `primary` (the survivor, which
+  // becomes canonical); an optional `alias` sets the merged vendor's display name
+  // (used when the user picks a custom name). The component resolves which is the
+  // survivor from the name they chose, so "canonical" is never surfaced. Close the
+  // shelf afterward — its target may now be the folded-away descriptor.
+  async function combineMerchant(loser: string, primary: string, alias?: string) {
+    try {
+      await postJson("/api/recurrings/link", { alias: loser, primary });
+      if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
+      toast("Vendors combined", "success");
+      onChange.current?.();
+      close();
+    } catch {
+      toast("Couldn't combine — please try again", "error");
+    }
+  }
+
   async function unlinkName(alias: string) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
     try {
       await postJson("/api/recurrings/link", { alias, unlink: true });
-      toast(`Unlinked “${alias}”`, "success");
+      toast(`Separated “${alias}”`, "success");
       fetchMerchant(merchant);
       onChange.current?.();
     } catch {
-      toast("Couldn't unlink — please try again", "error");
+      toast("Couldn't separate — please try again", "error");
     }
   }
 
@@ -311,7 +361,12 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 </button>
               )}
               {target.kind === "merchant" ? (
-                <MerchantHeader merchant={target.merchant} data={mData} onUnlink={unlinkName} />
+                <MerchantHeader
+                  merchant={target.merchant}
+                  data={mData}
+                  onUnlink={unlinkName}
+                  onRename={(alias) => saveMerchantSettings({ alias }, alias ? "Name updated" : "Name reset")}
+                />
               ) : (
                 <CategoryHeader data={cData} month={target.month} />
               )}
@@ -338,6 +393,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 cats={cats}
                 onRecategorize={recategorize}
                 onToggleRecurring={toggleRecurring}
+                onSaveSettings={saveMerchantSettings}
+                amountHint={amountHint}
+                merchants={merchants}
+                onCombine={combineMerchant}
               />
             ) : target.kind === "category" && cData ? (
               <CategoryBody
@@ -369,19 +428,111 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// The shelf's heading name, click-to-edit in place (no separate Name field).
+// Typing the underlying bank name clears the override. Commits on Enter/blur,
+// reverts on Escape, and flushes on unmount so closing the shelf mid-edit keeps
+// the change (same teardown guard as ShelfEditField).
+function EditableName({
+  value,
+  underlying,
+  currentAlias,
+  onSave,
+}: {
+  value: string;
+  underlying: string;
+  currentAlias: string | null;
+  onSave: (alias: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const reverted = useRef(false);
+  const committed = useRef(value);
+
+  const commit = (raw: string) => {
+    committed.current = raw;
+    const v = raw.trim();
+    const next = v && v !== underlying ? v : null; // editing back to the bank name = clear
+    if (next !== currentAlias) onSave(next);
+  };
+
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    return () => {
+      if (!reverted.current && el && el.value !== committed.current) commit(el.value);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => {
+          committed.current = value;
+          setEditing(true);
+        }}
+        title="Rename"
+        className="group/n flex max-w-full items-center gap-1 text-left"
+      >
+        <span className="truncate text-sm font-semibold">{value}</span>
+        <span className="shrink-0 text-[10px] text-[var(--muted)] opacity-0 transition-opacity group-hover/n:opacity-100">
+          <span className="inline-block -scale-x-100">✎</span>
+        </span>
+      </button>
+    );
+  }
+  return (
+    <input
+      ref={inputRef}
+      autoFocus
+      defaultValue={value}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          reverted.current = true;
+          setEditing(false);
+        }
+      }}
+      onBlur={(e) => {
+        if (reverted.current) {
+          reverted.current = false;
+          setEditing(false);
+          return;
+        }
+        commit(e.target.value);
+        setEditing(false);
+      }}
+      className="w-full rounded-md border border-[var(--border)] bg-card px-1.5 py-0.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+    />
+  );
+}
+
 function MerchantHeader({
   merchant,
   data,
   onUnlink,
+  onRename,
 }: {
   merchant: string;
   data: Summary | null;
   onUnlink: (alias: string) => void;
+  onRename: (alias: string | null) => void;
 }) {
   const [showNames, setShowNames] = useState(false);
   return (
     <>
-      <div className="truncate text-sm font-semibold">{data?.displayName ?? merchant}</div>
+      {data ? (
+        <EditableName
+          value={data.displayName}
+          underlying={data.merchant}
+          currentAlias={data.alias}
+          onSave={onRename}
+        />
+      ) : (
+        <div className="truncate text-sm font-semibold">{merchant}</div>
+      )}
       {data && data.displayName !== data.merchant && (
         <div className="truncate text-[11px] text-[var(--muted)]">{data.merchant}</div>
       )}
@@ -401,7 +552,7 @@ function MerchantHeader({
               <button
                 onClick={() => setShowNames((s) => !s)}
                 className="underline decoration-dotted underline-offset-2 hover:text-[var(--foreground)]"
-                title="The bank descriptors grouped under this vendor"
+                title="The bank names grouped under this vendor"
               >
                 {data.nameVariants} names {showNames ? "▾" : "▸"}
               </button>
@@ -421,7 +572,7 @@ function MerchantHeader({
               {n.canUnlink ? (
                 <button
                   onClick={() => onUnlink(n.name)}
-                  title="Unlink this descriptor — split it back into its own vendor"
+                  title="Separate this name back into its own vendor"
                   className="shrink-0 rounded px-1 text-[var(--muted)] hover:text-rose-500"
                 >
                   ✕
@@ -465,14 +616,33 @@ function MerchantBody({
   cats,
   onRecategorize,
   onToggleRecurring,
+  onSaveSettings,
+  amountHint,
+  merchants,
+  onCombine,
 }: {
   data: Summary;
   cats: Cat[];
   onRecategorize: (categoryId: number | null) => void;
   onToggleRecurring: () => void;
+  onSaveSettings: (
+    patch: { alias?: string | null; expectedAmount?: number | null; cadence?: string | null },
+    message: string
+  ) => void;
+  amountHint?: number | null;
+  merchants: string[];
+  onCombine: (loser: string, primary: string, alias?: string) => void;
 }) {
+  const [combining, setCombining] = useState(false);
   const d = data.recurringDetail;
   const monthsActive = monthsSince(data.firstSeen);
+  // Placeholder for the expected-amount editor. Priority: a caller-supplied hint
+  // (the suggestion row's exact figure, so the two never disagree) → the detected
+  // per-charge for a confirmed recurring → the most recent charge (current price).
+  const detectedAmount =
+    d?.perCharge ??
+    amountHint ??
+    (data.recent[0] ? Number(Math.abs(data.recent[0].amount).toFixed(2)) : null);
   const boxes = d
     ? [
         { label: "per charge", value: usd(d.perCharge, { cents: false }) },
@@ -503,23 +673,81 @@ function MerchantBody({
         </div>
       )}
 
-      <div className="flex flex-col gap-1.5">
-        <label className="stat-label">Category</label>
-        <select
-          value={data.categoryId ?? ""}
-          onChange={(e) => onRecategorize(e.target.value ? Number(e.target.value) : null)}
-          className="btn-ghost w-full cursor-pointer text-sm"
-        >
-          <option value="">Uncategorized</option>
-          {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.icon} {c.name}
-            </option>
-          ))}
-        </select>
-        <button onClick={onToggleRecurring} className="btn-ghost w-full text-sm">
-          {data.recurring ? "↻ Mark as not recurring" : "↻ Make recurring"}
-        </button>
+      {/* Edit / correct — name lives in the header (click to rename); here: a
+          compact 2-up grid so the top half stays scannable. */}
+      <div className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap gap-x-3 gap-y-2.5">
+          <div className="min-w-[140px] flex-1">
+            <ShelfEditField
+              label="Expected"
+              edited={data.expectedAmount != null}
+              prefix="$"
+              inputMode="decimal"
+              defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+              placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
+              onCommit={(v) => {
+                const t = v.trim();
+                if (t === "") {
+                  if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                  return;
+                }
+                const n = Math.abs(Number(t));
+                if (!Number.isFinite(n)) return; // ignore non-numeric input
+                if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+              }}
+            />
+          </div>
+
+          {data.recurring && (
+            <div className="min-w-[140px] flex-1">
+              <CadenceCorrection
+                detected={data.detectedCadence}
+                override={data.cadence}
+                onSave={(c) => onSaveSettings({ cadence: c }, c ? "Cadence updated" : "Cadence reset to auto")}
+              />
+            </div>
+          )}
+
+          <div className="min-w-[140px] flex-1">
+            <div className="flex flex-col gap-1.5">
+              <label className="stat-label">Category</label>
+              <select
+                value={data.categoryId ?? ""}
+                onChange={(e) => onRecategorize(e.target.value ? Number(e.target.value) : null)}
+                className="btn-ghost w-full cursor-pointer text-sm"
+              >
+                <option value="">Uncategorized</option>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icon} {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Two secondary actions, compact and side-by-side. Combine is a
+            disclosure — its panel drops below the row only while in use. */}
+        <div className="flex gap-2">
+          <button onClick={onToggleRecurring} className="btn-ghost flex-1 text-xs">
+            {data.recurring ? "↻ Not recurring" : "↻ Make recurring"}
+          </button>
+          <button
+            onClick={() => setCombining((v) => !v)}
+            className={`btn-ghost flex-1 text-xs ${combining ? "text-[var(--accent)]" : ""}`}
+          >
+            ＋ Combine
+          </button>
+        </div>
+        {combining && (
+          <CombineControl
+            current={{ merchant: data.merchant, name: data.displayName, count: data.count }}
+            merchants={merchants}
+            onCombine={onCombine}
+            onClose={() => setCombining(false)}
+          />
+        )}
       </div>
 
       {data.byYear.length > 1 && (
@@ -850,6 +1078,281 @@ function ShelfRow({
         </div>
       )}
     </li>
+  );
+}
+
+// Merge this vendor with another. The only decision surfaced is the resulting
+// NAME — which silently determines the survivor (canonical), so the user never
+// reasons about "primary". Defaults to the cleaner name; a preview shows the
+// combined charge count; and the merge is reversible (split via the header).
+function CombineControl({
+  current,
+  merchants,
+  onCombine,
+  onClose,
+}: {
+  current: { merchant: string; name: string; count: number };
+  merchants: string[];
+  onCombine: (loser: string, primary: string, alias?: string) => void;
+  onClose: () => void;
+}) {
+  const [pick, setPick] = useState("");
+  const [other, setOther] = useState<{ merchant: string; name: string; count: number } | null>(null);
+  const [choice, setChoice] = useState<"current" | "other" | "custom">("current");
+  const [custom, setCustom] = useState("");
+
+  const reset = () => {
+    setPick("");
+    setOther(null);
+    setCustom("");
+    setChoice("current");
+    onClose();
+  };
+
+  // Cleaner = fewer words, then shorter, with a digit penalty (bank descriptors
+  // tend to be long, multi-word, and id-laden). Returns true if `a` is cleaner.
+  const score = (s: string) => s.trim().split(/\s+/).length * 100 + s.length + (/\d/.test(s) ? 50 : 0);
+  const currentCleaner = () => !other || score(current.name) <= score(other.name);
+
+  async function chooseOther() {
+    const m = pick.trim();
+    if (!m || m === current.merchant || !merchants.includes(m)) return;
+    const o = await fetch(`/api/merchant?name=${encodeURIComponent(m)}`).then((r) => r.json());
+    setOther({ merchant: m, name: o.displayName as string, count: o.count as number });
+    setChoice(score(current.name) <= score(o.displayName) ? "current" : "other");
+  }
+
+  function combine() {
+    if (!other) return;
+    if (choice === "current") onCombine(other.merchant, current.merchant);
+    else if (choice === "other") onCombine(current.merchant, other.merchant);
+    else {
+      const name = custom.trim();
+      if (!name) return;
+      const primary = currentCleaner() ? current.merchant : other.merchant;
+      const loser = primary === current.merchant ? other.merchant : current.merchant;
+      onCombine(loser, primary, name);
+    }
+    reset();
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 text-xs">
+      {!other ? (
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              list="combine-merchants"
+              autoFocus
+              value={pick}
+              onChange={(e) => setPick(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && chooseOther()}
+              placeholder="Find a vendor to combine…"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-1"
+            />
+            <datalist id="combine-merchants">
+              {merchants
+                .filter((m) => m !== current.merchant)
+                .slice(0, 1000)
+                .map((m) => (
+                  <option key={m} value={m} />
+                ))}
+            </datalist>
+            <button
+              onClick={chooseOther}
+              className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 hover:bg-card"
+            >
+              Next
+            </button>
+          </div>
+          <button onClick={reset} className="self-start text-[var(--muted)] hover:text-[var(--foreground)]">
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="text-[var(--muted)]">Combine into one vendor — name it:</div>
+          {[
+            { key: "current" as const, label: current.name, cleaner: currentCleaner() },
+            { key: "other" as const, label: other.name, cleaner: !currentCleaner() },
+          ].map((opt) => (
+            <label key={opt.key} className="flex items-center gap-2">
+              <input
+                type="radio"
+                checked={choice === opt.key}
+                onChange={() => setChoice(opt.key)}
+              />
+              <span className="min-w-0 truncate">{opt.label}</span>
+              {opt.cleaner && <span className="shrink-0 text-[10px] text-[var(--accent)]">recommended</span>}
+            </label>
+          ))}
+          <label className="flex items-center gap-2">
+            <input type="radio" checked={choice === "custom"} onChange={() => setChoice("custom")} />
+            <input
+              value={custom}
+              onFocus={() => setChoice("custom")}
+              onChange={(e) => setCustom(e.target.value)}
+              placeholder="Something else…"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5"
+            />
+          </label>
+          <div className="text-[var(--muted)]">
+            {current.count + other.count} charges combined · you can split them apart anytime
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button onClick={reset} className="rounded-lg px-2 py-1 text-[var(--muted)]">
+              Cancel
+            </button>
+            <button
+              onClick={combine}
+              className="rounded-lg bg-[var(--accent)] px-3 py-1 font-medium text-white"
+            >
+              Combine
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Auto vs. edited legibility: shows whether a field holds the system's detected
+// value or one the user changed — so corrections are visible and trusted.
+function StateTag({ edited }: { edited?: boolean }) {
+  return edited ? (
+    <span className="rounded-full bg-[var(--accent)]/15 px-1.5 text-[10px] font-medium text-[var(--accent)]">
+      edited
+    </span>
+  ) : (
+    <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">auto</span>
+  );
+}
+
+const CADENCE_LABELS: Record<string, string> = {
+  weekly: "Weekly",
+  biweekly: "Every 2 weeks",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  semiannual: "Every 6 months",
+  yearly: "Yearly",
+};
+
+// One-line correction for a misread cadence: pick the right rhythm and the
+// override saves + re-derives next-due (server-side). "Auto" shows what detection
+// found and clears the override. Framed as correcting a guess, not configuring.
+function CadenceCorrection({
+  detected,
+  override,
+  onSave,
+}: {
+  detected: string | null;
+  override: string | null;
+  onSave: (cadence: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <label className="stat-label">Cadence</label>
+        <StateTag edited={override != null} />
+      </div>
+      <select
+        value={override ?? "__auto"}
+        onChange={(e) => onSave(e.target.value === "__auto" ? null : e.target.value)}
+        className="btn-ghost w-full cursor-pointer text-sm"
+      >
+        <option value="__auto">
+          Auto{detected ? ` · detected ${CADENCE_LABELS[detected] ?? detected}` : ""}
+        </option>
+        {Object.entries(CADENCE_LABELS).map(([v, label]) => (
+          <option key={v} value={v}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// A labeled, self-evidently editable field for the merchant shelf. Uncontrolled:
+// Enter or blur commits, Escape reverts. Keyed on defaultValue so a refreshed
+// value (after a save elsewhere) reseeds the input. Crucially, a pending edit is
+// also flushed on unmount — closing the shelf (click-outside, Esc, ✕, switching
+// vendor) tears the field down before blur fires, so without this the typed
+// value would be silently dropped and the list never updates.
+function ShelfEditField({
+  label,
+  defaultValue,
+  placeholder,
+  prefix,
+  inputMode,
+  hint,
+  edited,
+  onCommit,
+}: {
+  label: string;
+  defaultValue: string;
+  placeholder?: string;
+  prefix?: string;
+  inputMode?: "decimal";
+  hint?: string;
+  edited?: boolean;
+  onCommit: (value: string) => void;
+}) {
+  const reverted = useRef(false);
+  const committed = useRef(defaultValue); // last value we've already sent on
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = (value: string) => {
+    committed.current = value;
+    onCommit(value);
+  };
+
+  // Flush on unmount: hold the node from mount time (the ref may be detached by
+  // the time cleanup runs) and commit if the live value is an uncommitted edit.
+  useEffect(() => {
+    const el = inputRef.current;
+    return () => {
+      if (!reverted.current && el && el.value !== committed.current) onCommit(el.value);
+    };
+    // Mount/unmount only — capturing the node at mount is the point; re-running
+    // on every onCommit identity change would defeat the flush-on-teardown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <label className="stat-label">{label}</label>
+        <StateTag edited={edited} />
+      </div>
+      <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
+        {prefix && <span className="shrink-0 text-sm text-[var(--muted)]">{prefix}</span>}
+        <input
+          key={defaultValue}
+          ref={inputRef}
+          defaultValue={defaultValue}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              reverted.current = true;
+              e.currentTarget.value = defaultValue;
+              e.currentTarget.blur();
+            }
+          }}
+          onBlur={(e) => {
+            if (reverted.current) {
+              reverted.current = false;
+              return;
+            }
+            commit(e.target.value);
+          }}
+          className="w-full bg-transparent text-sm focus:outline-none"
+        />
+      </div>
+      {hint && <span className="text-[10px] text-[var(--muted)]">{hint}</span>}
+    </div>
   );
 }
 

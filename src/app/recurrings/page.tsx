@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Shell from "@/components/Shell";
-import { MonthPicker, CleanupNamesButtons } from "@/components/Actions";
+import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
@@ -107,7 +107,6 @@ export default function RecurringsPage() {
   const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
-  const [sugEdit, setSugEdit] = useState<{ merchant: string; field: "name" | "amount" } | null>(null);
 
   const load = useCallback(async (m: string) => {
     const data = await fetch(`/api/recurrings?month=${m}`).then((r) => r.json());
@@ -145,7 +144,7 @@ export default function RecurringsPage() {
   async function linkMerchants(alias: string, primary: string, unlink = false) {
     try {
       await postJson("/api/recurrings/link", unlink ? { alias, unlink: true } : { alias, primary });
-      toast(unlink ? "Descriptor unlinked" : "Descriptors combined", "success");
+      toast(unlink ? "Separated" : "Vendors combined", "success");
       load(month);
       loadSuggestions();
     } catch {
@@ -177,19 +176,6 @@ export default function RecurringsPage() {
         await postJson("/api/recurrings/override", { merchant: m, status: "mute" });
     } catch {
       loadSuggestions();
-    }
-  }
-
-  // Set a suggestion's name (alias) or expected amount before it's Added. The
-  // settings API merges, so only the given key changes; carried onto the
-  // recurring when Added.
-  async function editSuggestion(merchant: string, patch: SettingsPatch) {
-    setSugEdit(null);
-    try {
-      await postJson("/api/recurrings/settings", { merchant, ...patch });
-      loadSuggestions();
-    } catch {
-      toast("Couldn't save — please try again", "error");
     }
   }
 
@@ -302,7 +288,6 @@ export default function RecurringsPage() {
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={changeMonth} />
-          <CleanupNamesButtons onDone={() => load(month)} disabled={busy} />
           <button className="btn-ghost" disabled={busy} onClick={recompute}>
             {busy ? "Scanning…" : "Re-scan"}
           </button>
@@ -416,7 +401,12 @@ export default function RecurringsPage() {
                       <div key={s.merchant}>
                       <div
                         data-drawer-row
-                        onClick={() => openTx(s.merchant, { onChange: loadSuggestions })}
+                        onClick={() =>
+                          openTx(s.merchant, {
+                            onChange: loadSuggestions,
+                            amountHint: Math.abs(s.avgAmount),
+                          })
+                        }
                         className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
                           shelfActive.isMerchant(s.merchant)
                             ? "bg-[var(--accent)]/10"
@@ -430,30 +420,7 @@ export default function RecurringsPage() {
                           {s.category?.icon ?? "↻"}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            {sugEdit?.merchant === s.merchant && sugEdit.field === "name" ? (
-                              <InlineEditField
-                                value={s.displayName}
-                                onSave={(v) => editSuggestion(s.merchant, { alias: v.trim() || null })}
-                                onCancel={() => setSugEdit(null)}
-                                className="w-48 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-                              />
-                            ) : (
-                              <>
-                                <span className="truncate text-sm font-medium">{s.displayName}</span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSugEdit({ merchant: s.merchant, field: "name" });
-                                  }}
-                                  title="Rename"
-                                  className="shrink-0 rounded text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] focus:opacity-100 group-hover:opacity-100"
-                                >
-                                  <span className="inline-block -scale-x-100">✎</span>
-                                </button>
-                              </>
-                            )}
-                          </div>
+                          <div className="truncate text-sm font-medium">{s.displayName}</div>
                           <div className="text-xs text-[var(--muted)]">
                             {s.reason === "variable"
                               ? `regular ${s.cadence ?? ""} bill · variable amount`
@@ -461,34 +428,13 @@ export default function RecurringsPage() {
                                   s.count === 1 ? "" : "s"
                                 } so far`}
                             {s.aliases.length > 0
-                              ? ` · ${s.aliases.length + 1} descriptors`
+                              ? ` · ${s.aliases.length + 1} names`
                               : ""}
                           </div>
                         </div>
-                        {sugEdit?.merchant === s.merchant && sugEdit.field === "amount" ? (
-                          <InlineEditField
-                            value={String(Math.abs(s.avgAmount))}
-                            prefix={<span className="text-xs text-[var(--muted)]">$</span>}
-                            onSave={(v) =>
-                              editSuggestion(s.merchant, {
-                                expectedAmount: v.trim() === "" ? null : Math.abs(Number(v)),
-                              })
-                            }
-                            onCancel={() => setSugEdit(null)}
-                            className="w-16 rounded bg-card px-1 text-right text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-                          />
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSugEdit({ merchant: s.merchant, field: "amount" });
-                            }}
-                            title="Set the expected amount"
-                            className="w-20 text-right text-sm font-semibold tabular-nums text-[var(--muted)] hover:text-[var(--foreground)]"
-                          >
-                            {usd(Math.abs(s.avgAmount))}
-                          </button>
-                        )}
+                        <div className="w-20 text-right text-sm font-semibold tabular-nums text-[var(--muted)]">
+                          {usd(Math.abs(s.avgAmount))}
+                        </div>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -538,47 +484,6 @@ export default function RecurringsPage() {
         </div>
       )}
     </Shell>
-  );
-}
-
-// Inline editor used in suggestion rows: type, Enter/blur to save, Escape to
-// cancel. Clicks/keys are stopped so the row's open-shelf handler doesn't fire.
-function InlineEditField({
-  value,
-  onSave,
-  onCancel,
-  prefix,
-  className,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  onCancel: () => void;
-  prefix?: ReactNode;
-  className: string;
-}) {
-  const skip = useRef(false);
-  return (
-    <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-      {prefix}
-      <input
-        autoFocus
-        defaultValue={value}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            skip.current = true;
-            onCancel();
-          }
-        }}
-        onBlur={(e) => {
-          if (skip.current) skip.current = false;
-          else onSave(e.target.value);
-          onCancel();
-        }}
-        className={className}
-      />
-    </span>
   );
 }
 
@@ -931,7 +836,7 @@ function SettingsEditor({
                 <span className="truncate">↳ {m}</span>
                 <button
                   onClick={() => onLink(m, rec.merchant, true)}
-                  title="Unlink"
+                  title="Separate"
                   className="rounded px-1 hover:text-rose-500"
                 >
                   ✕
@@ -943,7 +848,7 @@ function SettingsEditor({
                 list={`merchants-${rec.id}`}
                 value={linkPick}
                 onChange={(e) => setLinkPick(e.target.value)}
-                placeholder="fold another descriptor in…"
+                placeholder="Find a vendor to combine…"
                 className={`${field} w-56`}
               />
               <datalist id={`merchants-${rec.id}`}>

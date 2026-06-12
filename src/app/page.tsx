@@ -11,13 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
-import {
-  MonthPicker,
-  ImportButton,
-  CategorizeButton,
-  SeedButton,
-  SyncBankButton,
-} from "@/components/Actions";
+import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
 import Shell from "@/components/Shell";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
@@ -167,7 +161,6 @@ export default function DashboardPage() {
         <>
           <MonthPicker months={months} value={month} onChange={changeMonth} />
           <SyncBankButton onDone={refresh} />
-          <CategorizeButton onDone={refresh} />
           <ImportButton onDone={refresh} />
         </>
       }

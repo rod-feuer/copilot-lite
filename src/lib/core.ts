@@ -137,6 +137,32 @@ export function classifyCadence(avgGapDays: number): Recurring["cadence"] | null
   return null;
 }
 
+// Cadence from the most recent gaps (the vendor's current rhythm), so one that
+// switched plans — e.g. monthly → annual — is classified by what it does now,
+// not a median dragged down by old history. Used for user-forced recurrings,
+// which should honor current behavior (the auto pass still needs all-gap
+// regularity via onGridFraction, so it stays median-based there).
+function recentCadence(gaps: number[]): Recurring["cadence"] | null {
+  if (!gaps.length) return null;
+  return classifyCadence(medianGap(gaps.slice(-3)));
+}
+
+// The current charge, not the average. A settled price (the last two charges
+// agree within 10%) uses the most recent; a genuinely variable bill uses the
+// median, a steadier typical than the latest swing. Mirrors the suggestion logic
+// so a recurring's amount matches what was suggested, and a price change (intro
+// rate that later rose) no longer skews it. Amounts are signed (expenses < 0).
+function currentAmount(amounts: number[]): number {
+  const n = amounts.length;
+  const last = amounts[n - 1];
+  const prev = n >= 2 ? amounts[n - 2] : last;
+  const stable = Math.abs(last - prev) <= 0.1 * Math.max(Math.abs(last), Math.abs(prev));
+  if (n < 3 || stable) return last;
+  const s = [...amounts].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
 export function addCadence(date: string, cadence: Recurring["cadence"]): string {
   const d = new Date(date + "T00:00:00Z");
   if (cadence === "weekly") d.setUTCDate(d.getUTCDate() + 7);
@@ -253,7 +279,7 @@ export function detectRecurrings(): Recurring[] {
     const rec = {
       merchant,
       categoryId,
-      avgAmount: Number(mean.toFixed(2)),
+      avgAmount: Number(currentAmount(amounts).toFixed(2)),
       cadence,
       lastDate,
       nextDate: addCadence(lastDate, cadence),
@@ -276,20 +302,20 @@ export function detectRecurrings(): Recurring[] {
     const txs = all.filter((t) => !excluded.has(t.hash));
     if (txs.length === 0) continue;
     const amounts = txs.map((t) => t.amount);
-    const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
     let cadence: Recurring["cadence"] = "monthly";
     if (txs.length >= 2) {
       const dates = txs.map((t) => new Date(t.date + "T00:00:00Z").getTime());
       const gaps: number[] = [];
       for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i - 1]) / DAY);
-      cadence = classifyCadence(medianGap(gaps)) ?? "monthly";
+      // Current rhythm first (handles a plan change), then median, then monthly.
+      cadence = recentCadence(gaps) ?? classifyCadence(medianGap(gaps)) ?? "monthly";
     }
     const lastDate = txs[txs.length - 1].date;
     const categoryId = modalCategory(txs);
     const rec = {
       merchant,
       categoryId,
-      avgAmount: Number(mean.toFixed(2)),
+      avgAmount: Number(currentAmount(amounts).toFixed(2)),
       cadence,
       lastDate,
       nextDate: addCadence(lastDate, cadence),

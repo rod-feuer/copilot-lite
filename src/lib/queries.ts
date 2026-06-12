@@ -384,19 +384,30 @@ export function merchantVariants(merchant: string): string[] {
 // it lands on/after today, so the drawer's "next due" never shows a past date
 // when a charge is late or the series has paused. Display-only: the stored
 // nextDate is left alone (the dashboard's "upcoming" filter relies on it).
+// Advance a UTC date in place by one cadence period.
+function advanceByCadence(d: Date, cadence: string): void {
+  if (cadence === "weekly") d.setUTCDate(d.getUTCDate() + 7);
+  else if (cadence === "biweekly") d.setUTCDate(d.getUTCDate() + 14);
+  else if (cadence === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
+  else if (cadence === "quarterly") d.setUTCMonth(d.getUTCMonth() + 3);
+  else if (cadence === "semiannual") d.setUTCMonth(d.getUTCMonth() + 6);
+  else d.setUTCFullYear(d.getUTCFullYear() + 1);
+}
+
+// Next due one cadence period after a base date (YYYY-MM-DD). Used to re-derive a
+// recurring's next-due when the user corrects its cadence.
+function nextAfter(baseDate: string, cadence: string): string {
+  const d = new Date(baseDate + "T00:00:00Z");
+  advanceByCadence(d, cadence);
+  return d.toISOString().slice(0, 10);
+}
+
 function nextDueFromToday(nextDate: string, cadence: string): string {
   const today = new Date().toISOString().slice(0, 10);
   if (nextDate >= today) return nextDate;
   const d = new Date(nextDate + "T00:00:00Z");
   let guard = 0;
-  while (d.toISOString().slice(0, 10) < today && guard++ < 600) {
-    if (cadence === "weekly") d.setUTCDate(d.getUTCDate() + 7);
-    else if (cadence === "biweekly") d.setUTCDate(d.getUTCDate() + 14);
-    else if (cadence === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
-    else if (cadence === "quarterly") d.setUTCMonth(d.getUTCMonth() + 3);
-    else if (cadence === "semiannual") d.setUTCMonth(d.getUTCMonth() + 6);
-    else d.setUTCFullYear(d.getUTCFullYear() + 1);
-  }
+  while (d.toISOString().slice(0, 10) < today && guard++ < 600) advanceByCadence(d, cadence);
   return d.toISOString().slice(0, 10);
 }
 
@@ -422,6 +433,8 @@ export function merchantSummary(merchant: string) {
   // explicit merchant_links aliases (those can be split off); the canonical and
   // the automatic first-2-token key-rollups have no link to remove.
   const links = getMerchantLinks();
+  const settings = getRecurringSettings();
+  const sett = settings[merchant] ?? null;
   const variantCounts = db
     .prepare(`SELECT merchant, COUNT(*) n FROM transactions WHERE merchant IN (${ph}) GROUP BY merchant`)
     .all(...variants) as { merchant: string; n: number }[];
@@ -505,12 +518,12 @@ export function merchantSummary(merchant: string) {
   // Recurring detail (via the linked recurring, even if its name drifted).
   const rec = db
     .prepare(
-      `SELECT cadence, avgAmount, nextDate FROM recurrings
+      `SELECT cadence, avgAmount, nextDate, lastDate FROM recurrings
        WHERE id = (SELECT recurringId FROM transactions
                    WHERE merchant IN (${ph}) AND recurringId IS NOT NULL LIMIT 1)`
     )
     .get(...variants) as
-    | { cadence: string; avgAmount: number; nextDate: string }
+    | { cadence: string; avgAmount: number; nextDate: string; lastDate: string }
     | undefined;
   const PER_YEAR: Record<string, number> = {
     weekly: 52,
@@ -520,14 +533,23 @@ export function merchantSummary(merchant: string) {
     semiannual: 2,
     yearly: 1,
   };
-  const recurringDetail = rec
-    ? {
-        cadence: rec.cadence,
-        perCharge: Number(Math.abs(rec.avgAmount).toFixed(2)),
-        annualized: Number((Math.abs(rec.avgAmount) * (PER_YEAR[rec.cadence] ?? 12)).toFixed(2)),
-        nextDate: nextDueFromToday(rec.nextDate, rec.cadence),
-      }
-    : null;
+  // recurringDetail reflects the EFFECTIVE schedule (a cadence correction wins and
+  // re-derives next-due), so the shelf's metrics match what the user just set.
+  // detectedCadence (raw) is exposed separately so the correction UI can show
+  // "detected X" and an auto/edited state.
+  const effCadence = rec ? sett?.cadence ?? rec.cadence : null;
+  const recurringDetail =
+    rec && effCadence
+      ? {
+          cadence: effCadence,
+          perCharge: Number(Math.abs(rec.avgAmount).toFixed(2)),
+          annualized: Number((Math.abs(rec.avgAmount) * (PER_YEAR[effCadence] ?? 12)).toFixed(2)),
+          nextDate: nextDueFromToday(
+            sett?.nextDate ?? nextAfter(rec.lastDate, effCadence),
+            effCadence
+          ),
+        }
+      : null;
 
   // Price-change detection — only meaningful for recurring fixed-price vendors
   // (variable merchants like coffee shops would flag spurious "changes").
@@ -560,7 +582,13 @@ export function merchantSummary(merchant: string) {
 
   return {
     merchant,
-    displayName: merchantDisplayName(merchant, getRecurringSettings(), getMerchantLinks()),
+    displayName: merchantDisplayName(merchant, settings, links),
+    // Current per-merchant overrides, so the shelf can prefill its editors and
+    // distinguish a user-set value from the detected one (null = no override).
+    alias: sett?.alias ?? null,
+    expectedAmount: sett?.expectedAmount ?? null,
+    cadence: sett?.cadence ?? null, // cadence override (null = using detected)
+    detectedCadence: rec?.cadence ?? null, // what detection found, for "detected X"
     nameVariants: variants.length,
     names,
     count: agg.n,
@@ -709,6 +737,8 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   // values on the rec (amount/alias are applied in the return map below).
   recs.forEach((r) => {
     const s = settings[r.merchant];
+    // A cadence correction flows into expectedThisMonth below (which anchors on
+    // the last charge), so the bill lands in the right months automatically.
     if (s?.cadence) r.cadence = s.cadence;
     if (s?.nextDate) r.nextDate = s.nextDate;
   });
@@ -833,9 +863,11 @@ export function upcomingRecurringExpenses(
   return rows
     .map((r) => {
       const s = settings[r.merchant];
-      const nextDate = s?.nextDate ?? r.nextDate;
+      // A cadence correction re-derives next-due from the last charge (so the
+      // dashboard's upcoming list follows it), unless next-due was set explicitly.
+      const nextDate = s?.nextDate ?? (s?.cadence ? nextAfter(r.lastDate, s.cadence) : r.nextDate);
       const mag = s?.expectedAmount ?? Math.abs(r.avgAmount);
-      return { ...r, nextDate, avgAmount: -mag, displayName: s?.alias ?? r.merchant };
+      return { ...r, cadence: s?.cadence ?? r.cadence, nextDate, avgAmount: -mag, displayName: s?.alias ?? r.merchant };
     })
     .filter((r) => r.nextDate >= from && r.nextDate <= to)
     .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
@@ -1094,7 +1126,7 @@ export function suggestedRecurrings() {
     displayName: string; // alias override if set, else merchant
     reason: "variable" | "new";
     cadence: string | null;
-    avgAmount: number; // expected-amount override if set, else the detected average
+    avgAmount: number; // expected-amount override if set, else stable current price / median if variable
     count: number;
     lastDate: string;
     category: { name: string; color: string; icon: string } | null;
@@ -1107,11 +1139,24 @@ export function suggestedRecurrings() {
     const lastDate = txs[txs.length - 1].d;
     const amounts = txs.map((t) => Math.abs(t.amount));
     const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    // Expected charge going forward (txs are date-ascending). A subscription whose
+    // price stepped up still has a *stable* current price — its last two charges
+    // agree — so use the most recent. A genuinely variable bill (consecutive
+    // charges keep differing) uses the median, a steadier typical than the latest
+    // swing. The plain average is wrong for both. `mean` is kept for the CV test.
+    const last = amounts[amounts.length - 1];
+    const prevAmt = amounts.length >= 2 ? amounts[amounts.length - 2] : last;
+    const stableRun = Math.abs(last - prevAmt) <= 0.1 * Math.max(last, prevAmt);
+    const sortedAmts = [...amounts].sort((a, b) => a - b);
+    const mid = sortedAmts.length >> 1;
+    const median =
+      sortedAmts.length % 2 ? sortedAmts[mid] : (sortedAmts[mid - 1] + sortedAmts[mid]) / 2;
+    const expected = amounts.length >= 3 && !stableRun ? median : last;
     const cId = txs[txs.length - 1].categoryId;
     const category = (cId && cats.get(cId)) || null;
     const base = {
       merchant,
-      avgAmount: -Number(mean.toFixed(2)),
+      avgAmount: -Number(expected.toFixed(2)),
       count: txs.length,
       lastDate,
       category: category ? { name: category.name, color: category.color, icon: category.icon } : null,
@@ -1159,10 +1204,13 @@ export function suggestedRecurrings() {
   for (const s of out) {
     const hit = clustered.find((c) => nameAffinity(c.merchant, s.merchant) >= LOW_MATCH);
     if (hit) {
-      const total = hit.count + s.count;
-      hit.avgAmount = Number(((hit.avgAmount * hit.count + s.avgAmount * s.count) / total).toFixed(2));
-      hit.count = total;
-      if (s.lastDate > hit.lastDate) hit.lastDate = s.lastDate;
+      hit.count += s.count;
+      // Current price across the cluster = the amount of whichever descriptor
+      // charged most recently (not a blend of the descriptors' prices).
+      if (s.lastDate > hit.lastDate) {
+        hit.lastDate = s.lastDate;
+        hit.avgAmount = s.avgAmount;
+      }
       hit.aliases.push(s.merchant);
     } else {
       clustered.push({ ...s, aliases: [] });

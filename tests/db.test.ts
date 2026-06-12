@@ -13,7 +13,11 @@ import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { getDb, migrateMerchants } from "../src/lib/db";
 import { detectRecurrings } from "../src/lib/core";
-import { recurringsForMonth, linkMerchant } from "../src/lib/queries";
+import { recurringsForMonth, linkMerchant, setRecurringSetting } from "../src/lib/queries";
+import { applyNameCleanup, undoRenormalizeMerchants } from "../src/lib/db";
+import { nameCleanupSuggestions } from "../src/lib/nameCleanup";
+import { categorizeSuggestions, applyCategorization, dismissCategorize } from "../src/lib/categorizeSuggest";
+import { normalizeMerchant } from "../src/lib/merchant";
 
 type Row = { date: string; amount: number };
 function seed(merchant: string, rows: Row[], account = "Checking") {
@@ -52,6 +56,100 @@ test("detects a regular monthly bill", () => {
   assert.ok(r, "Netflix should be detected");
   assert.equal(r!.cadence, "monthly");
   assert.equal(r!.count, 6);
+});
+
+test("a forced plan-change recurring uses the current cadence and price, not the all-history median/mean", () => {
+  // Headspace went monthly $12.99 → annual $69.99. The plan change makes the CV
+  // too high for auto-detection, so the user forces it; it must then reflect what
+  // the vendor does NOW (yearly, $69.99) — not the median gap (94d → quarterly)
+  // or the mean amount ($41.49) dragged down by the old monthly intro charges.
+  seed("Headspace", [
+    { date: "2023-10-05", amount: -12.99 },
+    { date: "2023-11-05", amount: -12.99 },
+    { date: "2023-12-05", amount: -12.99 },
+    { date: "2024-03-08", amount: -69.99 },
+    { date: "2025-03-07", amount: -69.99 },
+    { date: "2026-03-07", amount: -69.99 },
+  ]);
+  getDb().prepare("INSERT INTO recurring_overrides (merchant, status) VALUES (?, 'force')").run("Headspace");
+  const r = detectRecurrings().find((x) => x.merchant === "Headspace");
+  assert.ok(r, "forced Headspace should be created");
+  assert.equal(r!.cadence, "yearly", "current rhythm is annual, not the median quarterly");
+  assert.equal(r!.avgAmount, -69.99, "current price, not the $41.49 mean");
+  assert.equal(r!.nextDate, "2027-03-07", "next due a year after the last charge");
+});
+
+test("category suggestions: proposes from the vendor's history, applies (fills + learns), and dismiss hides it", () => {
+  const db = getDb();
+  const catId = Number(
+    db.prepare("INSERT INTO categories (name, color, icon, kind) VALUES ('Books','#888','📚','expense')").run()
+      .lastInsertRowid
+  );
+  const ins = db.prepare(
+    "INSERT INTO transactions (date, merchant, amount, account, source, hash, categoryId) VALUES (?,?,?,?,?,?,?)"
+  );
+  ins.run("2026-01-01", "Powells Books", -20, "Checking", "ps1", "ps1", catId); // history…
+  ins.run("2026-02-01", "Powells Books", -22, "Checking", "ps2", "ps2", catId);
+  ins.run("2026-03-01", "Powells Books", -25, "Checking", "ps3", "ps3", null); // …and an uncategorized one
+
+  const hit = categorizeSuggestions().suggestions.find((s) => s.merchant === "Powells Books");
+  assert.ok(hit, "history yields a proposal");
+  assert.equal(hit!.categoryId, catId);
+  assert.equal(hit!.source, "history");
+  assert.equal(hit!.count, 1, "one uncategorized row to fill");
+
+  assert.equal(applyCategorization("Powells Books", catId), 1, "fills the uncategorized row");
+  assert.equal(
+    categorizeSuggestions().suggestions.find((s) => s.merchant === "Powells Books"),
+    undefined,
+    "nothing left to suggest"
+  );
+
+  // dismiss should hide a fresh uncategorized one
+  ins.run("2026-04-01", "Powells Books", -30, "Checking", "ps4", "ps4", null);
+  dismissCategorize("Powells Books");
+  assert.equal(
+    categorizeSuggestions().suggestions.find((s) => s.merchant === "Powells Books"),
+    undefined,
+    "dismissed vendor stays hidden"
+  );
+});
+
+test("name-cleanup: suggests a stale name → its re-normalized form, applies just that pair, and undoes", () => {
+  const db = getDb();
+  const raw = "SQ *BLUE BOTTLE 0042 SAN FRANCISCO CA";
+  const to = normalizeMerchant(raw);
+  const ins = db.prepare(
+    "INSERT INTO transactions (date, merchant, rawMerchant, amount, account, source, hash) VALUES (?,?,?,?,?,?,?)"
+  );
+  ins.run("2026-01-01", "Stale Coffee", raw, -5, "Checking", "test", "nc1");
+  ins.run("2026-02-01", "Stale Coffee", raw, -5, "Checking", "test", "nc2");
+
+  const hit = nameCleanupSuggestions().find((s) => s.from === "Stale Coffee");
+  assert.ok(hit, "the stale name is suggested");
+  assert.equal(hit!.to, to, "proposes the re-normalized form");
+  assert.equal(hit!.count, 2);
+
+  assert.equal(applyNameCleanup(db, "Stale Coffee", to), 2, "renames both rows");
+  assert.equal(
+    nameCleanupSuggestions().find((s) => s.from === "Stale Coffee"),
+    undefined,
+    "suggestion clears once applied"
+  );
+
+  assert.equal(undoRenormalizeMerchants(db), 2, "undo restores both");
+  assert.ok(nameCleanupSuggestions().some((s) => s.from === "Stale Coffee"), "and the suggestion returns");
+});
+
+test("correcting a recurring's cadence re-anchors which months it's due (no second field to fix)", () => {
+  seed("Gym", monthly(2026, 1, 6, -40)); // monthly Jan–Jun 2026, last charge June
+  detectRecurrings();
+  setRecurringSetting("Gym", { cadence: "quarterly" }); // user corrects the rhythm only
+  const due = (m: string) => recurringsForMonth(m).find((r) => r.merchant === "Gym")!;
+  assert.equal(due("2026-06").cadence, "quarterly", "override applies");
+  assert.equal(due("2026-06").expectedThisMonth, true, "anchor month (last charge) is due");
+  assert.equal(due("2026-07").expectedThisMonth, false, "1 month from anchor is not a quarter");
+  assert.equal(due("2026-09").expectedThisMonth, true, "3 months from anchor is");
 });
 
 test("detects a variable-amount utility (CV rule, not every-15%)", () => {
