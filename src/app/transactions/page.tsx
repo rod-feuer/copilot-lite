@@ -1,6 +1,17 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import Shell from "@/components/Shell";
 import { MonthPicker, ImportButton } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -198,76 +209,97 @@ export default function TransactionsPage() {
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
   }, [ready, month, catFilter, q, vendor, type, account, minAmount, maxAmount, recurring]);
 
-  async function setCategory(id: number, categoryId: number | null) {
-    setTxs((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              categoryId,
-              categoryName: cats.find((c) => c.id === categoryId)?.name ?? null,
-              categoryColor: cats.find((c) => c.id === categoryId)?.color ?? null,
-              categoryIcon: cats.find((c) => c.id === categoryId)?.icon ?? null,
-            }
-          : t
-      )
-    );
-    try {
-      await patchJson(`/api/transactions/${id}`, { categoryId });
-    } catch {
-      toast("Couldn't save category — please try again", "error");
-      setRefreshKey((k) => k + 1); // re-sync the optimistic update from the server
-    }
-  }
+  // Handlers are stabilized with useCallback so the memoized TxRow only
+  // re-renders when its own data/flags change — not on every keystroke or
+  // optimistic edit elsewhere in the list. (setTxs/setRefreshKey/setEditingDateId
+  // and toast are stable; cats is the only mutable dep, and it changes rarely.)
+  const setCategory = useCallback(
+    async (id: number, categoryId: number | null) => {
+      setTxs((prev) =>
+        prev.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                categoryId,
+                categoryName: cats.find((c) => c.id === categoryId)?.name ?? null,
+                categoryColor: cats.find((c) => c.id === categoryId)?.color ?? null,
+                categoryIcon: cats.find((c) => c.id === categoryId)?.icon ?? null,
+              }
+            : t
+        )
+      );
+      try {
+        await patchJson(`/api/transactions/${id}`, { categoryId });
+      } catch {
+        toast("Couldn't save category — please try again", "error");
+        setRefreshKey((k) => k + 1); // re-sync the optimistic update from the server
+      }
+    },
+    [cats, toast]
+  );
 
   // Set/clear a transaction's free-text note. Empty clears it. Optimistic, with
   // a server re-sync on failure (same pattern as setCategory).
-  async function saveNote(id: number, raw: string) {
-    const note = raw.trim() || null;
-    setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, note } : t)));
-    try {
-      await patchJson(`/api/transactions/${id}`, { note });
-    } catch {
-      toast("Couldn't save note — please try again", "error");
-      setRefreshKey((k) => k + 1);
-    }
-  }
+  const saveNote = useCallback(
+    async (id: number, raw: string) => {
+      const note = raw.trim() || null;
+      setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, note } : t)));
+      try {
+        await patchJson(`/api/transactions/${id}`, { note });
+      } catch {
+        toast("Couldn't save note — please try again", "error");
+        setRefreshKey((k) => k + 1);
+      }
+    },
+    [toast]
+  );
 
   // Set/clear a transaction's effective (accounting) date. Equal to the posted
   // date or empty means clear the override.
-  async function commitDate(t: Tx, value: string | null) {
-    setEditingDateId(null);
-    const eff = !value || value === t.date ? null : value;
-    if (eff === (t.effectiveDate ?? null)) return;
-    try {
-      await patchJson(`/api/transactions/${t.id}`, { effectiveDate: eff });
-    } catch {
-      toast("Couldn't update date — please try again", "error");
-    }
-    setRefreshKey((k) => k + 1);
-  }
+  const commitDate = useCallback(
+    async (t: Tx, value: string | null) => {
+      setEditingDateId(null);
+      const eff = !value || value === t.date ? null : value;
+      if (eff === (t.effectiveDate ?? null)) return;
+      try {
+        await patchJson(`/api/transactions/${t.id}`, { effectiveDate: eff });
+      } catch {
+        toast("Couldn't update date — please try again", "error");
+      }
+      setRefreshKey((k) => k + 1);
+    },
+    [toast]
+  );
 
   // Recurring control. A charge that's part of a recurring can be flagged as a
   // one-off (per transaction); a flagged one can be added back; and a merchant
   // with no recurring at all can be forced recurring (merchant-level). All
   // persist across re-scans.
-  async function toggleRecurring(t: Tx) {
-    try {
-      if (t.recurringId != null) {
-        await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: true });
-        toast("Excluded this charge from the recurring", "success");
-      } else if (t.recurringExcluded) {
-        await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: false });
-        toast("Added this charge back to the recurring", "success");
-      } else {
-        await postJson("/api/recurrings/override", { merchant: t.merchant, status: "force" });
-        toast(`Marked "${t.merchant}" recurring`, "success");
+  const toggleRecurring = useCallback(
+    async (t: Tx) => {
+      try {
+        if (t.recurringId != null) {
+          await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: true });
+          toast("Excluded this charge from the recurring", "success");
+        } else if (t.recurringExcluded) {
+          await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: false });
+          toast("Added this charge back to the recurring", "success");
+        } else {
+          await postJson("/api/recurrings/override", { merchant: t.merchant, status: "force" });
+          toast(`Marked "${t.merchant}" recurring`, "success");
+        }
+        setRefreshKey((k) => k + 1);
+      } catch {
+        toast("Couldn't update — please try again", "error");
       }
-      setRefreshKey((k) => k + 1);
-    } catch {
-      toast("Couldn't update — please try again", "error");
-    }
-  }
+    },
+    [toast]
+  );
+
+  const onOpenRow = useCallback(
+    (merchant: string) => openTx(merchant, { onChange: () => setRefreshKey((k) => k + 1) }),
+    [openTx]
+  );
 
   // Net mirrors Copilot: excluded rows (incl. internal transfers) don't count.
   const total = useMemo(
@@ -561,19 +593,96 @@ export default function TransactionsPage() {
                     </span>
                   </li>
                 )}
-                {g.rows.map((t) => {
-                  const sameCat =
-                    modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
-                  const sameAcct = modal && t.account === modal.account;
-                  const recState =
-                    t.recurringId != null ? "in" : t.recurringExcluded ? "out" : "none";
-                  return (
+                {g.rows.map((t) => (
+                  <TxRow
+                    key={t.id}
+                    t={t}
+                    modal={modal}
+                    headed={headed}
+                    isEditingDate={editingDateId === t.id}
+                    isEditingNote={editingNoteId === t.id}
+                    isCatActive={activeCatSelect === t.id}
+                    isShelfActive={shelfActive.isMerchant(t.merchant)}
+                    cats={cats}
+                    onOpen={onOpenRow}
+                    setEditingDateId={setEditingDateId}
+                    setEditingNoteId={setEditingNoteId}
+                    setActiveCatSelect={setActiveCatSelect}
+                    onCommitDate={commitDate}
+                    onSaveNote={saveNote}
+                    onToggleRecurring={toggleRecurring}
+                    onSetCategory={setCategory}
+                  />
+                ))}
+              </Fragment>
+              );
+            })}
+          </ul>
+          </>
+        )}
+      </div>
+    </Shell>
+  );
+}
+
+// One transaction row, memoized so an edit or keystroke elsewhere in the list
+// doesn't re-render every row. Receives per-row flags (computed by the parent
+// from a single piece of state, e.g. isEditingDate) and stable
+// callbacks, so React.memo's shallow compare actually skips unaffected rows.
+const TxRow = memo(function TxRow({
+  t,
+  modal,
+  headed,
+  isEditingDate,
+  isEditingNote,
+  isCatActive,
+  isShelfActive,
+  cats,
+  onOpen,
+  setEditingDateId,
+  setEditingNoteId,
+  setActiveCatSelect,
+  onCommitDate,
+  onSaveNote,
+  onToggleRecurring,
+  onSetCategory,
+}: {
+  t: Tx;
+  modal: { categoryId: number | null; account: string } | null;
+  headed: boolean;
+  isEditingDate: boolean;
+  isEditingNote: boolean;
+  isCatActive: boolean;
+  isShelfActive: boolean;
+  cats: Cat[];
+  onOpen: (merchant: string) => void;
+  setEditingDateId: Dispatch<SetStateAction<number | null>>;
+  setEditingNoteId: Dispatch<SetStateAction<number | null>>;
+  setActiveCatSelect: Dispatch<SetStateAction<number | null>>;
+  onCommitDate: (t: Tx, value: string | null) => void;
+  onSaveNote: (id: number, raw: string) => void;
+  onToggleRecurring: (t: Tx) => void;
+  onSetCategory: (id: number, categoryId: number | null) => void;
+}) {
+  const sameCat =
+    modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
+  const sameAcct = modal && t.account === modal.account;
+  const recState = t.recurringId != null ? "in" : t.recurringExcluded ? "out" : "none";
+  const commitDate = onCommitDate;
+  const saveNote = onSaveNote;
+  const toggleRecurring = onToggleRecurring;
+  const setCategory = onSetCategory;
+  return (
               <li
-                key={t.id}
                 data-drawer-row
-                onClick={() => openTx(t.merchant, { onChange: () => setRefreshKey((k) => k + 1) })}
+                onClick={() => onOpen(t.merchant)}
+                // content-visibility lets the browser skip layout + paint for rows
+                // scrolled off-screen — virtualizing the render without unmounting
+                // (so Cmd-F, scroll position, and a11y still work). The intrinsic
+                // size is an estimate that keeps the scrollbar stable.
+                style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
                 className={`group flex cursor-pointer items-center gap-3 px-4 py-3 ${
-                  shelfActive.isMerchant(t.merchant)
+                  isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"
                 } ${t.excluded ? "opacity-55" : ""}`}
@@ -590,7 +699,7 @@ export default function TransactionsPage() {
                   {modal ? (
                     <>
                       <div className="flex items-center gap-2">
-                        {editingDateId === t.id ? (
+                        {isEditingDate ? (
                           <input
                             type="date"
                             defaultValue={t.effectiveDate ?? t.date}
@@ -671,7 +780,7 @@ export default function TransactionsPage() {
                             </button>
                           </span>
                         )}
-                        {editingDateId === t.id ? (
+                        {isEditingDate ? (
                           <span className="inline-flex items-center gap-1">
                             ·
                             <input
@@ -702,7 +811,7 @@ export default function TransactionsPage() {
                       </>
                     ) : (
                       <>
-                        {editingDateId === t.id ? (
+                        {isEditingDate ? (
                           <input
                             type="date"
                             defaultValue={t.effectiveDate ?? t.date}
@@ -748,7 +857,7 @@ export default function TransactionsPage() {
                     {/* Empty-note affordance lives INLINE in the meta row (like
                         "edit date") so revealing it on hover never changes the
                         row height — avoids list-wide jitter as the pointer moves. */}
-                    {!t.note && editingNoteId !== t.id && (
+                    {!t.note && !isEditingNote && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -763,7 +872,7 @@ export default function TransactionsPage() {
                   </div>
                   {/* A set note (or the editor) takes its own line below — that's
                       persistent content, not a hover reveal, so it doesn't jitter. */}
-                  {editingNoteId === t.id ? (
+                  {isEditingNote ? (
                     <input
                       autoFocus
                       defaultValue={t.note ?? ""}
@@ -844,7 +953,7 @@ export default function TransactionsPage() {
                       : undefined
                   }
                 >
-                  {activeCatSelect === t.id ? (
+                  {isCatActive ? (
                     <>
                       <option value="">Uncategorized</option>
                       {cats.map((c) => (
@@ -872,18 +981,8 @@ export default function TransactionsPage() {
                   {usd(t.amount, { sign: true })}
                 </div>
               </li>
-                );
-                })}
-              </Fragment>
-              );
-            })}
-          </ul>
-          </>
-        )}
-      </div>
-    </Shell>
   );
-}
+});
 
 // Day-group header label, e.g. "Saturday, June 6". UTC to match the stored dates.
 function dayLabel(iso: string): string {
