@@ -1006,6 +1006,9 @@ export function categoriesWithTotals(month?: string): (Category & {
   const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))
     .toISOString()
     .slice(0, 10);
+  // Spend AND the number of months the category was actually active. The average
+  // is per-active-month, NOT per-12: a $259/mo bill we've only seen once should
+  // suggest $259, not $259/12. Months counts only months with qualifying spend.
   const avgRows = db
     .prepare(
       `SELECT t.categoryId AS id,
@@ -1014,25 +1017,32 @@ export function categoriesWithTotals(month?: string): (Category & {
             WHEN c.kind = 'expense' AND t.amount < 0 THEN -t.amount
             WHEN c.kind = 'income'  AND t.amount > 0 THEN  t.amount
             ELSE 0
-          END), 0) AS spent
+          END), 0) AS spent,
+        COUNT(DISTINCT CASE
+            WHEN (c.kind = 'expense' AND t.amount < 0) OR (c.kind = 'income' AND t.amount > 0)
+            THEN substr(COALESCE(t.effectiveDate, t.date), 1, 7)
+          END) AS months
        FROM transactions t JOIN categories c ON c.id = t.categoryId
        WHERE t.excluded = 0 AND COALESCE(t.effectiveDate, t.date) >= @cutoff
        GROUP BY t.categoryId`
     )
-    .all({ cutoff }) as { id: number; spent: number }[];
-  const suggestById = new Map(
-    avgRows.map((r) => {
-      const monthly = r.spent / 12;
-      return [r.id, monthly >= 2.5 ? Math.round(monthly / 5) * 5 : 0];
-    })
-  );
+    .all({ cutoff }) as { id: number; spent: number; months: number }[];
+  const avgById = new Map(avgRows.map((r) => [r.id, r.months > 0 ? r.spent / r.months : 0]));
 
-  return rows.map((c) => ({
-    ...c,
-    budget: budgets[c.id] ?? null,
-    recurringBaseline: Number((baseline[c.id] ?? 0).toFixed(2)),
-    suggestedBudget: suggestById.get(c.id) ?? 0,
-  }));
+  return rows.map((c) => {
+    // Prefer the known recurring monthly cost (cadence-aware); else the average
+    // over the months actually spent. Round to the nearest dollar so it reflects
+    // the real figure. "Uncategorized" is a catch-all, never a budget line.
+    const baselineAmt = baseline[c.id] ?? 0;
+    const monthly = baselineAmt > 0 ? baselineAmt : avgById.get(c.id) ?? 0;
+    const suggestedBudget = c.name !== "Uncategorized" && monthly >= 5 ? Math.round(monthly) : 0;
+    return {
+      ...c,
+      budget: budgets[c.id] ?? null,
+      recurringBaseline: Number(baselineAmt.toFixed(2)),
+      suggestedBudget,
+    };
+  });
 }
 
 export function createCategory(c: {
@@ -1051,6 +1061,10 @@ export function createCategory(c: {
 export function deleteCategory(id: number) {
   const db = getDb();
   db.prepare("UPDATE transactions SET categoryId = NULL WHERE categoryId = ?").run(id);
+  // recurrings.categoryId also FK-references categories — clear it too, or the
+  // DELETE below fails the foreign-key check (e.g. a stale recurring with no
+  // remaining transactions still pinning the category).
+  db.prepare("UPDATE recurrings SET categoryId = NULL WHERE categoryId = ?").run(id);
   db.prepare("DELETE FROM rules WHERE categoryId = ?").run(id);
   db.prepare("DELETE FROM budgets WHERE categoryId = ?").run(id);
   db.prepare("DELETE FROM categories WHERE id = ?").run(id);
