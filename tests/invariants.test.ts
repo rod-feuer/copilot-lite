@@ -30,6 +30,7 @@ import {
   getBudgetsFull,
   setTransactionNote,
   updateCategory,
+  recurringEnded,
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
@@ -278,6 +279,42 @@ test("an annual budget tracks calendar-YTD spend, not a single month, and reads 
   assert.equal(row.budgetPeriod, "annual");
   assert.equal(row.total, 259, "month total is still the viewed month's single charge");
   assert.equal(row.ytdSpent, 518, "calendar-YTD sums this year's charges only; last year is excluded");
+});
+
+test("recurringEnded: ended only until a charge lands after the end date (auto-heal)", () => {
+  assert.equal(recurringEnded(null, "2026-06-10"), false, "no end date set");
+  assert.equal(recurringEnded("2026-06-12", "2026-05-10"), true, "last charge before the end date");
+  assert.equal(recurringEnded("2026-06-12", "2026-06-12"), true, "charge on the end date still counts as ended");
+  assert.equal(
+    recurringEnded("2026-06-12", "2026-07-01"),
+    false,
+    "a charge AFTER the end date reactivates — never hide a real future charge"
+  );
+});
+
+test("ending a subscription drops it from expected outflow immediately, and reactivates on a later charge", () => {
+  // WHY: a canceled subscription keeps inflating expected spend until it ages out
+  // (~1.5 cycles). Marking it ended must remove it from the recurring outflow NOW,
+  // while keeping history — and a charge after the end date must bring it back.
+  const M = "Streamflix";
+  for (const d of ["2026-03-10", "2026-04-10", "2026-05-10", "2026-06-10"])
+    tx(M, { amount: -16, date: d, categoryId: CAT });
+  detectRecurrings();
+  const active = recurringMonthlyByCategory()[CAT] ?? 0;
+  assert.ok(active >= 16, `expected the bill to count while active, got ${active}`);
+
+  setRecurringSetting(M, { endedDate: "2026-06-11" }); // after the last charge → ended
+  assert.equal(
+    recurringMonthlyByCategory()[CAT] ?? 0,
+    0,
+    "an ended subscription stops counting toward expected outflow"
+  );
+
+  setRecurringSetting(M, { endedDate: "2026-06-09" }); // before the last (06-10) charge → resubscribed
+  assert.ok(
+    (recurringMonthlyByCategory()[CAT] ?? 0) >= 16,
+    "a charge after the end date reactivates the bill"
+  );
 });
 
 test("a lumpy recurring bill is not amplified into the budget projection", () => {

@@ -115,6 +115,7 @@ export type RecurringSettings = {
   expectedAmount: number | null; // go-forward expected magnitude (positive)
   cadence: Recurring["cadence"] | null;
   nextDate: string | null;
+  endedDate: string | null; // user marked the subscription ended/canceled on this date
 };
 const EMPTY_SETTINGS: RecurringSettings = {
   matchMode: null,
@@ -124,14 +125,25 @@ const EMPTY_SETTINGS: RecurringSettings = {
   expectedAmount: null,
   cadence: null,
   nextDate: null,
+  endedDate: null,
 };
+
+// A recurring is "ended" when the user marked it canceled AND no charge has
+// landed since that date. A later charge (resubscribed, or a final clear)
+// auto-reactivates it — never silently hide a real future charge.
+export function recurringEnded(
+  endedDate: string | null | undefined,
+  lastDate: string
+): boolean {
+  return !!endedDate && lastDate <= endedDate;
+}
 
 export function getRecurringSettings(): Record<string, RecurringSettings> {
   const db = getDb();
   ensureRecurringSettings(db);
   const rows = db
     .prepare(
-      "SELECT merchant, matchMode, matchText, amountTolerance, alias, expectedAmount, cadence, nextDate FROM recurring_settings"
+      "SELECT merchant, matchMode, matchText, amountTolerance, alias, expectedAmount, cadence, nextDate, endedDate FROM recurring_settings"
     )
     .all() as ({ merchant: string } & RecurringSettings)[];
   const out: Record<string, RecurringSettings> = {};
@@ -158,13 +170,13 @@ export function setRecurringSetting(merchant: string, patch: Partial<RecurringSe
   }
   db.prepare(
     `INSERT INTO recurring_settings
-       (merchant, matchMode, matchText, amountTolerance, alias, expectedAmount, cadence, nextDate)
-     VALUES (@merchant, @matchMode, @matchText, @amountTolerance, @alias, @expectedAmount, @cadence, @nextDate)
+       (merchant, matchMode, matchText, amountTolerance, alias, expectedAmount, cadence, nextDate, endedDate)
+     VALUES (@merchant, @matchMode, @matchText, @amountTolerance, @alias, @expectedAmount, @cadence, @nextDate, @endedDate)
      ON CONFLICT(merchant) DO UPDATE SET
        matchMode = excluded.matchMode, matchText = excluded.matchText,
        amountTolerance = excluded.amountTolerance, alias = excluded.alias,
        expectedAmount = excluded.expectedAmount, cadence = excluded.cadence,
-       nextDate = excluded.nextDate`
+       nextDate = excluded.nextDate, endedDate = excluded.endedDate`
   ).run(merged);
 }
 
@@ -723,6 +735,8 @@ export type RecurringForMonth = Recurring & {
   linkedMerchants: string[]; // descriptor aliases folded into this recurring
   displayName: string;
   expectedAmount: number; // effective expected magnitude (override or detected)
+  ended: boolean; // user marked it canceled and nothing has charged since
+  endedDate: string | null;
   settings: RecurringSettings | null;
 };
 export function recurringsForMonth(month: string): RecurringForMonth[] {
@@ -868,6 +882,8 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       linkedMerchants: linkedAliases(r.merchant, links).filter((m) => m !== r.merchant),
       displayName: s?.alias ?? r.merchant,
       expectedAmount: s?.expectedAmount ?? Number(Math.abs(r.avgAmount).toFixed(2)),
+      ended: recurringEnded(s?.endedDate, r.lastDate),
+      endedDate: s?.endedDate ?? null,
       settings: s,
     };
   });
@@ -899,6 +915,8 @@ export function upcomingRecurringExpenses(
     categoryIcon: string | null;
   })[];
   return rows
+    // A canceled (ended) subscription is no longer an upcoming bill.
+    .filter((r) => !recurringEnded(settings[r.merchant]?.endedDate, r.lastDate))
     .map((r) => {
       const s = settings[r.merchant];
       // A cadence correction re-derives next-due from the last charge (so the
@@ -997,17 +1015,21 @@ export function isRecurringActive(
 export function recurringMonthlyByCategory(): Record<number, number> {
   const rows = getDb()
     .prepare(
-      "SELECT categoryId, cadence, avgAmount, lastDate FROM recurrings WHERE avgAmount < 0 AND categoryId IS NOT NULL"
+      "SELECT merchant, categoryId, cadence, avgAmount, lastDate FROM recurrings WHERE avgAmount < 0 AND categoryId IS NOT NULL"
     )
     .all() as {
+    merchant: string;
     categoryId: number;
     cadence: string;
     avgAmount: number;
     lastDate: string;
   }[];
+  const settings = getRecurringSettings();
   const out: Record<number, number> = {};
   for (const r of rows) {
     if (!isRecurringActive(r.lastDate, r.cadence)) continue;
+    // A canceled (ended) subscription stops counting toward expected outflow now.
+    if (recurringEnded(settings[r.merchant]?.endedDate, r.lastDate)) continue;
     out[r.categoryId] =
       (out[r.categoryId] ?? 0) + Math.abs(r.avgAmount) * (MONTHLY_FACTOR[r.cadence] ?? 1);
   }
