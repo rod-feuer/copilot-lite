@@ -42,6 +42,8 @@ type Summary = {
   count12: number;
   firstSeen: string | null;
   recurring: boolean;
+  ended: boolean; // user marked the subscription ended/canceled (and nothing charged since)
+  endedDate: string | null;
   recurringDetail: {
     cadence: string;
     perCharge: number;
@@ -263,7 +265,12 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // Save a per-merchant override (name and/or go-forward amount) edited right in
   // the shelf, where the recent charges that justify the value are on screen.
   async function saveMerchantSettings(
-    patch: { alias?: string | null; expectedAmount?: number | null; cadence?: string | null },
+    patch: {
+      alias?: string | null;
+      expectedAmount?: number | null;
+      cadence?: string | null;
+      endedDate?: string | null;
+    },
     message: string
   ) {
     if (target?.kind !== "merchant") return;
@@ -643,7 +650,12 @@ function MerchantBody({
   onRecategorize: (categoryId: number | null) => void;
   onToggleRecurring: () => void;
   onSaveSettings: (
-    patch: { alias?: string | null; expectedAmount?: number | null; cadence?: string | null },
+    patch: {
+      alias?: string | null;
+      expectedAmount?: number | null;
+      cadence?: string | null;
+      endedDate?: string | null;
+    },
     message: string
   ) => void;
   amountHint?: number | null;
@@ -757,6 +769,43 @@ function MerchantBody({
             ＋ Combine
           </button>
         </div>
+
+        {/* End / reactivate a canceled subscription — same correction as the
+            Recurrings page, available wherever the vendor shelf is open. Only
+            meaningful for an actual recurring. */}
+        {data.recurring && (
+          <div className="flex items-center justify-between px-0.5 text-xs">
+            {data.ended ? (
+              <>
+                <span
+                  className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+                  title="Marked ended — no longer counts as upcoming or expected"
+                >
+                  Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
+                </span>
+                <button
+                  onClick={() => onSaveSettings({ endedDate: null }, "Reactivated")}
+                  className="text-[var(--accent)] hover:underline"
+                >
+                  Reactivate
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() =>
+                  onSaveSettings(
+                    { endedDate: new Date().toISOString().slice(0, 10) },
+                    "Marked ended"
+                  )
+                }
+                title="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
+                className="text-[var(--muted)] hover:text-[var(--foreground)] hover:underline"
+              >
+                Mark as ended
+              </button>
+            )}
+          </div>
+        )}
         {combining && (
           <CombineControl
             current={{
