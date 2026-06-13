@@ -98,6 +98,26 @@ export function importPlaidTransactions(items: PlaidItem[]): {
       hash: string;
     }[]).map((r) => r.hash)
   );
+  // Snapshot user edits on the pending Plaid rows about to be wiped. Posted rows
+  // keep these through the upsert (it never overwrites them), but a pending row is
+  // deleted + recreated every sync — so without this, a category/note/date the
+  // user set on a still-pending charge is silently lost on the next sync. Keyed by
+  // the stable transaction_id (hash); reapplied after re-import, and redirected to
+  // the posted twin when the charge posts (see the reconciliation below).
+  type Edits = { categoryId: number | null; note: string | null; effectiveDate: string | null };
+  const pendingEdits = new Map<string, Edits>();
+  for (const r of db
+    .prepare(
+      "SELECT hash, categoryId, note, effectiveDate FROM transactions WHERE source = 'plaid' AND pending = 1"
+    )
+    .all() as ({ hash: string } & Edits)[]) {
+    if (r.categoryId != null || r.note != null || r.effectiveDate != null)
+      pendingEdits.set(r.hash, {
+        categoryId: r.categoryId,
+        note: r.note,
+        effectiveDate: r.effectiveDate,
+      });
+  }
   // Clear transient pending Plaid rows before re-importing the window — this
   // drops a pending charge that has fully posted (Plaid stops returning it).
   // Posted rows are stable and keep their categoryId via the upsert below.
@@ -118,9 +138,20 @@ export function importPlaidTransactions(items: PlaidItem[]): {
   // A posted twin for a pending charge: same account + amount, within 3 days.
   // Name affinity (checked in JS) then confirms it's the same vendor.
   const findPosted = db.prepare(
-    `SELECT merchant FROM transactions
+    `SELECT hash, merchant FROM transactions
      WHERE source = 'plaid' AND pending = 0 AND account = @account AND amount = @amount
        AND ABS(julianday(COALESCE(effectiveDate, date)) - julianday(@date)) <= 3`
+  );
+  // Reapply a snapshotted edit onto wherever the charge now lives (the re-inserted
+  // pending row, or the posted twin it reconciled into). categoryId is overridden
+  // so the value the row carried wins over a fresh rules/history guess; note and
+  // effectiveDate fill only when the target doesn't already have one.
+  const restoreEdits = db.prepare(
+    `UPDATE transactions SET
+       categoryId = COALESCE(@categoryId, categoryId),
+       note = COALESCE(note, @note),
+       effectiveDate = COALESCE(effectiveDate, @effectiveDate)
+     WHERE hash = @hash`
   );
 
   let inserted = 0;
@@ -160,8 +191,17 @@ export function importPlaidTransactions(items: PlaidItem[]): {
           account: r.account,
           amount: r.amount,
           date: r.date,
-        }) as { merchant: string }[]).some((q) => nameAffinity(r.merchant, q.merchant) >= NAME_MATCH);
+        }) as { hash: string; merchant: string }[]).find(
+          (q) => nameAffinity(r.merchant, q.merchant) >= NAME_MATCH
+        );
         if (twin) {
+          // The charge has posted: carry any edits off the vanishing pending row
+          // onto its posted twin so they survive the pending→posted transition.
+          const e = pendingEdits.get(r.hash);
+          if (e) {
+            pendingEdits.delete(r.hash);
+            pendingEdits.set(twin.hash, e);
+          }
           reconciled++;
           continue;
         }
@@ -179,6 +219,11 @@ export function importPlaidTransactions(items: PlaidItem[]): {
         seen.add(r.hash);
       }
     }
+
+    // Reapply the snapshotted edits now that every row has been re-imported — onto
+    // the re-inserted pending rows (same hash) and the posted twins edits were
+    // redirected to above. A hash no longer in the table matches nothing (no-op).
+    for (const [hash, e] of pendingEdits) restoreEdits.run({ hash, ...e });
   });
   tx(items);
   return { inserted, updated, reconciled };

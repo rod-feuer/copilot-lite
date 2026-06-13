@@ -776,6 +776,50 @@ test("plaid sync reconciles a pending charge against its posted twin, sparing co
   assert.equal(all.filter((r) => r.pending === 1).length, 1, "only the un-twinned pending remains");
 });
 
+test("a category set on a pending Plaid charge survives the next sync and follows it to posted", () => {
+  // WHY: a pending Plaid row is wiped + recreated on every sync, so a category the
+  // user set on a still-pending charge must be preserved by transaction_id — else
+  // it silently reverts next sync (the "Asymmetrically won't keep its category"
+  // bug). And it must follow the charge onto its posted twin (a new id) so the
+  // edit isn't lost again at the pending→posted transition.
+  const pendingPull = {
+    accounts: [{ account_id: "a1", name: "Checking" }],
+    transactions: [
+      { transaction_id: "asym-pending", account_id: "a1", date: "2026-06-12", name: "Asymmetrically", merchant_name: "Asymmetrically", amount: 10, pending: true },
+    ],
+  };
+  importPlaidTransactions([pendingPull]);
+  // User categorizes the pending charge.
+  getDb().prepare("UPDATE transactions SET categoryId = ? WHERE hash = 'asym-pending'").run(CAT);
+
+  // Sync again — the still-pending charge comes back and is re-wiped/re-imported.
+  importPlaidTransactions([pendingPull]);
+  const resync = getDb()
+    .prepare("SELECT categoryId, pending FROM transactions WHERE hash = 'asym-pending'")
+    .get() as { categoryId: number; pending: number };
+  assert.equal(resync.categoryId, CAT, "category is retained across the pending wipe");
+  assert.equal(resync.pending, 1, "and the charge is still pending");
+
+  // The charge posts: Plaid returns the posted version (new id) alongside the
+  // still-pending one mid-transition; the pending twin reconciles away.
+  const postedPull = {
+    accounts: [{ account_id: "a1", name: "Checking" }],
+    transactions: [
+      { transaction_id: "asym-posted", account_id: "a1", date: "2026-06-13", name: "Asymmetrically", merchant_name: "Asymmetrically", amount: 10, pending: false },
+      { transaction_id: "asym-pending", account_id: "a1", date: "2026-06-12", name: "Asymmetrically", merchant_name: "Asymmetrically", amount: 10, pending: true },
+    ],
+  };
+  importPlaidTransactions([postedPull]);
+  const posted = getDb()
+    .prepare("SELECT categoryId FROM transactions WHERE hash = 'asym-posted'")
+    .get() as { categoryId: number };
+  const pendingGone = getDb()
+    .prepare("SELECT COUNT(*) n FROM transactions WHERE hash = 'asym-pending'")
+    .get() as { n: number };
+  assert.equal(posted.categoryId, CAT, "category follows the charge onto its posted twin");
+  assert.equal(pendingGone.n, 0, "the pending row is reconciled away");
+});
+
 test("mergePreview returns each descriptor's recent charges, newest first", () => {
   tx("Foo Bar", { amount: -5, date: "2026-01-01", categoryId: CAT, account: "Visa" });
   tx("Foo Bar", { amount: -6, date: "2026-03-01", categoryId: CAT, account: "Visa" });
