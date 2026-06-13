@@ -199,16 +199,33 @@ export default function TransactionsPage() {
   // filter changes, is discarded instead of corrupting a newer result set.
   const guardRef = useRef(createLatestGuard());
 
-  // Page 1: replace the list and capture the full-set count + net total.
+  // Page 1: replace the list and capture the full-set count + net total. Retries
+  // a transient failure (a just-started dev route, a network blip) so the first
+  // load self-recovers instead of leaving an empty list that needs a manual
+  // refresh. The gen-guard keeps a retry from clobbering a newer load.
   const load = useCallback(
-    async (f: Filters) => {
+    (f: Filters) => {
       filtersRef.current = f;
-      const token = guardRef.current.begin();
-      const data = await fetch(`/api/transactions?${buildTxQuery(f, 0)}`).then((r) => r.json());
-      if (!guardRef.current.isCurrent(token)) return; // a newer load superseded this one
-      setTxs(data.rows ?? []);
-      setTotalCount(data.count ?? data.rows?.length ?? 0);
-      setNetTotal(data.net ?? 0);
+      const token = guardRef.current.begin(); // one token for this load + its retries
+      const run = async (attempt: number): Promise<void> => {
+        if (!guardRef.current.isCurrent(token)) return; // a newer load superseded this one
+        try {
+          const res = await fetch(`/api/transactions?${buildTxQuery(f, 0)}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          if (!guardRef.current.isCurrent(token)) return;
+          setTxs(data.rows ?? []);
+          setTotalCount(data.count ?? data.rows?.length ?? 0);
+          setNetTotal(data.net ?? 0);
+        } catch {
+          // Transient failure (cold dev route / blip) → retry, so the first load
+          // self-recovers instead of leaving an empty list that needs a refresh.
+          if (guardRef.current.isCurrent(token) && attempt < 2) {
+            setTimeout(() => run(attempt + 1), 500);
+          }
+        }
+      };
+      void run(0);
     },
     [buildTxQuery]
   );
@@ -235,8 +252,22 @@ export default function TransactionsPage() {
   }, [buildTxQuery]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadStatic();
+    // Retry a transient first-load failure (a just-started dev route / network
+    // blip) so the page self-recovers instead of needing a manual refresh; give
+    // up gracefully after a few tries so the rest of the page still works.
+    let cancelled = false;
+    let tries = 0;
+    const go = () => {
+      loadStatic().catch(() => {
+        if (cancelled) return;
+        if (tries++ < 2) setTimeout(go, 500);
+        else setReady(true);
+      });
+    };
+    go();
+    return () => {
+      cancelled = true;
+    };
   }, [loadStatic]);
 
   // Defer the review-queue widgets until the browser is idle after first paint,
