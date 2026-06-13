@@ -716,12 +716,14 @@ function BillList({
                     onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
                   }
                   title="Category"
-                  className={`hidden max-w-36 shrink-0 cursor-pointer appearance-none truncate rounded-full px-2.5 py-1 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
+                  className={`select-caret hidden max-w-36 shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
                     r.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
                       : "border border-dashed border-[var(--border)] text-[var(--muted)]"
                   }`}
-                  style={r.categoryId != null ? { background: color + "22" } : undefined}
+                  // backgroundColor (not `background`) so the .select-caret
+                  // chevron's background-image survives.
+                  style={r.categoryId != null ? { backgroundColor: color + "22" } : undefined}
                 >
                   <option value="">Uncategorized</option>
                   {cats.map((c) => (

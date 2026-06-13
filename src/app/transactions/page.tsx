@@ -1063,14 +1063,16 @@ const TxRow = memo(function TxRow({
                     setCategory(t.id, e.target.value ? Number(e.target.value) : null)
                   }
                   title="Category"
-                  className={`max-w-[9rem] shrink-0 cursor-pointer appearance-none truncate rounded-full px-2.5 py-1 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${
+                  className={`select-caret max-w-[9rem] shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${
                     t.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
                       : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
                   }`}
                   style={
                     t.categoryId != null
-                      ? { background: (t.categoryColor ?? "#94a3b8") + "22" }
+                      ? // backgroundColor (not the `background` shorthand) so the
+                        // .select-caret chevron's background-image isn't reset.
+                        { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" }
                       : undefined
                   }
                 >
