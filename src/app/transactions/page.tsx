@@ -573,7 +573,7 @@ export default function TransactionsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" />
+        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="w-full sm:w-60" />
 
         {vendor && (
           <Chip onRemove={() => setVendor("")}>
@@ -698,7 +698,7 @@ export default function TransactionsPage() {
             setSort(s);
             setDir(d);
           }}
-          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-sm"
+          className="btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm sm:ml-auto"
         >
           <option value="date-desc">Newest</option>
           <option value="date-asc">Oldest</option>

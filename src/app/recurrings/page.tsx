@@ -318,12 +318,12 @@ export default function RecurringsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={setQ} placeholder="Search recurrings…" />
+        <SearchBox value={q} onChange={setQ} placeholder="Search recurrings…" className="w-full sm:w-60" />
         <select
           value={catFilter}
           onChange={(e) => setCatFilter(e.target.value)}
           aria-label="Filter by category"
-          className={`btn-ghost select-caret ml-auto max-w-44 cursor-pointer appearance-none pr-8 ${
+          className={`btn-ghost select-caret max-w-44 cursor-pointer appearance-none pr-8 sm:ml-auto ${
             catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
