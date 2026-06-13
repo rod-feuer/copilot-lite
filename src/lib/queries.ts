@@ -414,6 +414,17 @@ export function setTransactionRecurringExcluded(id: number, excluded: boolean) {
   else db.prepare("DELETE FROM recurring_tx_exclusions WHERE hash = ?").run(row.hash);
 }
 
+// Clear every per-charge "one-off" exclusion for a merchant. Used when a vendor
+// is marked not-recurring: with no series, an "excluded from the series" flag is
+// meaningless and would otherwise linger as a ghost marker on the charge.
+export function clearRecurringTxExclusionsForMerchant(merchant: string) {
+  const db = getDb();
+  ensureRecurringTxExclusions(db);
+  db.prepare(
+    "DELETE FROM recurring_tx_exclusions WHERE hash IN (SELECT hash FROM transactions WHERE merchant = ?)"
+  ).run(merchant);
+}
+
 // Normalize a bank-descriptor merchant string to a coarse vendor key so the
 // drawer can roll up descriptor drift — e.g. "Benjamin Franklin",
 // "Benjamin Franklin Plindianapolis In", "Benjamin Franklin Plumbin" all share
