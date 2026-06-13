@@ -172,12 +172,23 @@ export default function DashboardPage() {
   return (
     <Shell
       title="Dashboard"
-      subtitle={data?.monthLabel ?? ""}
+      // No subtitle: the month picker already shows the month (it was duplicated
+      // as "June 2026" both here and in the picker below).
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={changeMonth} />
-          <SyncBankButton onDone={refresh} />
-          <ImportButton onDone={refresh} />
+          {/* Sync / Import inline on desktop; tucked behind a ⋯ on mobile so these
+              rare actions don't crowd the top of a phone screen. */}
+          <span className="hidden items-center gap-2 sm:flex">
+            <SyncBankButton onDone={refresh} />
+            <ImportButton onDone={refresh} />
+          </span>
+          <span className="sm:hidden">
+            <HeaderMenu>
+              <SyncBankButton onDone={refresh} />
+              <ImportButton onDone={refresh} />
+            </HeaderMenu>
+          </span>
         </>
       }
     >
@@ -196,7 +207,7 @@ export default function DashboardPage() {
             isCurrentMonth={month === new Date().toISOString().slice(0, 7)}
           />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
             <Stat
               label="Income"
               value={usd(data.income, { cents: false })}
@@ -541,6 +552,36 @@ function PaceStrip({ pace, spent }: { pace: Dash["pace"]; spent: number }) {
 // Persistent-but-faint affordance marking a row/card as drillable. Visible at
 // rest (so the interaction is discoverable, not hover-only) and strengthens +
 // nudges right on hover. Parent must carry `group`.
+// Secondary header actions behind a "⋯" on mobile (rendered inline on desktop by
+// the caller). Lightweight dropdown — mirrors the transactions "+ Filter" menu.
+function HeaderMenu({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="btn-ghost px-3 text-base leading-none"
+      >
+        ⋯
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div
+            onClick={() => setOpen(false)}
+            className="absolute right-0 z-40 mt-1 flex flex-col items-stretch gap-1 rounded-xl border border-[var(--border)] bg-card p-1 shadow-lg"
+          >
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DrillChevron({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -551,7 +592,7 @@ function DrillChevron({ className = "" }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className={`h-4 w-4 shrink-0 text-[var(--muted)] opacity-40 transition-all group-hover:opacity-100 group-hover:translate-x-0.5 ${className}`}
+      className={`h-4 w-4 shrink-0 text-[var(--muted)] opacity-60 transition-all group-hover:opacity-100 group-hover:translate-x-0.5 ${className}`}
     >
       <path d="M9 6l6 6-6 6" />
     </svg>
@@ -594,7 +635,7 @@ function Stat({
   const inner = (
     <>
       <div className="stat-label">{label}</div>
-      <div className={`mt-2 text-2xl font-semibold tracking-tight ${valueColor}`}>
+      <div className={`mt-1 text-xl font-semibold tracking-tight sm:mt-2 sm:text-2xl ${valueColor}`}>
         {value}
       </div>
       {sub}
@@ -604,14 +645,14 @@ function Stat({
     return (
       <Link
         href={href}
-        className="card group relative block cursor-pointer p-5 transition-colors hover:border-[var(--accent)]/40"
+        className="card group relative block cursor-pointer p-4 transition-colors hover:border-[var(--accent)]/40 sm:p-5"
       >
         <DrillChevron className="absolute right-4 top-4" />
         {inner}
       </Link>
     );
   }
-  return <div className="card p-5">{inner}</div>;
+  return <div className="card p-4 sm:p-5">{inner}</div>;
 }
 
 // One plain-language headline answering "how am I doing this month?" — so the
