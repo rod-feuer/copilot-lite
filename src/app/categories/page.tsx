@@ -416,28 +416,30 @@ function BudgetSummary({
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-xs">
         {overCount > 0 ? (
-          <button
-            onClick={() => onFilter("over")}
-            className={`font-medium text-rose-600 hover:underline ${filter === "over" ? "underline" : ""}`}
-            title="Show the categories over budget"
-          >
-            {overLabel}
-          </button>
+          <Tooltip label="Show the categories over budget" onlyIfTruncated={false}>
+            <button
+              onClick={() => onFilter("over")}
+              className={`font-medium text-rose-600 hover:underline ${filter === "over" ? "underline" : ""}`}
+            >
+              {overLabel}
+            </button>
+          </Tooltip>
         ) : (
           <span className="text-[var(--muted)]">On track — nothing over budget</span>
         )}
         {unbudgeted.length > 0 && (
           <>
             <span className="text-[var(--muted)]">·</span>
-            <button
-              onClick={() => onFilter("unbudgeted")}
-              className={`text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
-                filter === "unbudgeted" ? "text-[var(--foreground)] underline" : ""
-              }`}
-              title="Show the categories with no budget, to set one"
-            >
-              {unbudgeted.length} not budgeted
-            </button>
+            <Tooltip label="Show the categories with no budget, to set one" onlyIfTruncated={false}>
+              <button
+                onClick={() => onFilter("unbudgeted")}
+                className={`text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
+                  filter === "unbudgeted" ? "text-[var(--foreground)] underline" : ""
+                }`}
+              >
+                {unbudgeted.length} not budgeted
+              </button>
+            </Tooltip>
           </>
         )}
         {filter && (
@@ -590,10 +592,16 @@ function Group({
                     />
                     {recur > 0 && (
                       <div
-                        className="absolute top-0 h-2 w-0.5 rounded bg-[var(--foreground)]/40"
+                        className="absolute top-0 h-2"
                         style={{ left: `${Math.min((recur / budget) * 100, 100)}%` }}
-                        title={`${usd(recur, { cents: false })} recurring${annual ? "/yr" : ""}`}
-                      />
+                      >
+                        <Tooltip
+                          label={`${usd(recur, { cents: false })} recurring${annual ? "/yr" : ""}`}
+                          onlyIfTruncated={false}
+                        >
+                          <span className="block h-2 w-0.5 rounded bg-[var(--foreground)]/40" />
+                        </Tooltip>
+                      </div>
                     )}
                   </div>
                 )}
@@ -640,19 +648,23 @@ function Group({
                         : `${usd(-remaining, { cents: false })} over`}
                       {annual ? " this year" : ""}
                       {recur > 0 && (
-                        <span
-                          className={`font-normal ${
-                            recur > budget ? "text-amber-600" : "text-[var(--muted)]"
-                          }`}
-                          title={
+                        <Tooltip
+                          label={
                             recur > budget
                               ? "Budget is below this category's known recurring cost"
                               : "Recurring cost in this category"
                           }
+                          onlyIfTruncated={false}
                         >
-                          {" · "}
-                          {usd(recur, { cents: false })} recurring{annual ? "/yr" : ""}
-                        </span>
+                          <span
+                            className={`font-normal ${
+                              recur > budget ? "text-amber-600" : "text-[var(--muted)]"
+                            }`}
+                          >
+                            {" · "}
+                            {usd(recur, { cents: false })} recurring{annual ? "/yr" : ""}
+                          </span>
+                        </Tooltip>
                       )}
                     </span>
                   ) : onBudget && c.recurringBaseline > 0 ? (
@@ -703,7 +715,6 @@ function EmojiPicker({ value, onPick }: { value?: string; onPick: (emoji: string
     <button
       key={key}
       onClick={() => onPick(char)}
-      title={char}
       className={`flex h-7 w-7 items-center justify-center rounded text-lg hover:bg-[var(--background)] ${
         value === char ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/40" : ""
       }`}
@@ -748,15 +759,16 @@ function EmojiButton({ value, onPick }: { value: string; onPick: (emoji: string)
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        title="Choose icon"
-        className="btn-ghost w-14 text-center text-lg"
-        aria-label="Choose icon"
-      >
-        {value}
-      </button>
+      <Tooltip label="Choose icon" onlyIfTruncated={false}>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="btn-ghost w-14 text-center text-lg"
+          aria-label="Choose icon"
+        >
+          {value}
+        </button>
+      </Tooltip>
       {open && (
         <div className="absolute left-0 top-12 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
           <EmojiPicker
@@ -811,19 +823,20 @@ function CategoryName({ name, onRename }: { name: string; onRename?: (name: stri
     );
   }
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setEditing(true);
-      }}
-      title="Rename"
-      className="group/n flex min-w-0 items-center gap-1 text-left"
-    >
-      <span className="truncate text-sm font-medium">{name}</span>
-      <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
-        <span className="inline-block -scale-x-100">✎</span>
-      </span>
-    </button>
+    <Tooltip label="Rename" onlyIfTruncated={false} className="flex min-w-0">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+        className="group/n flex min-w-0 items-center gap-1 text-left"
+      >
+        <span className="truncate text-sm font-medium">{name}</span>
+        <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
+          <span className="inline-block -scale-x-100">✎</span>
+        </span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -871,12 +884,12 @@ function CategoryBadge({
     // stopPropagation so editing the badge never opens the category shelf (the
     // row's click handler).
     <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        title="Change icon & color"
-        className={`${badgeClass} group/badge relative cursor-pointer ring-[var(--border)] transition hover:ring-2`}
-        style={{ background: color + "22" }}
-      >
+      <Tooltip label="Change icon & color" onlyIfTruncated={false}>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className={`${badgeClass} group/badge relative cursor-pointer ring-[var(--border)] transition hover:ring-2`}
+          style={{ background: color + "22" }}
+        >
         {icon}
         {/* Persistent (faint) corner cue so the badge reads as editable; darkens
             on hover. The card background + border keep it legible on any color. */}
@@ -886,7 +899,8 @@ function CategoryBadge({
         >
           <span className="inline-block -scale-x-100">✎</span>
         </span>
-      </button>
+        </button>
+      </Tooltip>
       {open && (
         <div className="absolute left-0 top-11 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
           <EmojiPicker value={icon} onPick={(e) => onSave({ icon: e })} />
@@ -982,42 +996,55 @@ function BudgetInput({
   return (
     <span className="inline-flex items-baseline gap-1 text-[var(--muted)]">
       of&nbsp;$
-      <input
-        defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
-        onBlur={(e) => commit(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        placeholder="—"
-        inputMode="decimal"
-        aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
-        title={period === "annual" ? "Annual budget" : "Monthly budget"}
-        className="w-14 rounded bg-transparent text-right font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
-      />
-      <button
-        onClick={togglePeriod}
-        title={period === "annual" ? "Annual budget — click for monthly" : "Monthly budget — click for annual"}
-        className="rounded px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+      <Tooltip
+        label={period === "annual" ? "Annual budget" : "Monthly budget"}
+        onlyIfTruncated={false}
+        className="inline-flex w-14"
       >
-        {unit}
-      </button>
+        <input
+          defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          placeholder="—"
+          inputMode="decimal"
+          aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
+          className="w-full rounded bg-transparent text-right font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+        />
+      </Tooltip>
+      <Tooltip
+        label={period === "annual" ? "Annual budget — click for monthly" : "Monthly budget — click for annual"}
+        onlyIfTruncated={false}
+      >
+        <button
+          onClick={togglePeriod}
+          className="rounded px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+        >
+          {unit}
+        </button>
+      </Tooltip>
       {budget === null && (
         <span className="flex w-20 shrink-0 justify-end">
           {sug > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSave(sug, period);
-              }}
-              title={
+            <Tooltip
+              label={
                 period === "annual"
                   ? `Set an annual budget of your ~$${sug.toLocaleString("en-US")}/yr spend`
                   : `Set this month's budget to your ~$${sug.toLocaleString("en-US")}/mo average`
               }
-              className="whitespace-nowrap rounded-md bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
+              onlyIfTruncated={false}
             >
-              Use ${sug.toLocaleString("en-US")}
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSave(sug, period);
+                }}
+                className="whitespace-nowrap rounded-md bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
+              >
+                Use ${sug.toLocaleString("en-US")}
+              </button>
+            </Tooltip>
           )}
         </span>
       )}

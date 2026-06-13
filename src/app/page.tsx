@@ -448,9 +448,9 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-medium">{t.displayName}</span>
                         {t.recurringId != null && (
-                          <span className="shrink-0 text-xs text-[var(--accent)]" title="Recurring">
+                          <HoverTip label="Recurring" onlyIfTruncated={false} className="shrink-0 text-xs text-[var(--accent)]">
                             ↻
-                          </span>
+                          </HoverTip>
                         )}
                       </div>
                       <div className="text-xs text-[var(--muted)]">

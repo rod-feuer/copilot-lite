@@ -469,16 +469,17 @@ export default function RecurringsPage() {
                         >
                           Add
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            dismissSuggestion(s);
-                          }}
-                          title="Dismiss"
-                          className="shrink-0 rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-rose-500"
-                        >
-                          ✕
-                        </button>
+                        <Tooltip label="Dismiss" onlyIfTruncated={false} className="shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              dismissSuggestion(s);
+                            }}
+                            className="rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-rose-500"
+                          >
+                            ✕
+                          </button>
+                        </Tooltip>
                       </div>
                       </div>
                     );
@@ -628,16 +629,17 @@ function BillList({
                     <>
                       <span className="truncate text-sm font-medium">{r.displayName}</span>
                       {onSaveSettings && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenameId(r.id);
-                          }}
-                          title="Rename"
-                          className="shrink-0 rounded text-xs text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
-                        >
-                          <span className="inline-block -scale-x-100">✎</span>
-                        </button>
+                        <Tooltip label="Rename" onlyIfTruncated={false} className="shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenameId(r.id);
+                            }}
+                            className="rounded text-xs text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+                          >
+                            <span className="inline-block -scale-x-100">✎</span>
+                          </button>
+                        </Tooltip>
                       )}
                     </>
                   )}
@@ -676,48 +678,63 @@ function BillList({
                 </Tooltip>
               )}
               {onEnd && r.ended && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEnd(r.merchant, false);
-                  }}
-                  title="Reactivate this subscription"
-                  className="shrink-0 rounded px-1.5 text-xs text-[var(--accent)] opacity-0 transition-opacity hover:underline group-hover:opacity-100"
+                <Tooltip
+                  label="Reactivate this subscription"
+                  onlyIfTruncated={false}
+                  className="inline-flex shrink-0"
                 >
-                  reactivate
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEnd(r.merchant, false);
+                    }}
+                    className="rounded px-1.5 text-xs text-[var(--accent)] opacity-0 transition-opacity hover:underline group-hover:opacity-100"
+                  >
+                    reactivate
+                  </button>
+                </Tooltip>
               )}
               {editable && onMute && !r.ended && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMute(r.merchant);
-                  }}
-                  title="Mark as not recurring"
-                  className="shrink-0 rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-rose-500 group-hover:opacity-100"
+                <Tooltip
+                  label="Mark as not recurring"
+                  onlyIfTruncated={false}
+                  className="inline-flex shrink-0"
                 >
-                  not recurring
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMute(r.merchant);
+                    }}
+                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-rose-500 group-hover:opacity-100"
+                  >
+                    not recurring
+                  </button>
+                </Tooltip>
               )}
               {editable && onSaveSettings && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMatchEditId((id) => (id === r.id ? null : r.id));
-                  }}
-                  title={
+                <Tooltip
+                  label={
                     r.settings
                       ? "Has custom settings (rename, amount, cadence, or matching) — click to view or reset"
                       : "Edit this recurring (rename, amount, cadence, matching)"
                   }
-                  className={`shrink-0 rounded border border-[var(--border)] px-2 py-0.5 text-xs ${
-                    r.settings
-                      ? "text-[var(--accent)]"
-                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                  }`}
+                  onlyIfTruncated={false}
+                  className="inline-flex shrink-0"
                 >
-                  Edit{r.settings ? " •" : ""}
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMatchEditId((id) => (id === r.id ? null : r.id));
+                    }}
+                    className={`rounded border border-[var(--border)] px-2 py-0.5 text-xs ${
+                      r.settings
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                    }`}
+                  >
+                    Edit{r.settings ? " •" : ""}
+                  </button>
+                </Tooltip>
               )}
               {editable && cats && onRecategorize ? (
                 <select
@@ -726,7 +743,6 @@ function BillList({
                   onChange={(e) =>
                     onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
                   }
-                  title="Category"
                   className={`select-caret hidden max-w-36 shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
                     r.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
@@ -920,13 +936,14 @@ function SettingsEditor({
             {rec.linkedMerchants.map((m) => (
               <div key={m} className="flex items-center gap-1 text-[var(--muted)]">
                 <span className="truncate">↳ {m}</span>
-                <button
-                  onClick={() => onLink(m, rec.merchant, true)}
-                  title="Separate"
-                  className="rounded px-1 hover:text-rose-500"
-                >
-                  ✕
-                </button>
+                <Tooltip label="Separate" onlyIfTruncated={false}>
+                  <button
+                    onClick={() => onLink(m, rec.merchant, true)}
+                    className="rounded px-1 hover:text-rose-500"
+                  >
+                    ✕
+                  </button>
+                </Tooltip>
               </div>
             ))}
             <div className="flex items-center gap-2">
