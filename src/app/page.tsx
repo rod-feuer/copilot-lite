@@ -15,6 +15,8 @@ import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/compone
 import Shell from "@/components/Shell";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
+import { useToast } from "@/components/Toast";
+import { patchJson } from "@/lib/http";
 
 type Dash = {
   monthLabel: string;
@@ -168,17 +170,11 @@ export default function DashboardPage() {
       {data && (
         <div className="flex flex-col gap-5">
           {data.needsReview > 0 && (
-            <Link
-              href={`/transactions?category=none${month ? `&month=${month}` : ""}`}
-              className="card flex items-center justify-between gap-3 border-amber-500/30 bg-amber-500/10 px-5 py-3 transition-colors hover:bg-amber-500/20"
-            >
-              <span className="flex items-center gap-2 text-sm font-medium text-amber-600">
-                <span className="text-base">⚠️</span>
-                {data.needsReview} transaction{data.needsReview === 1 ? "" : "s"} need
-                {data.needsReview === 1 ? "s" : ""} a category this month
-              </span>
-              <span className="text-sm font-medium text-amber-600">Review →</span>
-            </Link>
+            <UncategorizedResolver
+              month={month}
+              count={data.needsReview}
+              onResolved={refresh}
+            />
           )}
 
           <Verdict
@@ -751,6 +747,123 @@ function PaceDelta({
       <span className="tabular-nums">{usd(Math.abs(delta), { cents: false })}</span>
       <span className="font-normal text-[var(--muted)]">vs {label}</span>
     </span>
+  );
+}
+
+// Resolve this month's uncategorized transactions inline — the common case is a
+// single straggler, so making the user leave for a filtered list is overkill.
+// Replaces the old "Review →" banner: lists up to CAP of them with a category
+// picker each and assigns in place, then refreshes the dashboard so the count and
+// totals update and the card self-dismisses at zero. The long tail keeps a
+// "Review all →" out to the filtered transactions list, so the dashboard never
+// balloons into a worklist. (Transaction-level, so the count reconciles exactly —
+// unlike the vendor-level Suggested-categories queue on the transactions page.)
+function UncategorizedResolver({
+  month,
+  count,
+  onResolved,
+}: {
+  month: string;
+  count: number;
+  onResolved: () => void;
+}) {
+  const CAP = 4;
+  type UncatTx = { id: number; displayName: string; date: string; amount: number; excluded: 0 | 1 };
+  const [rows, setRows] = useState<UncatTx[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [cats, setCats] = useState<{ id: number; name: string; icon: string }[]>([]);
+  const [busy, setBusy] = useState<number | null>(null);
+  const toast = useToast();
+
+  // Re-fetch when the count changes (after a resolve refreshes the dashboard) so
+  // the inline list refills from the next uncategorized charges. Pulls CAP+1 to
+  // know whether a "Review all" tail exists without trusting the optimistic count.
+  useEffect(() => {
+    let cancelled = false;
+    const q = `category=none${month ? `&month=${month}` : ""}`;
+    Promise.all([
+      fetch(`/api/transactions?${q}&limit=${CAP + 1}`).then((r) => r.json()),
+      fetch("/api/categories").then((r) => r.json()),
+    ])
+      .then(([tx, cs]) => {
+        if (cancelled) return;
+        // Drop excluded rows so the inline list reconciles with the header count
+        // (needsReview counts only excluded=0 uncategorized rows).
+        const all = ((tx.rows ?? []) as UncatTx[]).filter((r) => !r.excluded);
+        setRows(all.slice(0, CAP));
+        setHasMore(all.length > CAP);
+        setCats(cs);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [month, count]);
+
+  async function assign(t: UncatTx, categoryId: number) {
+    setBusy(t.id);
+    setRows((prev) => prev.filter((x) => x.id !== t.id)); // optimistic
+    try {
+      await patchJson(`/api/transactions/${t.id}`, { categoryId });
+      const c = cats.find((x) => x.id === categoryId);
+      toast(`Categorized “${t.displayName}”${c ? ` as ${c.name}` : ""}`, "success");
+    } catch {
+      toast("Couldn't categorize — please try again", "error");
+    } finally {
+      setBusy(null);
+      onResolved(); // refresh the dashboard (count, totals) and re-sync this list
+    }
+  }
+
+  return (
+    <div className="card border-amber-500/30 bg-amber-500/10 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-base">⚠️</span>
+        <span className="text-sm font-medium text-amber-600">
+          {count} transaction{count === 1 ? "" : "s"} need{count === 1 ? "s" : ""} a category this
+          month
+        </span>
+        {hasMore && (
+          <Link
+            href={`/transactions?category=none${month ? `&month=${month}` : ""}`}
+            className="ml-auto text-sm font-medium text-amber-600 hover:underline"
+          >
+            Review all →
+          </Link>
+        )}
+      </div>
+      <ul className="flex flex-col gap-2">
+        {rows.map((t) => (
+          <li
+            key={t.id}
+            className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-[var(--card)] p-2.5"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{t.displayName}</div>
+              <div className="text-xs text-[var(--muted)]">
+                {shortDate(t.date)} · {usd(t.amount, { sign: true })}
+              </div>
+            </div>
+            <select
+              defaultValue=""
+              disabled={busy === t.id}
+              onChange={(e) => e.target.value && assign(t, Number(e.target.value))}
+              aria-label={`Category for ${t.displayName}`}
+              className="select-caret shrink-0 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-[var(--card)] py-1.5 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 disabled:opacity-50"
+            >
+              <option value="" disabled>
+                Categorize…
+              </option>
+              {cats.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon} {c.name}
+                </option>
+              ))}
+            </select>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
