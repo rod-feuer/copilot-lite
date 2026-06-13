@@ -536,7 +536,7 @@ function Group({
                 onSave={onEditAppearance ? (patch) => onEditAppearance(c.id, patch) : undefined}
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 sm:flex-nowrap">
                   <CategoryName
                     name={c.name}
                     onRename={
@@ -545,7 +545,10 @@ function Group({
                         : undefined
                     }
                   />
-                  <span className="flex shrink-0 items-baseline gap-1 text-sm">
+                  {/* On mobile the spent+budget cluster drops to its own line
+                      (flex-wrap above) rather than wrapping mid-number; each
+                      monetary value stays nowrap so figures never split. */}
+                  <span className="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-sm">
                     <span
                       className={`font-semibold tabular-nums ${
                         over
@@ -994,7 +997,7 @@ function BudgetInput({
   // chip lives in a fixed-width slot that's reserved even when there's no
   // suggestion, so the "—"/amount columns line up across all unbudgeted rows.
   return (
-    <span className="inline-flex items-baseline gap-1 text-[var(--muted)]">
+    <span className="inline-flex items-baseline gap-1 whitespace-nowrap text-[var(--muted)]">
       of&nbsp;$
       <Tooltip
         label={period === "annual" ? "Annual budget" : "Monthly budget"}

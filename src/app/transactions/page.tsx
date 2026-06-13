@@ -1028,7 +1028,7 @@ const TxRow = memo(function TxRow({
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer items-center gap-3 px-4 py-3 ${
+                className={`group flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:gap-3 ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"
@@ -1066,7 +1066,7 @@ const TxRow = memo(function TxRow({
                                 e.stopPropagation();
                                 setEditingDateId(t.id);
                               }}
-                              className="text-sm font-medium hover:underline"
+                              className="whitespace-nowrap text-sm font-medium hover:underline"
                             >
                               {longDate(t.effectiveDate ?? t.date)}
                             </button>
@@ -1080,7 +1080,7 @@ const TxRow = memo(function TxRow({
                       </div>
                       {(!sameAcct || (t.effectiveDate && t.effectiveDate !== t.date)) && (
                         <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
-                          {!sameAcct && <span>{t.account}</span>}
+                          {!sameAcct && <span className="whitespace-nowrap">{t.account}</span>}
                           {t.effectiveDate && t.effectiveDate !== t.date && (
                             <span className="text-amber-600">
                               {!sameAcct ? "· " : ""}posted {shortDate(t.date)}
@@ -1136,7 +1136,7 @@ const TxRow = memo(function TxRow({
                   <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
                     {headed ? (
                       <>
-                        <span>{t.account}</span>
+                        <span className="whitespace-nowrap">{t.account}</span>
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-amber-600">
                             · posted {shortDate(t.date)}
@@ -1195,7 +1195,7 @@ const TxRow = memo(function TxRow({
                                 e.stopPropagation();
                                 setEditingDateId(t.id);
                               }}
-                              className="hover:text-[var(--foreground)] hover:underline"
+                              className="whitespace-nowrap hover:text-[var(--foreground)] hover:underline"
                             >
                               {longDate(t.effectiveDate ?? t.date)}
                             </button>
@@ -1217,7 +1217,7 @@ const TxRow = memo(function TxRow({
                             </Tooltip>
                           </span>
                         )}
-                        <span>· {t.account}</span>
+                        <span className="whitespace-nowrap">· {t.account}</span>
                       </>
                     )}
                     {/* Adding a note is reached via the row's ⋯ menu (Add note);
@@ -1273,7 +1273,7 @@ const TxRow = memo(function TxRow({
                   onChange={(e) =>
                     setCategory(t.id, e.target.value ? Number(e.target.value) : null)
                   }
-                  className={`select-caret max-w-[9rem] shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${
+                  className={`select-caret order-last w-auto max-w-full basis-full shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:order-none sm:max-w-[9rem] sm:basis-auto ${
                     t.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
                       : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
