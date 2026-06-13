@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   setRecurringOverride,
   clearRecurringOverride,
+  clearRecurringTxExclusionsForMerchant,
   merchantVariants,
 } from "@/lib/queries";
 import { detectRecurrings } from "@/lib/core";
@@ -24,7 +25,12 @@ export async function POST(req: NextRequest) {
   if (status === "clear")
     for (const v of merchantVariants(merchant)) clearRecurringOverride(v);
   else if (status === "mute")
-    for (const v of merchantVariants(merchant)) setRecurringOverride(v, "mute");
+    for (const v of merchantVariants(merchant)) {
+      setRecurringOverride(v, "mute");
+      // No series → clear any stale per-charge one-off exclusions, so they don't
+      // linger as a ghost "excluded from the series" marker on the charge.
+      clearRecurringTxExclusionsForMerchant(v);
+    }
   else if (status === "force") setRecurringOverride(merchant, "force");
   else return NextResponse.json({ error: "invalid status" }, { status: 400 });
 

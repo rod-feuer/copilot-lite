@@ -376,23 +376,19 @@ export default function TransactionsPage() {
     [toast]
   );
 
-  // Recurring control. A charge that's part of a recurring can be flagged as a
-  // one-off (per transaction); a flagged one can be added back; and a merchant
-  // with no recurring at all can be forced recurring (merchant-level). All
-  // persist across re-scans.
-  const toggleRecurring = useCallback(
-    async (t: Tx) => {
+  // Recurring control — VENDOR-level (the row's common intent): is this vendor a
+  // recurring bill? `force` marks the whole vendor recurring; `mute` makes the
+  // whole series not-recurring (and the route clears any stale per-charge
+  // exclusions, so no "excluded from the series" ghost lingers). Per-charge
+  // one-off exclusion is a finer operation that belongs on the vendor shelf.
+  const setRecurringVendor = useCallback(
+    async (t: Tx, recurring: boolean) => {
       try {
-        if (t.recurringId != null) {
-          await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: true });
-          toast("Excluded this charge from the recurring", "success");
-        } else if (t.recurringExcluded) {
-          await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: false });
-          toast("Added this charge back to the recurring", "success");
-        } else {
-          await postJson("/api/recurrings/override", { merchant: t.merchant, status: "force" });
-          toast(`Marked "${t.merchant}" recurring`, "success");
-        }
+        await postJson("/api/recurrings/override", {
+          merchant: t.merchant,
+          status: recurring ? "force" : "mute",
+        });
+        toast(recurring ? `Marked "${t.merchant}" recurring` : `"${t.merchant}" not recurring`, "success");
         setRefreshKey((k) => k + 1);
       } catch {
         toast("Couldn't update — please try again", "error");
@@ -715,7 +711,7 @@ export default function TransactionsPage() {
                     setActiveCatSelect={setActiveCatSelect}
                     onCommitDate={commitDate}
                     onSaveNote={saveNote}
-                    onToggleRecurring={toggleRecurring}
+                    onSetRecurring={setRecurringVendor}
                     onSetCategory={setCategory}
                   />
                 ))}
@@ -760,14 +756,14 @@ function RowActionsMenu({
   hasDateOverride,
   onSetDate,
   onEditNote,
-  onToggleRecurring,
+  onSetRecurring,
 }: {
   recState: "in" | "out" | "none";
   hasNote: boolean;
   hasDateOverride: boolean;
   onSetDate: () => void;
   onEditNote: () => void;
-  onToggleRecurring: () => void;
+  onSetRecurring: (recurring: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
@@ -808,12 +804,9 @@ function RowActionsMenu({
     setOpen(true);
   }
 
-  const recLabel =
-    recState === "in"
-      ? "Exclude from recurring"
-      : recState === "out"
-        ? "Add back to recurring"
-        : "Mark recurring";
+  // Vendor-level: if the vendor has any recurring relationship (in/out), offer to
+  // make the whole vendor not-recurring; otherwise offer to mark it recurring.
+  const isRecurring = recState !== "none";
 
   const item = (label: string, fn: () => void) => (
     <button
@@ -855,7 +848,9 @@ function RowActionsMenu({
           >
             {item(hasDateOverride ? "Change date" : "Set date", onSetDate)}
             {item(hasNote ? "Edit note" : "Add note", onEditNote)}
-            {item(recLabel, onToggleRecurring)}
+            {item(isRecurring ? "Not recurring" : "Mark recurring", () =>
+              onSetRecurring(!isRecurring)
+            )}
           </div>,
           document.body
         )}
@@ -882,7 +877,7 @@ const TxRow = memo(function TxRow({
   setActiveCatSelect,
   onCommitDate,
   onSaveNote,
-  onToggleRecurring,
+  onSetRecurring,
   onSetCategory,
 }: {
   t: Tx;
@@ -899,7 +894,7 @@ const TxRow = memo(function TxRow({
   setActiveCatSelect: Dispatch<SetStateAction<number | null>>;
   onCommitDate: (t: Tx, value: string | null) => void;
   onSaveNote: (id: number, raw: string) => void;
-  onToggleRecurring: (t: Tx) => void;
+  onSetRecurring: (t: Tx, recurring: boolean) => void;
   onSetCategory: (id: number, categoryId: number | null) => void;
 }) {
   const sameCat =
@@ -908,7 +903,6 @@ const TxRow = memo(function TxRow({
   const recState = t.recurringId != null ? "in" : t.recurringExcluded ? "out" : "none";
   const commitDate = onCommitDate;
   const saveNote = onSaveNote;
-  const toggleRecurring = onToggleRecurring;
   const setCategory = onSetCategory;
   return (
               <li
@@ -1200,7 +1194,7 @@ const TxRow = memo(function TxRow({
                   hasDateOverride={!!(t.effectiveDate && t.effectiveDate !== t.date)}
                   onSetDate={() => setEditingDateId(t.id)}
                   onEditNote={() => setEditingNoteId(t.id)}
-                  onToggleRecurring={() => toggleRecurring(t)}
+                  onSetRecurring={(recurring) => onSetRecurring(t, recurring)}
                 />
               </li>
   );

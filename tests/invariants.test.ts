@@ -22,6 +22,7 @@ import {
   categoriesWithTotals,
   setRecurringSetting,
   setTransactionRecurringExcluded,
+  clearRecurringTxExclusionsForMerchant,
   recurringsForMonth,
   recurringMonthlyByCategory,
   isRecurringActive,
@@ -335,6 +336,27 @@ test("ending a subscription drops it from expected outflow immediately, and reac
   assert.ok(
     (recurringMonthlyByCategory()[CAT] ?? 0) >= 16,
     "a charge after the end date reactivates the bill"
+  );
+});
+
+test("marking a vendor not-recurring clears its per-charge one-off exclusions", () => {
+  // WHY: a muted vendor has no series, so a lingering "excluded from the series"
+  // flag is a ghost marker on the charge (the Jimmy John's bug). Muting must
+  // clear it — which is what the override route now does for each variant.
+  tx("Jimmy Johns", { amount: -12, date: "2026-03-03", categoryId: CAT, hash: "jj-x" });
+  const id = listTransactions({}).find((r) => r.hash === "jj-x")!.id;
+  setTransactionRecurringExcluded(id, true);
+  assert.equal(
+    listTransactions({}).find((r) => r.id === id)!.recurringExcluded,
+    1,
+    "charge starts flagged as a one-off"
+  );
+
+  clearRecurringTxExclusionsForMerchant("Jimmy Johns");
+  assert.equal(
+    listTransactions({}).find((r) => r.id === id)!.recurringExcluded,
+    0,
+    "the stale exclusion is cleared, so no ghost 'excluded' marker remains"
   );
 });
 
