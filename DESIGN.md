@@ -118,8 +118,9 @@ and §3 carry over unchanged.
 - **Transactions are source-of-truth bank data** — no manual create, no delete, and
   the merchant/amount/posted-date aren't editable by design. Corrections happen at
   the *vendor* level (rename/combine/recategorize) or as overlays on the charge
-  (category, note, effective-date, recurring membership). This is the deliberate
-  answer to "Complete the verbs" for transactions. *(Capable)*
+  (category, note, effective-date, recurring membership, exclude-from-totals,
+  split). This is the deliberate answer to "Complete the verbs" for
+  transactions. *(Capable)*
 
 ---
 
