@@ -35,6 +35,7 @@ import {
   getMerchantLinks,
   canonicalMerchant,
   linkMerchant,
+  setRecurringOverride,
   suggestedRecurrings,
 } from "../src/lib/queries";
 import {
@@ -335,6 +336,33 @@ test("ending a subscription drops it from expected outflow immediately, and reac
     (recurringMonthlyByCategory()[CAT] ?? 0) >= 16,
     "a charge after the end date reactivates the bill"
   );
+});
+
+test("forcing recurring on a linked alias marks the whole canonical vendor", () => {
+  // WHY: overrides are stored under the descriptor the user clicked, but
+  // detection groups by canonical merchant. A force set on a linked alias must
+  // still create the recurring and link every descriptor's charges — before the
+  // fix, byMerchant.get(<alias>) missed the canonical group and silently did
+  // nothing (the user's "mark recurring" appeared to fail).
+  tx("Jimmy Johns", { amount: -12, date: "2026-01-05", categoryId: CAT });
+  tx("Jimmy John's", { amount: -13, date: "2026-02-09", categoryId: CAT }); // alias descriptor
+  linkMerchant("Jimmy John's", "Jimmy Johns"); // canonical = "Jimmy Johns"
+  setRecurringOverride("Jimmy John's", "force"); // user clicked the ALIAS row
+
+  detectRecurrings();
+
+  const rows = getDb()
+    .prepare("SELECT recurringId FROM transactions WHERE merchant IN ('Jimmy Johns', 'Jimmy John''s')")
+    .all() as { recurringId: number | null }[];
+  assert.equal(rows.length, 2, "both descriptor charges are present");
+  assert.ok(
+    rows.every((r) => r.recurringId != null),
+    "both descriptors' charges link to the forced recurring"
+  );
+  const recs = getDb()
+    .prepare("SELECT COUNT(*) n FROM recurrings WHERE merchant = 'Jimmy Johns'")
+    .get() as { n: number };
+  assert.equal(recs.n, 1, "exactly one recurring, on the canonical merchant");
 });
 
 test("a lumpy recurring bill is not amplified into the budget projection", () => {

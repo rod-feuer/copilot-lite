@@ -228,7 +228,18 @@ export function detectRecurrings(): Recurring[] {
   db.prepare("UPDATE transactions SET recurringId = NULL").run();
   db.prepare("DELETE FROM recurrings").run();
 
-  const overrides = getRecurringOverrides();
+  // Overrides are stored under the descriptor the user clicked, but detection
+  // groups by canonical merchant — so resolve each override to its canonical key.
+  // Without this, a force/mute set on a linked alias (e.g. "Jimmy John's", an
+  // alias of canonical "Jimmy Johns") never matches its own vendor's group and
+  // silently does nothing.
+  const rawOverrides = getRecurringOverrides();
+  const overrides: Record<string, "force" | "mute"> = {};
+  for (const [m, status] of Object.entries(rawOverrides)) {
+    const canon = canonicalMerchant(m, links);
+    if (overrides[canon] === "force") continue; // force wins a force/mute clash
+    overrides[canon] = status;
+  }
   const excluded = getRecurringTxExclusions(); // charges flagged as one-offs
   const created = new Set<string>();
   const out: Recurring[] = [];
