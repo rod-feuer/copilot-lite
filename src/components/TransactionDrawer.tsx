@@ -575,13 +575,14 @@ function MerchantHeader({
           {data.nameVariants > 1 ? (
             <>
               {" · "}
-              <button
-                onClick={() => setShowNames((s) => !s)}
-                className="underline decoration-dotted underline-offset-2 hover:text-[var(--foreground)]"
-                title="The bank names grouped under this vendor"
-              >
-                {data.nameVariants} names {showNames ? "▾" : "▸"}
-              </button>
+              <Tooltip label="The bank names grouped under this vendor" onlyIfTruncated={false}>
+                <button
+                  onClick={() => setShowNames((s) => !s)}
+                  className="underline decoration-dotted underline-offset-2 hover:text-[var(--foreground)]"
+                >
+                  {data.nameVariants} names {showNames ? "▾" : "▸"}
+                </button>
+              </Tooltip>
             </>
           ) : null}
           {data.recurring ? " · recurring ↻" : ""}
@@ -596,13 +597,18 @@ function MerchantHeader({
               </span>
               <span className="shrink-0 tabular-nums text-[var(--muted)]">{n.count}</span>
               {n.canUnlink ? (
-                <button
-                  onClick={() => onUnlink(n.name)}
-                  title="Separate this name back into its own vendor"
-                  className="shrink-0 rounded px-1 text-[var(--muted)] hover:text-rose-500"
+                <Tooltip
+                  label="Separate this name back into its own vendor"
+                  onlyIfTruncated={false}
+                  className="inline-flex shrink-0"
                 >
-                  ✕
-                </button>
+                  <button
+                    onClick={() => onUnlink(n.name)}
+                    className="rounded px-1 text-[var(--muted)] hover:text-rose-500"
+                  >
+                    ✕
+                  </button>
+                </Tooltip>
               ) : (
                 <span className="w-[18px] shrink-0" aria-hidden />
               )}
@@ -711,6 +717,7 @@ function MerchantBody({
           <div className="min-w-[140px] flex-1">
             <ShelfEditField
               label="Expected"
+              hint="Amount used for upcoming bills; past charges are unchanged."
               edited={data.expectedAmount != null}
               prefix="$"
               inputMode="decimal"
@@ -783,12 +790,13 @@ function MerchantBody({
           <div className="flex items-center justify-between px-0.5 text-xs">
             {data.ended ? (
               <>
-                <span
-                  className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
-                  title="Marked ended — no longer counts as upcoming or expected"
+                <Tooltip
+                  label="Marked ended — no longer counts as upcoming or expected"
+                  onlyIfTruncated={false}
+                  className="inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
                 >
                   Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
-                </span>
+                </Tooltip>
                 <button
                   onClick={() => onSaveSettings({ endedDate: null }, "Reactivated")}
                   className="text-[var(--accent)] hover:underline"
@@ -797,18 +805,23 @@ function MerchantBody({
                 </button>
               </>
             ) : (
-              <button
-                onClick={() =>
-                  onSaveSettings(
-                    { endedDate: new Date().toISOString().slice(0, 10) },
-                    "Marked ended"
-                  )
-                }
-                title="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
-                className="text-[var(--muted)] hover:text-[var(--foreground)] hover:underline"
+              <Tooltip
+                label="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
+                onlyIfTruncated={false}
+                className="inline-flex"
               >
-                Mark as ended
-              </button>
+                <button
+                  onClick={() =>
+                    onSaveSettings(
+                      { endedDate: new Date().toISOString().slice(0, 10) },
+                      "Marked ended"
+                    )
+                  }
+                  className="text-[var(--muted)] hover:text-[var(--foreground)] hover:underline"
+                >
+                  Mark as ended
+                </button>
+              </Tooltip>
             )}
           </div>
         )}

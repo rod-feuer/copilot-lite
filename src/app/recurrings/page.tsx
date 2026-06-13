@@ -6,6 +6,8 @@ import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
+import { InfoHint } from "@/components/InfoHint";
+import { Tooltip } from "@/components/Tooltip";
 import { SearchBox } from "@/components/SearchBox";
 import { postJson } from "@/lib/http";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
@@ -488,12 +490,15 @@ export default function RecurringsPage() {
 
           {shownInactive.length > 0 && (
             <div>
-              <button
-                onClick={() => setShowInactive((s) => !s)}
-                className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] hover:text-[var(--foreground)]"
-              >
-                {showInactive ? "▾" : "▸"} Inactive ({shownInactive.length})
-              </button>
+              <div className="mb-2 flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowInactive((s) => !s)}
+                  className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  {showInactive ? "▾" : "▸"} Inactive ({shownInactive.length})
+                </button>
+                <InfoHint text="Recurrings that haven't charged within ~1.5 cycles — including subscriptions you marked ended. They no longer count as upcoming or toward expected spend, but their history is kept." />
+              </div>
               {(showInactive || filtering) && (
                 <BillList
                   title=""
@@ -640,12 +645,13 @@ function BillList({
                     {CADENCE_LABEL[r.cadence]}
                   </span>
                   {r.ended && (
-                    <span
-                      className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
-                      title="You marked this subscription ended — it no longer counts as upcoming or expected"
+                    <Tooltip
+                      label="You marked this subscription ended — it no longer counts as upcoming or expected"
+                      onlyIfTruncated={false}
+                      className="inline-flex shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
                     >
                       Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
-                    </span>
+                    </Tooltip>
                   )}
                 </div>
               </div>
@@ -653,16 +659,21 @@ function BillList({
                   lists (not the dim/inactive one); "reactivate" shows wherever an
                   ended recurring is listed. */}
               {onEnd && !r.ended && !dim && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEnd(r.merchant, true);
-                  }}
-                  title="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
-                  className="shrink-0 rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover:opacity-100"
+                <Tooltip
+                  label="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
+                  onlyIfTruncated={false}
+                  className="inline-flex shrink-0"
                 >
-                  mark ended
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEnd(r.merchant, true);
+                    }}
+                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover:opacity-100"
+                  >
+                    mark ended
+                  </button>
+                </Tooltip>
               )}
               {onEnd && r.ended && (
                 <button
