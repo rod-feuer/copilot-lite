@@ -15,7 +15,9 @@ export function SearchBox({
   className?: string;
 }) {
   return (
-    <div className="relative">
+    // Width lives on the wrapper (so `w-full sm:w-60` actually sizes the box); the
+    // input fills it. Default keeps the old fixed width for any caller.
+    <div className={`relative ${className}`}>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -26,7 +28,7 @@ export function SearchBox({
           }
         }}
         placeholder={placeholder}
-        className={`btn-ghost ${className} pr-7 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30`}
+        className="btn-ghost w-full pr-7 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
       />
       {value && (
         <button
