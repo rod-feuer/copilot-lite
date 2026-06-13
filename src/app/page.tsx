@@ -95,10 +95,17 @@ export default function DashboardPage() {
   const shelfActive = useShelfActive();
 
   const loadMonths = useCallback(async () => {
-    const ms = (await (await fetch("/api/months")).json()) as string[];
-    setMonths(ms);
-    setMonth((cur) => cur || defaultMonth(ms));
-    return ms;
+    try {
+      const ms = (await (await fetch("/api/months")).json()) as string[];
+      setMonths(ms);
+      setMonth((cur) => cur || defaultMonth(ms));
+      return ms;
+    } catch {
+      // Transient failure (dev memory-restart / network blip) — keep the current
+      // view rather than throwing an unhandled rejection (which flashes the dev
+      // error indicator red). The next action/refresh recovers.
+      return [] as string[];
+    }
   }, []);
 
   const load = useCallback(async (m: string) => {
@@ -111,6 +118,10 @@ export default function DashboardPage() {
       ]);
       setData(d);
       setRecent(r.rows ?? r); // route now returns { rows, count, net }
+    } catch {
+      // Transient read failure (dev memory-restart / network blip) — keep the
+      // current view instead of surfacing an unhandled rejection (red dev
+      // indicator). The next refresh re-syncs.
     } finally {
       // Always clear loading, even on a failed/empty read, so the page can't
       // hang on the spinner forever.
