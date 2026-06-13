@@ -70,6 +70,18 @@ Design empty, loading, partial, and error — not just the happy path.
   real use.
 - **Test:** what does this look like with zero items, while loading, and when it fails?
 
+### 9. Complete the verbs — *capable*
+Every domain object's expected operations — create, read, edit **each** attribute,
+delete — are reachable in the UI, or the omission is a *deliberate, written*
+decision (e.g. bank data is read-only). The audit artifact is a capability/CRUD
+matrix: objects × operations; the blanks are the findings.
+- **Why:** an *absent* capability can't be spotted by looking at a screen — only
+  by checking the screen against what *should* be possible. This is the blind
+  spot of a presentation-only review (we shipped category icon/color editing but
+  not rename, and an API that accepted a field the UI never exposed).
+- **Test:** for each object, list its attributes — is editing each one reachable?
+  Is anything wired in the data model / API but not surfaced in the UI?
+
 ---
 
 ## §2 — This app's conventions (copilot-lite)
@@ -103,6 +115,11 @@ and §3 carry over unchanged.
 - **Known gaps, scoped on purpose.** Desktop-first: no mobile navigation, and some
   affordances are hover-gated. *Documented, not accidental* — revisit if touch
   becomes in scope. *(Reach)*
+- **Transactions are source-of-truth bank data** — no manual create, no delete, and
+  the merchant/amount/posted-date aren't editable by design. Corrections happen at
+  the *vendor* level (rename/combine/recategorize) or as overlays on the charge
+  (category, note, effective-date, recurring membership). This is the deliberate
+  answer to "Complete the verbs" for transactions. *(Capable)*
 
 ---
 
@@ -119,3 +136,4 @@ principle; a failed item means the design isn't done.
 - [ ] **Ranked** — the most important element is visually dominant. *(6)*
 - [ ] **Consistent** — reuses the app's existing paradigm for this interaction; no new one-off. *(7)*
 - [ ] **Complete states** — empty, loading, partial, and error all designed. *(8)*
+- [ ] **Capable** — every object's create / edit-each-attribute / delete is reachable, or the omission is a written decision; nothing wired-in-the-API-but-unsurfaced. *(9)*

@@ -48,7 +48,17 @@ rubber stamp.
      Cross-check §2: tokens (not hard-coded colors), the dropdown rule, the
      correction vocabulary.
    - **Complete states (8)** — empty, loading, partial, and error all designed?
-4. **Verify, don't assume.** When a check depends on runtime behavior (does the
+   - **Capable (9)** — for the object(s) this surface touches, is every expected
+     operation reachable (create / edit *each* attribute / delete), or is the
+     omission a written decision (§2)? **Cross-check the API/data model against
+     the UI** — a field accepted by a route but never surfaced is the classic
+     "wired but not exposed" gap a presentation-only review misses.
+4. **Capability matrix (for a page or whole-app review).** When the scope is a
+   page or the app (not a single component), build a small objects × operations
+   matrix and read the **blanks** — that's how absent capabilities (which no
+   screenshot can show) get caught. List API routes/methods and the data model's
+   editable fields, then mark which are reachable in the UI.
+5. **Verify, don't assume.** When a check depends on runtime behavior (does the
    dropdown open with its options? does a loading state flash?), check it against
    the running dev server or label it unverified — never assert what you didn't
    confirm.
@@ -60,6 +70,8 @@ A scannable report:
 - **Fix first (ranked)** — the 2–5 highest-impact issues, ordered by
   perceived-quality-per-effort, each tied to its principle and to the master
   legibility rule, with a concrete suggested fix.
+- **Missing verbs** (page/app scope) — capabilities that are absent or wired-but-
+  unsurfaced, split into *gaps* vs *deliberate read-only scopes*.
 - If nothing material is wrong, **say so plainly** — don't manufacture findings to
   look thorough.
 
