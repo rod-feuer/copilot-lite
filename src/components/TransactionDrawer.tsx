@@ -745,7 +745,7 @@ function MerchantBody({
               <select
                 value={data.categoryId ?? ""}
                 onChange={(e) => onRecategorize(e.target.value ? Number(e.target.value) : null)}
-                className="btn-ghost w-full cursor-pointer text-sm"
+                className="btn-ghost select-caret w-full cursor-pointer appearance-none pr-8 text-sm"
               >
                 <option value="">Uncategorized</option>
                 {cats.map((c) => (
@@ -1135,7 +1135,7 @@ function ShelfRow({
               editable.onRecategorize(v === "none" ? null : Number(v));
               setEditing(false);
             }}
-            className="rounded-lg border border-[var(--border)] bg-card px-2 py-1"
+            className="select-caret cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1 pl-2 pr-8"
           >
             <option value="__p" disabled>
               Recategorize…
@@ -1345,7 +1345,7 @@ function CombineControl({
                 <select
                   value={unifyCat === "asis" ? "asis" : String(unifyCat)}
                   onChange={(e) => setUnifyCat(e.target.value === "asis" ? "asis" : Number(e.target.value))}
-                  className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-1"
+                  className="select-caret min-w-0 flex-1 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1 pl-2 pr-8"
                 >
                   {cats.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -1419,7 +1419,7 @@ function CadenceCorrection({
       <select
         value={override ?? "__auto"}
         onChange={(e) => onSave(e.target.value === "__auto" ? null : e.target.value)}
-        className="btn-ghost w-full cursor-pointer text-sm"
+        className="btn-ghost select-caret w-full cursor-pointer appearance-none pr-8 text-sm"
       >
         {/* The "auto" row shows what detection currently reads. "detected" is
             redundant with the AUTO tag above and overflowed the half-width

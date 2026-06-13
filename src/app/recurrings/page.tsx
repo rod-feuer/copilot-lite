@@ -321,7 +321,7 @@ export default function RecurringsPage() {
           value={catFilter}
           onChange={(e) => setCatFilter(e.target.value)}
           aria-label="Filter by category"
-          className={`btn-ghost ml-auto max-w-44 cursor-pointer ${
+          className={`btn-ghost select-caret ml-auto max-w-44 cursor-pointer appearance-none pr-8 ${
             catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
@@ -851,7 +851,11 @@ function SettingsEditor({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-20 text-[var(--muted)]">Cadence</span>
-        <select value={cad} onChange={(e) => setCad(e.target.value)} className={field}>
+        <select
+          value={cad}
+          onChange={(e) => setCad(e.target.value)}
+          className={`${field} select-caret cursor-pointer appearance-none pr-7`}
+        >
           {CAD_OPTS.map((o) => (
             <option key={o.v} value={o.v}>
               {o.label}
@@ -868,7 +872,11 @@ function SettingsEditor({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-20 text-[var(--muted)]">Match</span>
-        <select value={mode} onChange={(e) => setMode(e.target.value)} className={field}>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value)}
+          className={`${field} select-caret cursor-pointer appearance-none pr-7`}
+        >
           <option value="">Auto (default)</option>
           <option value="exact">merchant exactly</option>
           <option value="contains">merchant contains</option>
@@ -882,7 +890,11 @@ function SettingsEditor({
           />
         )}
         {mode && (
-          <select value={tol} onChange={(e) => setTol(e.target.value)} className={field}>
+          <select
+            value={tol}
+            onChange={(e) => setTol(e.target.value)}
+            className={`${field} select-caret cursor-pointer appearance-none pr-7`}
+          >
             <option value="0.05">±5%</option>
             <option value="0.1">±10%</option>
             <option value="0.25">±25%</option>
