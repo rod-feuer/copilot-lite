@@ -8,6 +8,7 @@ import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { usd, defaultMonth } from "@/lib/format";
 import { CATEGORY_EMOJIS } from "@/lib/emoji";
+import { Tooltip } from "@/components/Tooltip";
 
 type Cat = {
   id: number;
@@ -566,20 +567,25 @@ function Group({
                       {c.txCount} transaction{c.txCount === 1 ? "" : "s"}
                     </span>
                     {onToggleExclude && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleExclude(c.id, !c.excludeFromTotals);
-                        }}
-                        title="Leaves this category out of your income and expense totals — for money movement like transfers, credit-card payments, and reimbursements."
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                          c.excludeFromTotals
-                            ? "bg-amber-500/15 text-amber-600"
-                            : "text-[var(--muted)] opacity-0 hover:bg-[var(--background)] group-hover:opacity-100"
-                        }`}
+                      <Tooltip
+                        label="Leaves this category out of your income and expense totals — for money movement like transfers, credit-card payments, and reimbursements."
+                        onlyIfTruncated={false}
+                        className="inline-flex"
                       >
-                        {c.excludeFromTotals ? "excluded from totals ✓" : "exclude from totals"}
-                      </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleExclude(c.id, !c.excludeFromTotals);
+                          }}
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                            c.excludeFromTotals
+                              ? "bg-amber-500/15 text-amber-600"
+                              : "text-[var(--muted)] opacity-0 hover:bg-[var(--background)] group-hover:opacity-100"
+                          }`}
+                        >
+                          {c.excludeFromTotals ? "excluded from totals ✓" : "exclude from totals"}
+                        </button>
+                      </Tooltip>
                     )}
                   </span>
                   {budgeted ? (
