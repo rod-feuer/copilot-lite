@@ -2,13 +2,73 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { SVGProps } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 
+// Inline line-icons (Feather/Lucide style) — recognizable nav glyphs without a
+// dependency. `currentColor` stroke so each inherits the nav-link color, including
+// the active accent state.
+function Icon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+      aria-hidden
+      {...props}
+    />
+  );
+}
+
+// Dashboard — a layout/grid of panels.
+const DashboardIcon = () => (
+  <Icon>
+    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+    <rect x="3" y="16" width="7" height="5" rx="1.5" />
+  </Icon>
+);
+
+// Transactions — money flowing in and out (two opposed arrows).
+const TransactionsIcon = () => (
+  <Icon>
+    <path d="M7 21V5" />
+    <path d="M3 9l4-4 4 4" />
+    <path d="M17 3v16" />
+    <path d="M21 15l-4 4-4-4" />
+  </Icon>
+);
+
+// Categories — a tag.
+const CategoriesIcon = () => (
+  <Icon>
+    <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z" />
+    <circle cx="7" cy="7" r="1.1" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+// Recurrings — a repeat cycle.
+const RecurringsIcon = () => (
+  <Icon>
+    <path d="M17 2l4 4-4 4" />
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+    <path d="M7 22l-4-4 4-4" />
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+  </Icon>
+);
+
 const NAV = [
-  { href: "/", label: "Dashboard", icon: "◧" },
-  { href: "/transactions", label: "Transactions", icon: "⇅" },
-  { href: "/categories", label: "Categories", icon: "◑" },
-  { href: "/recurrings", label: "Recurrings", icon: "↻" },
+  { href: "/", label: "Dashboard", Icon: DashboardIcon },
+  { href: "/transactions", label: "Transactions", Icon: TransactionsIcon },
+  { href: "/categories", label: "Categories", Icon: CategoriesIcon },
+  { href: "/recurrings", label: "Recurrings", Icon: RecurringsIcon },
 ];
 
 export default function Sidebar() {
@@ -30,7 +90,7 @@ export default function Sidebar() {
               href={n.href}
               className={`nav-link ${active ? "nav-link-active" : ""}`}
             >
-              <span className="w-4 text-center text-base leading-none">{n.icon}</span>
+              <n.Icon />
               {n.label}
             </Link>
           );
