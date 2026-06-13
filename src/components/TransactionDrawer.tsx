@@ -490,21 +490,22 @@ function EditableName({
 
   if (!editing) {
     return (
-      <button
-        onClick={() => {
-          committed.current = value;
-          setEditing(true);
-        }}
-        title="Rename"
-        className="group/n flex max-w-full items-center gap-1 text-left"
-      >
-        <span className="truncate text-sm font-semibold">{value}</span>
-        {/* Persistent (faint) edit cue so the name reads as click-to-rename even
-            without hovering; darkens on hover. */}
-        <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
-          <span className="inline-block -scale-x-100">✎</span>
-        </span>
-      </button>
+      <Tooltip label="Rename" onlyIfTruncated={false} className="group/n flex max-w-full items-center gap-1 text-left">
+        <button
+          onClick={() => {
+            committed.current = value;
+            setEditing(true);
+          }}
+          className="flex max-w-full items-center gap-1 text-left"
+        >
+          <span className="truncate text-sm font-semibold">{value}</span>
+          {/* Persistent (faint) edit cue so the name reads as click-to-rename even
+              without hovering; darkens on hover. */}
+          <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
+            <span className="inline-block -scale-x-100">✎</span>
+          </span>
+        </button>
+      </Tooltip>
     );
   }
   return (
@@ -592,9 +593,9 @@ function MerchantHeader({
         <ul className="mt-2 flex flex-col divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
           {data.names.map((n) => (
             <li key={n.name} className="flex items-center gap-2 px-2.5 py-1.5 text-xs">
-              <span className="min-w-0 flex-1 truncate" title={n.name}>
+              <Tooltip label={n.name} className="min-w-0 flex-1 truncate">
                 {n.name}
-              </span>
+              </Tooltip>
               <span className="shrink-0 tabular-nums text-[var(--muted)]">{n.count}</span>
               {n.canUnlink ? (
                 <Tooltip
@@ -1082,31 +1083,44 @@ function ShelfRow({
             // The ↻ gutter doubles as the recurring toggle: solid when the
             // charge is part of a recurring series, a faint hover affordance
             // when it isn't. Operates on the whole vendor (force/mute).
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                editable.onToggleRecurring();
-              }}
-              title={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
-              aria-label={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
-              className={`w-3.5 shrink-0 text-center transition-opacity hover:text-[var(--accent)] ${
-                recurring
-                  ? "text-[var(--accent)] opacity-100"
-                  : "text-[var(--muted)] opacity-0 focus:opacity-100 group-hover:opacity-100"
-              }`}
+            <Tooltip
+              label={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
+              onlyIfTruncated={false}
+              className="w-3.5 shrink-0"
             >
-              ↻
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  editable.onToggleRecurring();
+                }}
+                aria-label={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
+                className={`w-full text-center transition-opacity hover:text-[var(--accent)] ${
+                  recurring
+                    ? "text-[var(--accent)] opacity-100"
+                    : "text-[var(--muted)] opacity-0 focus:opacity-100 group-hover:opacity-100"
+                }`}
+              >
+                ↻
+              </button>
+            </Tooltip>
           ) : (
+            recurring ? (
+            <Tooltip label="Recurring" onlyIfTruncated={false} className="w-3.5 shrink-0">
+              <span
+                className={`w-full text-center ${muted ? "text-[var(--muted)]" : "text-[var(--accent)]"}`}
+                aria-hidden={false}
+              >
+                ↻
+              </span>
+            </Tooltip>
+            ) : (
             <span
               className={`w-3.5 shrink-0 text-center ${
                 muted ? "text-[var(--muted)]" : "text-[var(--accent)]"
               }`}
-              title={recurring ? "Recurring" : undefined}
-              aria-hidden={!recurring}
-            >
-              {recurring ? "↻" : ""}
-            </span>
+              aria-hidden={true}
+            />
+            )
           )}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
           <Tooltip

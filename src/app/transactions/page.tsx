@@ -23,6 +23,7 @@ import { MergeQueue } from "@/components/MergeQueue";
 import { NameCleanupQueue } from "@/components/NameCleanupQueue";
 import { CategorizeQueue } from "@/components/CategorizeQueue";
 import { SearchBox } from "@/components/SearchBox";
+import { Tooltip } from "@/components/Tooltip";
 import { postJson, patchJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth } from "@/lib/format";
 import { createLatestGuard } from "@/lib/latestGuard";
@@ -920,19 +921,20 @@ function RowActionsMenu({
 
   return (
     <>
-      <button
-        ref={btnRef}
-        onClick={toggle}
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="More actions"
-        className={`shrink-0 rounded-md px-1.5 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
-          open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
-        }`}
-      >
-        ⋯
-      </button>
+      <Tooltip label="More actions" onlyIfTruncated={false} className="shrink-0">
+        <button
+          ref={btnRef}
+          onClick={toggle}
+          aria-label="More actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={`rounded-md px-1.5 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+            open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
+          }`}
+        >
+          ⋯
+        </button>
+      </Tooltip>
       {open &&
         pos &&
         createPortal(
@@ -1058,16 +1060,17 @@ const TxRow = memo(function TxRow({
                             className="rounded border border-[var(--border)] bg-card px-1 py-0.5 text-sm"
                           />
                         ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingDateId(t.id);
-                            }}
-                            className="text-sm font-medium hover:underline"
-                            title="Edit effective date"
-                          >
-                            {longDate(t.effectiveDate ?? t.date)}
-                          </button>
+                          <Tooltip label="Edit effective date" onlyIfTruncated={false}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingDateId(t.id);
+                              }}
+                              className="text-sm font-medium hover:underline"
+                            >
+                              {longDate(t.effectiveDate ?? t.date)}
+                            </button>
+                          </Tooltip>
                         )}
                         {t.excluded ? (
                           <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
@@ -1081,16 +1084,17 @@ const TxRow = memo(function TxRow({
                           {t.effectiveDate && t.effectiveDate !== t.date && (
                             <span className="text-amber-600">
                               {!sameAcct ? "· " : ""}posted {shortDate(t.date)}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  commitDate(t, null);
-                                }}
-                                className="ml-1 hover:text-[var(--foreground)]"
-                                title="Revert to posted date"
-                              >
-                                ↺
-                              </button>
+                              <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    commitDate(t, null);
+                                  }}
+                                  className="hover:text-[var(--foreground)]"
+                                >
+                                  ↺
+                                </button>
+                              </Tooltip>
                             </span>
                           )}
                         </div>
@@ -1103,20 +1107,25 @@ const TxRow = memo(function TxRow({
                     {/* Passive recurring marker — glanceable state; the toggle
                         lives in the ⋯ menu (so the icon isn't a cryptic control). */}
                     {recState !== "none" && (
-                      <span
-                        title={
+                      <Tooltip
+                        label={
                           recState === "in"
                             ? "Part of a recurring series"
                             : "Excluded from its recurring series"
                         }
-                        className={`shrink-0 text-xs ${
-                          recState === "in"
-                            ? "text-[var(--accent)]"
-                            : "text-[var(--muted)] line-through"
-                        }`}
+                        onlyIfTruncated={false}
+                        className="shrink-0"
                       >
-                        ↻
-                      </span>
+                        <span
+                          className={`text-xs ${
+                            recState === "in"
+                              ? "text-[var(--accent)]"
+                              : "text-[var(--muted)] line-through"
+                          }`}
+                        >
+                          ↻
+                        </span>
+                      </Tooltip>
                     )}
                     {t.excluded ? (
                       <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
@@ -1131,16 +1140,17 @@ const TxRow = memo(function TxRow({
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-amber-600">
                             · posted {shortDate(t.date)}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                commitDate(t, null);
-                              }}
-                              className="ml-1 hover:text-[var(--foreground)]"
-                              title="Revert to posted date"
-                            >
-                              ↺
-                            </button>
+                            <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  commitDate(t, null);
+                                }}
+                                className="hover:text-[var(--foreground)]"
+                              >
+                                ↺
+                              </button>
+                            </Tooltip>
                           </span>
                         )}
                         {/* Date editing is reached via the row's ⋯ menu (Set date);
@@ -1179,30 +1189,32 @@ const TxRow = memo(function TxRow({
                             className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
                           />
                         ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingDateId(t.id);
-                            }}
-                            className="hover:text-[var(--foreground)] hover:underline"
-                            title="Edit effective date"
-                          >
-                            {longDate(t.effectiveDate ?? t.date)}
-                          </button>
+                          <Tooltip label="Edit effective date" onlyIfTruncated={false}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingDateId(t.id);
+                              }}
+                              className="hover:text-[var(--foreground)] hover:underline"
+                            >
+                              {longDate(t.effectiveDate ?? t.date)}
+                            </button>
+                          </Tooltip>
                         )}
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-amber-600">
                             · posted {shortDate(t.date)}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                commitDate(t, null);
-                              }}
-                              className="ml-1 hover:text-[var(--foreground)]"
-                              title="Revert to posted date"
-                            >
-                              ↺
-                            </button>
+                            <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  commitDate(t, null);
+                                }}
+                                className="hover:text-[var(--foreground)]"
+                              >
+                                ↺
+                              </button>
+                            </Tooltip>
                           </span>
                         )}
                         <span>· {t.account}</span>
@@ -1231,17 +1243,18 @@ const TxRow = memo(function TxRow({
                       className="mt-0.5 w-full max-w-md rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
                     />
                   ) : t.note ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingNoteId(t.id);
-                      }}
-                      title="Edit note"
-                      className="mt-0.5 flex max-w-full items-baseline gap-1 text-left text-xs italic text-[var(--muted)] hover:text-[var(--foreground)]"
-                    >
-                      <span className="shrink-0 not-italic opacity-70">✎</span>
-                      <span className="truncate">{t.note}</span>
-                    </button>
+                    <Tooltip label="Edit note" onlyIfTruncated={false} className="mt-0.5 flex max-w-full">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingNoteId(t.id);
+                        }}
+                        className="flex max-w-full items-baseline gap-1 text-left text-xs italic text-[var(--muted)] hover:text-[var(--foreground)]"
+                      >
+                        <span className="shrink-0 not-italic opacity-70">✎</span>
+                        <span className="truncate">{t.note}</span>
+                      </button>
+                    </Tooltip>
                   ) : null}
                     </>
                   )}
@@ -1260,7 +1273,6 @@ const TxRow = memo(function TxRow({
                   onChange={(e) =>
                     setCategory(t.id, e.target.value ? Number(e.target.value) : null)
                   }
-                  title="Category"
                   className={`select-caret max-w-[9rem] shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${
                     t.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
