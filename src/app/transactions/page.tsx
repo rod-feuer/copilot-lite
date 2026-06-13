@@ -9,9 +9,11 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
 import { MonthPicker, ImportButton } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -746,6 +748,121 @@ export default function TransactionsPage() {
   );
 }
 
+// The row's always-visible "⋯" — one anchor for the actions that used to be
+// hover-gated (set date, add/edit note, recurring toggle), so they're reachable
+// without hover and on touch (DESIGN.md §1 Anchor, §3 Reach). The menu is
+// PORTALED to document.body: the row uses content-visibility (paint containment)
+// which would clip an in-row popover. Fixed-positioned from the button's rect and
+// closed on scroll/resize/outside-click/Escape (it can't follow a scroll).
+function RowActionsMenu({
+  recState,
+  hasNote,
+  hasDateOverride,
+  onSetDate,
+  onEditNote,
+  onToggleRecurring,
+}: {
+  recState: "in" | "out" | "none";
+  hasNote: boolean;
+  hasDateOverride: boolean;
+  onSetDate: () => void;
+  onEditNote: () => void;
+  onToggleRecurring: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const onDown = (e: globalThis.MouseEvent) => {
+      const node = e.target as Node;
+      if (btnRef.current?.contains(node) || menuRef.current?.contains(node)) return;
+      close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("scroll", close, true); // any ancestor scroll
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  function toggle(e: ReactMouseEvent) {
+    e.stopPropagation();
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const r = btnRef.current!.getBoundingClientRect();
+    setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    setOpen(true);
+  }
+
+  const recLabel =
+    recState === "in"
+      ? "Exclude from recurring"
+      : recState === "out"
+        ? "Add back to recurring"
+        : "Mark recurring";
+
+  const item = (label: string, fn: () => void) => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen(false);
+        fn();
+      }}
+      className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[var(--background)]"
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="More actions"
+        className={`shrink-0 rounded-md px-1.5 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+          open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
+        }`}
+      >
+        ⋯
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: "fixed", top: pos.top, right: pos.right }}
+            className="z-50 w-48 rounded-xl border border-[var(--border)] bg-card p-1 shadow-lg"
+          >
+            {item(hasDateOverride ? "Change date" : "Set date", onSetDate)}
+            {item(hasNote ? "Edit note" : "Add note", onEditNote)}
+            {item(recLabel, onToggleRecurring)}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 // One transaction row, memoized so an edit or keystroke elsewhere in the list
 // doesn't re-render every row. Receives per-row flags (computed by the parent
 // from a single piece of state, e.g. isEditingDate) and stable
@@ -876,6 +993,24 @@ const TxRow = memo(function TxRow({
                     <>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{t.displayName}</span>
+                    {/* Passive recurring marker — glanceable state; the toggle
+                        lives in the ⋯ menu (so the icon isn't a cryptic control). */}
+                    {recState !== "none" && (
+                      <span
+                        title={
+                          recState === "in"
+                            ? "Part of a recurring series"
+                            : "Excluded from its recurring series"
+                        }
+                        className={`shrink-0 text-xs ${
+                          recState === "in"
+                            ? "text-[var(--accent)]"
+                            : "text-[var(--muted)] line-through"
+                        }`}
+                      >
+                        ↻
+                      </span>
+                    )}
                     {t.excluded ? (
                       <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
                         excluded
@@ -901,7 +1036,9 @@ const TxRow = memo(function TxRow({
                             </button>
                           </span>
                         )}
-                        {isEditingDate ? (
+                        {/* Date editing is reached via the row's ⋯ menu (Set date);
+                            the inline editor still renders here when active. */}
+                        {isEditingDate && (
                           <span className="inline-flex items-center gap-1">
                             ·
                             <input
@@ -917,17 +1054,6 @@ const TxRow = memo(function TxRow({
                               className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
                             />
                           </span>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingDateId(t.id);
-                            }}
-                            className="hidden hover:text-[var(--foreground)] hover:underline group-hover:inline"
-                            title="Set effective date"
-                          >
-                            · edit date
-                          </button>
                         )}
                       </>
                     ) : (
@@ -975,21 +1101,8 @@ const TxRow = memo(function TxRow({
                         <span>· {t.account}</span>
                       </>
                     )}
-                    {/* Empty-note affordance lives INLINE in the meta row (like
-                        "edit date") so revealing it on hover never changes the
-                        row height — avoids list-wide jitter as the pointer moves. */}
-                    {!t.note && !isEditingNote && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingNoteId(t.id);
-                        }}
-                        title="Add a note"
-                        className="hidden hover:text-[var(--foreground)] hover:underline group-hover:inline"
-                      >
-                        · + note
-                      </button>
-                    )}
+                    {/* Adding a note is reached via the row's ⋯ menu (Add note);
+                        a set note renders on its own line below. */}
                   </div>
                   {/* A set note (or the editor) takes its own line below — that's
                       persistent content, not a hover reveal, so it doesn't jitter. */}
@@ -1026,28 +1139,6 @@ const TxRow = memo(function TxRow({
                     </>
                   )}
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleRecurring(t);
-                  }}
-                  title={
-                    recState === "in"
-                      ? "Part of a recurring — click to exclude this charge"
-                      : recState === "out"
-                        ? "Excluded from the recurring — click to add it back"
-                        : "Make recurring"
-                  }
-                  className={`shrink-0 rounded-md px-1.5 py-1 text-sm transition-opacity ${
-                    recState === "in"
-                      ? "text-[var(--accent)]"
-                      : recState === "out"
-                        ? "text-[var(--muted)] line-through opacity-70 hover:opacity-100"
-                        : "text-[var(--muted)] opacity-0 hover:bg-[var(--background)] group-hover:opacity-100"
-                  }`}
-                >
-                  ↻
-                </button>
                 {(!modal || !sameCat) && (
                 <select
                   value={t.categoryId ?? ""}
@@ -1103,6 +1194,14 @@ const TxRow = memo(function TxRow({
                 >
                   {usd(t.amount, { sign: true })}
                 </div>
+                <RowActionsMenu
+                  recState={recState}
+                  hasNote={!!t.note}
+                  hasDateOverride={!!(t.effectiveDate && t.effectiveDate !== t.date)}
+                  onSetDate={() => setEditingDateId(t.id)}
+                  onEditNote={() => setEditingNoteId(t.id)}
+                  onToggleRecurring={() => toggleRecurring(t)}
+                />
               </li>
   );
 });
