@@ -149,8 +149,11 @@ export default function CategoriesPage() {
     load(month);
   }
 
-  // Edit a category's icon and/or color (the appearance of its row badge).
-  async function saveAppearance(id: number, patch: { icon?: string; color?: string }) {
+  // Edit a category's badge appearance (icon/color) or its kind (expense↔income).
+  async function saveAppearance(
+    id: number,
+    patch: { icon?: string; color?: string; kind?: "expense" | "income" }
+  ) {
     await fetch(`/api/categories/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -476,7 +479,10 @@ function Group({
   onDelete: (c: Cat) => void;
   onBudget?: (id: number, amount: number | null, period: "monthly" | "annual") => void;
   onToggleExclude?: (id: number, exclude: boolean) => void;
-  onEditAppearance?: (id: number, patch: { icon?: string; color?: string }) => void;
+  onEditAppearance?: (
+    id: number,
+    patch: { icon?: string; color?: string; kind?: "expense" | "income" }
+  ) => void;
   onRename?: (id: number, name: string) => void;
   // Reload the list when a transaction is edited inside the category shelf, so
   // totals/budgets update in place instead of needing a manual refresh.
@@ -521,6 +527,10 @@ function Group({
               <CategoryBadge
                 icon={c.icon}
                 color={c.color}
+                kind={c.kind}
+                // Uncategorized is a fixed catch-all — its kind isn't a meaningful
+                // correction, so don't offer the toggle for it.
+                canEditKind={c.name !== "Uncategorized"}
                 onSave={onEditAppearance ? (patch) => onEditAppearance(c.id, patch) : undefined}
               />
               <div className="min-w-0 flex-1">
@@ -823,11 +833,15 @@ function CategoryName({ name, onRename }: { name: string; onRename?: (name: stri
 function CategoryBadge({
   icon,
   color,
+  kind,
+  canEditKind,
   onSave,
 }: {
   icon: string;
   color: string;
-  onSave?: (patch: { icon?: string; color?: string }) => void;
+  kind?: "expense" | "income";
+  canEditKind?: boolean;
+  onSave?: (patch: { icon?: string; color?: string; kind?: "expense" | "income" }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -889,6 +903,28 @@ function CategoryBadge({
               />
             ))}
           </div>
+          {/* Type (expense↔income) — a correction, e.g. a category that should
+              count inflows. Re-buckets the category and flips how its rows sum. */}
+          {canEditKind && kind && (
+            <div className="mt-2.5 flex items-center justify-between border-t border-[var(--border)] pt-2.5">
+              <span className="text-xs text-[var(--muted)]">Type</span>
+              <div className="flex overflow-hidden rounded-lg border border-[var(--border)] text-xs">
+                {(["expense", "income"] as const).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => k !== kind && onSave({ kind: k })}
+                    className={`px-2.5 py-1 capitalize ${
+                      kind === k
+                        ? "bg-[var(--accent)] text-white"
+                        : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                    }`}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

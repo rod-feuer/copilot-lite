@@ -428,6 +428,46 @@ export default function TransactionsPage() {
     [toast]
   );
 
+  // Per-charge recurring exclusion — the FINER counterpart to the vendor-level
+  // toggle above: keep the vendor's series, but drop (or re-add) this one charge
+  // as a one-off (e.g. a double payment). Only offered when the charge is already
+  // in/out of a series (the ⋯ menu gates on recState), so it can't create a ghost
+  // "excluded" marker on a vendor that isn't recurring at all. The server re-runs
+  // detection, so refresh to pick up the new recurringId.
+  const setChargeRecurring = useCallback(
+    async (t: Tx, excluded: boolean) => {
+      try {
+        await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: excluded });
+        toast(excluded ? "Charge excluded from its series" : "Charge added back to its series", "success");
+        setRefreshKey((k) => k + 1);
+      } catch {
+        toast("Couldn't update — please try again", "error");
+      }
+    },
+    [toast]
+  );
+
+  // Exclude/include a single charge from all totals (the per-transaction
+  // counterpart to a category's exclude-from-totals). Optimistic for instant
+  // pill + day-subtotal feedback; refresh to resync the header net (server-side).
+  const setExcluded = useCallback(
+    async (t: Tx, excluded: boolean) => {
+      setTxs((prev) => prev.map((x) => (x.id === t.id ? { ...x, excluded: excluded ? 1 : 0 } : x)));
+      try {
+        await patchJson(`/api/transactions/${t.id}`, { excluded });
+        toast(excluded ? "Excluded from totals" : "Included in totals", "success");
+        setRefreshKey((k) => k + 1);
+      } catch {
+        toast("Couldn't update — please try again", "error");
+        setRefreshKey((k) => k + 1);
+      }
+    },
+    [toast]
+  );
+
+  // The charge being split (drives the split dialog). null = closed.
+  const [splitTx, setSplitTx] = useState<Tx | null>(null);
+
   const onOpenRow = useCallback(
     (merchant: string) => openTx(merchant, { onChange: () => setRefreshKey((k) => k + 1) }),
     [openTx]
@@ -744,6 +784,9 @@ export default function TransactionsPage() {
                     onCommitDate={commitDate}
                     onSaveNote={saveNote}
                     onSetRecurring={setRecurringVendor}
+                    onSetChargeRecurring={setChargeRecurring}
+                    onToggleExcluded={setExcluded}
+                    onSplit={setSplitTx}
                     onSetCategory={setCategory}
                   />
                 ))}
@@ -772,6 +815,17 @@ export default function TransactionsPage() {
           </>
         )}
       </div>
+      {splitTx && (
+        <SplitDialog
+          tx={splitTx}
+          cats={cats}
+          onClose={() => setSplitTx(null)}
+          onDone={() => {
+            setSplitTx(null);
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
     </Shell>
   );
 }
@@ -786,16 +840,26 @@ function RowActionsMenu({
   recState,
   hasNote,
   hasDateOverride,
+  excluded,
+  canSplit,
   onSetDate,
   onEditNote,
   onSetRecurring,
+  onSetChargeRecurring,
+  onToggleExcluded,
+  onSplit,
 }: {
   recState: "in" | "out" | "none";
   hasNote: boolean;
   hasDateOverride: boolean;
+  excluded: boolean;
+  canSplit: boolean;
   onSetDate: () => void;
   onEditNote: () => void;
   onSetRecurring: (recurring: boolean) => void;
+  onSetChargeRecurring: (excluded: boolean) => void;
+  onToggleExcluded: (excluded: boolean) => void;
+  onSplit: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
@@ -852,6 +916,7 @@ function RowActionsMenu({
       {label}
     </button>
   );
+  const divider = <div className="my-1 border-t border-[var(--border)]" />;
 
   return (
     <>
@@ -880,8 +945,18 @@ function RowActionsMenu({
           >
             {item(hasDateOverride ? "Change date" : "Set date", onSetDate)}
             {item(hasNote ? "Edit note" : "Add note", onEditNote)}
+            {canSplit && item("Split…", onSplit)}
+            {divider}
             {item(isRecurring ? "Not recurring" : "Mark recurring", () =>
               onSetRecurring(!isRecurring)
+            )}
+            {/* Per-charge series exclusion — only when the vendor IS a series, so
+                it can't strand a ghost marker on a non-recurring vendor. */}
+            {recState === "in" && item("Exclude this charge", () => onSetChargeRecurring(true))}
+            {recState === "out" && item("Add charge to series", () => onSetChargeRecurring(false))}
+            {divider}
+            {item(excluded ? "Include in totals" : "Exclude from totals", () =>
+              onToggleExcluded(!excluded)
             )}
           </div>,
           document.body
@@ -910,6 +985,9 @@ const TxRow = memo(function TxRow({
   onCommitDate,
   onSaveNote,
   onSetRecurring,
+  onSetChargeRecurring,
+  onToggleExcluded,
+  onSplit,
   onSetCategory,
 }: {
   t: Tx;
@@ -927,6 +1005,9 @@ const TxRow = memo(function TxRow({
   onCommitDate: (t: Tx, value: string | null) => void;
   onSaveNote: (id: number, raw: string) => void;
   onSetRecurring: (t: Tx, recurring: boolean) => void;
+  onSetChargeRecurring: (t: Tx, excluded: boolean) => void;
+  onToggleExcluded: (t: Tx, excluded: boolean) => void;
+  onSplit: (t: Tx) => void;
   onSetCategory: (id: number, categoryId: number | null) => void;
 }) {
   const sameCat =
@@ -1224,13 +1305,158 @@ const TxRow = memo(function TxRow({
                   recState={recState}
                   hasNote={!!t.note}
                   hasDateOverride={!!(t.effectiveDate && t.effectiveDate !== t.date)}
+                  excluded={!!t.excluded}
+                  canSplit={t.amount < 0}
                   onSetDate={() => setEditingDateId(t.id)}
                   onEditNote={() => setEditingNoteId(t.id)}
                   onSetRecurring={(recurring) => onSetRecurring(t, recurring)}
+                  onSetChargeRecurring={(excluded) => onSetChargeRecurring(t, excluded)}
+                  onToggleExcluded={(excluded) => onToggleExcluded(t, excluded)}
+                  onSplit={() => onSplit(t)}
                 />
               </li>
   );
 });
+
+// Split a single charge into category parts. Records a split rule keyed on the
+// charge's merchant + amount and applies it immediately (see the split route);
+// the parts must reconcile to the charge total before it can be saved. Portaled
+// + centered so it escapes the list's content-visibility clipping.
+function SplitDialog({
+  tx,
+  cats,
+  onClose,
+  onDone,
+}: {
+  tx: Tx;
+  cats: Cat[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const total = Math.abs(tx.amount);
+  const [parts, setParts] = useState<{ categoryId: string; amount: string; label: string }[]>(() => [
+    { categoryId: tx.categoryId ? String(tx.categoryId) : "", amount: "", label: "" },
+    { categoryId: "", amount: "", label: "" },
+  ]);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  const sum = parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const remaining = Number((total - sum).toFixed(2));
+  const valid =
+    parts.length >= 2 &&
+    parts.every((p) => p.categoryId !== "" && Number(p.amount) > 0) &&
+    Math.abs(remaining) <= 0.01;
+
+  const update = (i: number, patch: Partial<(typeof parts)[number]>) =>
+    setParts((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+
+  async function submit() {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      await postJson(`/api/transactions/${tx.id}/split`, {
+        parts: parts.map((p) => ({
+          categoryId: Number(p.categoryId),
+          amount: Number(p.amount),
+          label: p.label.trim() || cats.find((c) => c.id === Number(p.categoryId))?.name || "Part",
+        })),
+      });
+      toast("Transaction split", "success");
+      onDone();
+    } catch {
+      toast("Couldn't split — please try again", "error");
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-md p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 text-sm font-semibold">Split transaction</div>
+        <div className="mb-3 text-xs text-[var(--muted)]">
+          {tx.displayName} · {usd(tx.amount, { sign: true })}
+        </div>
+
+        <div className="space-y-2">
+          {parts.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select
+                value={p.categoryId}
+                onChange={(e) => update(i, { categoryId: e.target.value })}
+                className="select-caret min-w-0 flex-1 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1.5 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+              >
+                <option value="">Category…</option>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icon} {c.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={p.amount}
+                onChange={(e) => update(i, { amount: e.target.value })}
+                placeholder="$"
+                inputMode="decimal"
+                className="w-20 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+              />
+              {parts.length > 2 ? (
+                <button
+                  onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))}
+                  aria-label="Remove part"
+                  className="rounded px-1 text-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  ✕
+                </button>
+              ) : (
+                <span className="w-5" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-2 flex items-center justify-between text-xs">
+          <button
+            onClick={() => setParts((prev) => [...prev, { categoryId: "", amount: "", label: "" }])}
+            className="font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
+          >
+            + Add part
+          </button>
+          <span className={Math.abs(remaining) > 0.01 ? "text-amber-600 tabular-nums" : "text-[var(--muted)] tabular-nums"}>
+            {remaining === 0 ? "balanced" : `${usd(remaining)} left`}
+          </span>
+        </div>
+
+        <p className="mt-3 text-[11px] leading-snug text-[var(--muted)]">
+          Splits this and any future {tx.displayName} charge of {usd(total)} into the parts above.
+        </p>
+
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!valid || saving}
+            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {saving ? "Splitting…" : "Split"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 // Day-group header label, e.g. "Saturday, June 6". UTC to match the stored dates.
 function dayLabel(iso: string): string {
