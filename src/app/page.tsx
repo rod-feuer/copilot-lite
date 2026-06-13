@@ -16,6 +16,8 @@ import Shell from "@/components/Shell";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { useToast } from "@/components/Toast";
+// Aliased: `Tooltip` is already taken by recharts' chart tooltip above.
+import { Tooltip as HoverTip } from "@/components/Tooltip";
 import { patchJson } from "@/lib/http";
 
 type Dash = {
@@ -32,6 +34,7 @@ type Dash = {
     icon: string;
     total: number;
     budget: number | null;
+    recurringBaseline: number;
   }[];
   budget: { total: number; spent: number; projected: number | null } | null;
   pace: {
@@ -889,6 +892,7 @@ function CategoryBars({
     icon: string;
     total: number;
     budget: number | null;
+    recurringBaseline: number;
   }[];
   month: string;
 }) {
@@ -896,9 +900,11 @@ function CategoryBars({
   const shelfActive = useShelfActive();
   if (rows.length === 0)
     return <p className="text-sm text-[var(--muted)]">No spending this month.</p>;
-  // Scale to the larger of spend or budget so over-budget bars and budget ticks
-  // both fit.
-  const max = Math.max(...rows.map((r) => Math.max(r.total, r.budget ?? 0)));
+  // Scale to the largest of spend, budget, or recurring baseline across rows so
+  // over-budget bars and the recurring marker all land in range.
+  const max = Math.max(
+    ...rows.map((r) => Math.max(r.total, r.budget ?? 0, r.recurringBaseline))
+  );
   const pct = (v: number) => `${(v / max) * 100}%`;
   const fmt = (v: number) => usd(v, { cents: false });
   const shown = rows.slice(0, 7);
@@ -954,12 +960,23 @@ function CategoryBars({
                   />
                 )}
               </div>
-              {r.budget != null && (
+              {/* Recurring marker: where this category's committed recurring spend
+                  sits on the bar, so the discretionary headroom is visible at a
+                  glance. Instant Tooltip (not native `title`, which lags ~1s); the
+                  thin line gets a wider invisible hover zone so it's easy to land. */}
+              {r.recurringBaseline > 0 && (
                 <div
-                  className="absolute top-0 h-2 w-0.5 rounded bg-[var(--foreground)]/40"
-                  style={{ left: pct(Math.min(r.budget, max)) }}
-                  title={`Budget ${usd(r.budget, { cents: false })}`}
-                />
+                  className="absolute top-0 -translate-x-1/2"
+                  style={{ left: pct(Math.min(r.recurringBaseline, max)) }}
+                >
+                  <HoverTip
+                    label={`Recurring ≈ ${fmt(r.recurringBaseline)}/mo`}
+                    onlyIfTruncated={false}
+                    className="flex h-2 w-2 cursor-help justify-center"
+                  >
+                    <span className="block h-2 w-0.5 rounded bg-[var(--foreground)]/40" />
+                  </HoverTip>
+                </div>
               )}
             </div>
           </>

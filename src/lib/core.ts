@@ -3,6 +3,7 @@ import { getDb } from "./db";
 import {
   upcomingRecurringExpenses,
   getBudgets,
+  recurringMonthlyByCategory,
   getRecurringOverrides,
   getRecurringTxExclusions,
   getMerchantLinks,
@@ -367,6 +368,10 @@ export type DashboardData = {
     icon: string;
     total: number;
     budget: number | null;
+    // Monthly-equivalent of this category's detected recurring charges — the
+    // committed "floor" of the category, marked on its bar so the discretionary
+    // headroom (budget − recurring) is visible. 0 when nothing recurs here.
+    recurringBaseline: number;
   }[];
   // `projected` is null when it's too early in an in-progress month to run-rate
   // a meaningful forecast (the UI shows a soft message instead of a false figure).
@@ -544,6 +549,7 @@ export function dashboard(month?: string): DashboardData {
   }
   const pace = { series, projectedMonthEnd, daysElapsed: lastDataDay, daysInMonth };
 
+  const recurringByCat = recurringMonthlyByCategory();
   const byCategory = [...catMap.entries()]
     .map(([name, v]) => ({
       name,
@@ -552,6 +558,7 @@ export function dashboard(month?: string): DashboardData {
       icon: v.icon,
       total: Number(v.total.toFixed(2)),
       budget: v.id != null ? budgets[v.id] ?? null : null,
+      recurringBaseline: v.id != null ? Number((recurringByCat[v.id] ?? 0).toFixed(2)) : 0,
     }))
     .sort((a, b) => b.total - a.total);
 
