@@ -50,6 +50,8 @@ All optional. Put them in a `.env.local` file at the repo root (gitignored).
 | `ANTHROPIC_API_KEY` | **Auto-categorize** — sends only genuinely unknown merchants to Claude (see below). Without it, unknowns stay uncategorized. | unset |
 | `PLAID_CLI_PATH` | **Sync from bank** — path to a `plaid` CLI binary that emits the expected JSON (advanced; the sync shells out to it). | `plaid` on `PATH` |
 | `COPILOT_DB_PATH` | Override the SQLite file location. Tests set this to a throwaway file so they never touch `data/copilot.db`. | `data/copilot.db` |
+| `APP_PASSWORD` | **Login gate.** When set, every page/API requires a session cookie (log in at `/login`). Leave unset for plain localhost dev — auth is off and nothing changes. **Set this before exposing the app beyond localhost** (e.g. over a private network / Tailscale). | unset (auth off) |
+| `APP_SESSION_SECRET` | Optional key for signing the session cookie. Defaults to deriving from `APP_PASSWORD`; set it only if you want to rotate sessions independently. | derived from `APP_PASSWORD` |
 
 ```bash
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env.local
