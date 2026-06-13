@@ -64,7 +64,8 @@ const RecurringsIcon = () => (
   </Icon>
 );
 
-const NAV = [
+// Shared by the desktop sidebar and the mobile bottom-tab bar (BottomNav).
+export const NAV = [
   { href: "/", label: "Dashboard", Icon: DashboardIcon },
   { href: "/transactions", label: "Transactions", Icon: TransactionsIcon },
   { href: "/categories", label: "Categories", Icon: CategoriesIcon },
