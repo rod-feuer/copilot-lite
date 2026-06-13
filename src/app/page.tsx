@@ -803,9 +803,12 @@ function CategoryBars({
                 <span className="font-medium">{r.name}</span>
               </span>
               <span className="flex items-center gap-1.5">
-                {/* Two right-aligned tabular columns with a fixed slash gutter.
-                    Spent (the live figure) is ranked foreground; the budget
-                    reference is muted — the bar below already shows the ratio. */}
+                {/* The slash is a fixed center gutter: spent (the ranked-foreground
+                    live figure) right-aligns into it, the muted budget left-aligns
+                    out of it — so the "/" hugs the fraction on both sides and stays
+                    at a constant x, while each figure still forms a column. The
+                    budget's right edge goes ragged, but that lands before the faint
+                    chevron (breathing room), not inside the fraction. */}
                 <span className="flex items-baseline gap-1 tabular-nums">
                   <span
                     className={`text-right ${over ? "font-semibold text-rose-600" : "font-medium"}`}
@@ -817,7 +820,7 @@ function CategoryBars({
                     <>
                       <span className="text-[var(--muted)]">/</span>
                       <span
-                        className="text-right font-normal text-[var(--muted)]"
+                        className="text-left font-normal text-[var(--muted)]"
                         style={{ minWidth: `${numCh}ch` }}
                       >
                         {fmt(r.budget)}
@@ -891,6 +894,11 @@ function BudgetSummary({
   // Spend in categories that have no budget — reconciles this card's "budgeted"
   // figure with the all-expenses total shown in the Expenses stat / pace chart.
   const unbudgeted = Math.max(0, Number((totalExpenses - budget.spent).toFixed(2)));
+  // Only worth the reconciliation line when the unbudgeted slice is material — a
+  // big enough share (≥2% of spend) or a big enough amount (≥$250). A trivial
+  // sliver (e.g. $10 on $20k) is noise, not a caveat worth a line of arithmetic.
+  const unbudgetedMatters =
+    unbudgeted >= 250 || (totalExpenses > 0 && unbudgeted / totalExpenses >= 0.02);
   return (
     <div className="mb-4 rounded-xl bg-[var(--background)] p-3">
       <div className="flex items-center justify-between text-sm">
@@ -925,7 +933,7 @@ function BudgetSummary({
           " · too early to project"
         )}
       </div>
-      {unbudgeted >= 1 && (
+      {unbudgetedMatters && (
         <div className="mt-1 text-xs text-[var(--muted)]">
           + {usd(unbudgeted, { cents: false })} in categories without a budget ={" "}
           <span className="font-medium text-[var(--foreground)]">
