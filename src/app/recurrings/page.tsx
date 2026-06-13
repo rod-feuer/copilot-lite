@@ -6,6 +6,7 @@ import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
+import { InfoHint } from "@/components/InfoHint";
 import { SearchBox } from "@/components/SearchBox";
 import { postJson } from "@/lib/http";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
@@ -488,12 +489,15 @@ export default function RecurringsPage() {
 
           {shownInactive.length > 0 && (
             <div>
-              <button
-                onClick={() => setShowInactive((s) => !s)}
-                className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] hover:text-[var(--foreground)]"
-              >
-                {showInactive ? "▾" : "▸"} Inactive ({shownInactive.length})
-              </button>
+              <div className="mb-2 flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowInactive((s) => !s)}
+                  className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  {showInactive ? "▾" : "▸"} Inactive ({shownInactive.length})
+                </button>
+                <InfoHint text="Recurrings that haven't charged within ~1.5 cycles — including subscriptions you marked ended. They no longer count as upcoming or toward expected spend, but their history is kept." />
+              </div>
               {(showInactive || filtering) && (
                 <BillList
                   title=""

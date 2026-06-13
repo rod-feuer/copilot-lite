@@ -571,6 +571,7 @@ function Group({
                           e.stopPropagation();
                           onToggleExclude(c.id, !c.excludeFromTotals);
                         }}
+                        title="Leaves this category out of your income and expense totals — for money movement like transfers, credit-card payments, and reimbursements."
                         className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                           c.excludeFromTotals
                             ? "bg-amber-500/15 text-amber-600"

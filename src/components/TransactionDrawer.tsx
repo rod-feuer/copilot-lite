@@ -711,6 +711,7 @@ function MerchantBody({
           <div className="min-w-[140px] flex-1">
             <ShelfEditField
               label="Expected"
+              hint="Amount used for upcoming bills; past charges are unchanged."
               edited={data.expectedAmount != null}
               prefix="$"
               inputMode="decimal"
