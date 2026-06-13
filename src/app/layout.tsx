@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
@@ -23,6 +23,28 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Copilot Lite",
   description: "A simplified personal finance dashboard",
+  applicationName: "Copilot Lite",
+  // Standalone full-screen + a proper title/status bar when added to the iOS
+  // home screen. (The manifest at app/manifest.ts is auto-linked by Next.)
+  appleWebApp: {
+    capable: true,
+    title: "Copilot Lite",
+    statusBarStyle: "default",
+  },
+  // Next emits the modern `mobile-web-app-capable`; add the apple-specific one
+  // explicitly so older iOS also launches full-screen from the home screen.
+  other: { "apple-mobile-web-app-capable": "yes" },
+};
+
+export const viewport: Viewport = {
+  // Status-bar / browser-chrome tint, matched to the app background per scheme.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f1012" },
+  ],
+  // Extend under the notch/home-indicator so the safe-area-inset padding the
+  // bottom nav uses actually takes effect in standalone mode.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

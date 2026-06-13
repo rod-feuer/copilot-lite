@@ -4,8 +4,10 @@ import { SESSION_COOKIE, authEnabled, verifySessionToken } from "@/lib/auth";
 // Next 16 renamed the `middleware` convention to `proxy`. Runs before routes
 // render; here it's the single-user auth gate (see src/lib/auth.ts).
 
-// Reachable without a session (the login screen and its endpoint).
-const PUBLIC = ["/login", "/api/login"];
+// Reachable without a session: the login screen + endpoint, and the PWA icon /
+// manifest routes (the browser and iOS "Add to Home Screen" fetch these without a
+// session, and they're just the app logo — no sensitive data).
+const PUBLIC = ["/login", "/api/login", "/icon", "/apple-icon", "/manifest.webmanifest"];
 
 export async function proxy(req: NextRequest) {
   // Auth off (no APP_PASSWORD) → behave exactly as before.
