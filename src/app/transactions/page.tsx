@@ -1183,7 +1183,7 @@ const TxRow = memo(function TxRow({
                 </select>
                 )}
                 <div
-                  className={`w-24 text-right text-sm font-semibold ${
+                  className={`w-24 text-right text-[15px] font-semibold tabular-nums ${
                     t.amount >= 0 ? "text-emerald-600" : "text-[var(--foreground)]"
                   }`}
                 >

@@ -758,6 +758,10 @@ function MerchantBody({
           </div>
         </div>
 
+        {/* A divider ranks the structural operations a tier below the money facts
+            above — corrections you reach for occasionally, not every visit. */}
+        <div className="border-t border-[var(--border)]" />
+
         {/* Two secondary actions, compact and side-by-side. Combine is a
             disclosure — its panel drops below the row only while in use. */}
         <div className="flex gap-2">
