@@ -1002,10 +1002,14 @@ function BudgetInput({
       <Tooltip
         label={period === "annual" ? "Annual budget" : "Monthly budget"}
         onlyIfTruncated={false}
-        className="inline-flex w-14"
+        className="inline-flex"
       >
+        {/* Sized to its content (the `size` attr) instead of a fixed w-14 right-
+            aligned box, which stranded short values away from "of $" (e.g.
+            "of $   259"). Now "of $259/mo" reads as one tight phrase. */}
         <input
           defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
+          size={budget === null ? 2 : Math.max(2, budget.toLocaleString("en-US").length)}
           onBlur={(e) => commit(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
@@ -1013,7 +1017,7 @@ function BudgetInput({
           placeholder="—"
           inputMode="decimal"
           aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
-          className="w-full rounded bg-transparent text-right font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+          className="rounded bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
         />
       </Tooltip>
       <Tooltip
