@@ -158,6 +158,21 @@ export default function CategoriesPage() {
     load(month);
   }
 
+  // Rename a category. The PATCH route rejects an empty name; the inline editor
+  // also guards, so this only fires for a real, changed value.
+  async function saveName(id: number, newName: string) {
+    const res = await fetch(`/api/categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    });
+    if (!res.ok) {
+      toast("Couldn't rename — please try again", "error");
+      return;
+    }
+    load(month);
+  }
+
   // Budget pressure: fraction of budget spent. Unbudgeted categories have no
   // pressure, so they sort below budgeted ones (and among themselves by spend).
   const pressure = (c: Cat) => (c.budget && c.budget > 0 ? budgetSpent(c) / c.budget : -1);
@@ -275,6 +290,7 @@ export default function CategoriesPage() {
         onBudget={saveBudget}
         onToggleExclude={toggleExclude}
         onEditAppearance={saveAppearance}
+        onRename={saveName}
         onChange={() => load(month)}
         confirmingId={confirmingDelete}
       />
@@ -287,6 +303,7 @@ export default function CategoriesPage() {
             cats={income}
             onDelete={remove}
             onEditAppearance={saveAppearance}
+            onRename={saveName}
             onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
@@ -302,6 +319,7 @@ export default function CategoriesPage() {
             onDelete={remove}
             onToggleExclude={toggleExclude}
             onEditAppearance={saveAppearance}
+            onRename={saveName}
             onChange={() => load(month)}
             confirmingId={confirmingDelete}
           />
@@ -446,6 +464,7 @@ function Group({
   onBudget,
   onToggleExclude,
   onEditAppearance,
+  onRename,
   onChange,
   confirmingId,
 }: {
@@ -457,6 +476,7 @@ function Group({
   onBudget?: (id: number, amount: number | null, period: "monthly" | "annual") => void;
   onToggleExclude?: (id: number, exclude: boolean) => void;
   onEditAppearance?: (id: number, patch: { icon?: string; color?: string }) => void;
+  onRename?: (id: number, name: string) => void;
   // Reload the list when a transaction is edited inside the category shelf, so
   // totals/budgets update in place instead of needing a manual refresh.
   onChange?: () => void;
@@ -504,7 +524,14 @@ function Group({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="truncate text-sm font-medium">{c.name}</span>
+                  <CategoryName
+                    name={c.name}
+                    onRename={
+                      onRename && c.name !== "Uncategorized"
+                        ? (n) => onRename(c.id, n)
+                        : undefined
+                    }
+                  />
                   <span className="flex shrink-0 items-baseline gap-1 text-sm">
                     <span
                       className={`font-semibold tabular-nums ${
@@ -725,6 +752,61 @@ function EmojiButton({ value, onPick }: { value: string; onPick: (emoji: string)
         </div>
       )}
     </div>
+  );
+}
+
+// Inline-editable category name: click to rename in place (Enter/blur saves,
+// Esc cancels), with a persistent faint ✎ cue — the same rename pattern as the
+// shelf header and recurrings rows. Plain text when not renamable (no onRename,
+// e.g. "Uncategorized").
+function CategoryName({ name, onRename }: { name: string; onRename?: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const reverted = useRef(false);
+
+  if (!onRename) {
+    return <span className="truncate text-sm font-medium">{name}</span>;
+  }
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        defaultValue={name}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            reverted.current = true;
+            setEditing(false);
+          }
+        }}
+        onBlur={(e) => {
+          setEditing(false);
+          if (reverted.current) {
+            reverted.current = false;
+            return;
+          }
+          const v = e.target.value.trim();
+          if (v && v !== name) onRename(v);
+        }}
+        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+      />
+    );
+  }
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+      title="Rename"
+      className="group/n flex min-w-0 items-center gap-1 text-left"
+    >
+      <span className="truncate text-sm font-medium">{name}</span>
+      <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
+        <span className="inline-block -scale-x-100">✎</span>
+      </span>
+    </button>
   );
 }
 
