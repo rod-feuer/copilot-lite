@@ -629,7 +629,7 @@ function BillList({
                             setRenameId(r.id);
                           }}
                           title="Rename"
-                          className="shrink-0 rounded text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] focus:opacity-100 group-hover:opacity-100"
+                          className="shrink-0 rounded text-xs text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
                         >
                           <span className="inline-block -scale-x-100">✎</span>
                         </button>
