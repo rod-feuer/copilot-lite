@@ -318,12 +318,12 @@ export default function RecurringsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={setQ} placeholder="Search recurrings…" />
+        <SearchBox value={q} onChange={setQ} placeholder="Search recurrings…" className="w-full sm:w-60" />
         <select
           value={catFilter}
           onChange={(e) => setCatFilter(e.target.value)}
           aria-label="Filter by category"
-          className={`btn-ghost select-caret ml-auto max-w-44 cursor-pointer appearance-none pr-8 ${
+          className={`btn-ghost select-caret max-w-44 cursor-pointer appearance-none pr-8 sm:ml-auto ${
             catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
@@ -586,7 +586,9 @@ function BillList({
             <div
               data-drawer-row
               onClick={onOpen ? () => onOpen(r.merchant) : undefined}
-              className={`group flex items-center gap-3 px-4 py-2.5 ${dim ? "opacity-60" : ""} ${
+              className={`group flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:flex-nowrap ${
+                dim ? "opacity-60" : ""
+              } ${
                 onOpen
                   ? shelfActive.isMerchant(r.merchant)
                     ? "cursor-pointer bg-[var(--accent)]/10"
@@ -770,7 +772,7 @@ function BillList({
                 )
               )}
               <div
-                className={`w-20 text-right text-sm font-semibold tabular-nums ${
+                className={`ml-auto w-20 text-right text-sm font-semibold tabular-nums sm:ml-0 ${
                   r.paid ? "" : "text-[var(--muted)]"
                 }`}
               >
