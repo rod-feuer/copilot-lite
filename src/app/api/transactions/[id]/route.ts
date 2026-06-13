@@ -3,6 +3,7 @@ import {
   setTransactionCategory,
   setTransactionEffectiveDate,
   setTransactionRecurringExcluded,
+  setTransactionExcluded,
   setTransactionNote,
 } from "@/lib/queries";
 import { detectRecurrings } from "@/lib/core";
@@ -22,6 +23,13 @@ export async function PATCH(
   if ("recurringExcluded" in body) {
     setTransactionRecurringExcluded(Number(id), !!body.recurringExcluded);
     detectRecurrings();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Exclude/include this single charge from all totals (a manual one-off, the
+  // per-transaction counterpart to a category's excludeFromTotals).
+  if ("excluded" in body) {
+    setTransactionExcluded(Number(id), !!body.excluded);
     return NextResponse.json({ ok: true });
   }
 

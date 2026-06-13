@@ -30,6 +30,7 @@ import {
   getBudgets,
   getBudgetsFull,
   setTransactionNote,
+  setTransactionExcluded,
   updateCategory,
   recurringEnded,
   transactionsSummary,
@@ -187,6 +188,38 @@ test("updateCategory changes only the attributes given, never clobbering the res
   c = read();
   assert.equal(c.icon, "🏀");
   assert.equal(c.color, "#ef4444");
+});
+
+test("setTransactionExcluded drops one charge from the net, and re-including restores it", () => {
+  // WHY: the per-transaction exclude is a real one-off correction (a reimbursed
+  // charge), distinct from a category-wide exclude — so flagging a single row
+  // must remove exactly its amount from the summary net, and unflagging must put
+  // it back. A toggle that didn't reconcile would silently misstate the total.
+  tx("Kroger", { amount: -100, categoryId: CAT, hash: "exA" });
+  tx("Refunded Thing", { amount: -60, categoryId: CAT, hash: "exB" });
+  const id = (getDb().prepare("SELECT id FROM transactions WHERE hash = 'exB'").get() as { id: number }).id;
+
+  assert.equal(transactionsSummary({ month: "2025-06" }).net, -160, "both charges count before exclusion");
+  setTransactionExcluded(id, true);
+  assert.equal(transactionsSummary({ month: "2025-06" }).net, -100, "the excluded $60 drops out of net");
+  assert.equal(transactionsSummary({ month: "2025-06" }).count, 2, "but it still shows in the list (count unchanged)");
+  setTransactionExcluded(id, false);
+  assert.equal(transactionsSummary({ month: "2025-06" }).net, -160, "re-including restores it exactly");
+});
+
+test("updateCategory kind flips how the category's rows are summed (expense↔income)", () => {
+  // WHY: kind is editable as a correction, and it isn't cosmetic — an expense
+  // category sums outflows, an income category sums inflows. Changing kind must
+  // re-derive the total against the same rows, or the figure would lie.
+  const id = addCat("Side Gig"); // seeded as expense
+  tx("Client A", { amount: 800, categoryId: id, hash: "kA" }); // inflow
+  tx("Stripe Fee", { amount: -20, categoryId: id, hash: "kB" }); // outflow
+
+  const totalFor = () => categoriesWithTotals("2025-06").find((c) => c.id === id)!;
+  assert.equal(totalFor().total, 20, "as an expense category it sums the outflow only");
+  updateCategory(id, { kind: "income" });
+  assert.equal(totalFor().kind, "income", "kind is updated");
+  assert.equal(totalFor().total, 800, "as income it now sums the inflow instead");
 });
 
 test("display name resolves consistently in drawer and transactions list", () => {

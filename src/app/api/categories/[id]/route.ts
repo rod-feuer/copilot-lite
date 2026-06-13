@@ -33,15 +33,21 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
-  // Edit display attributes (icon / color / name). Only sent keys are changed.
-  if ("icon" in body || "color" in body || "name" in body) {
-    const patch: { icon?: string; color?: string; name?: string } = {};
+  // Edit attributes (icon / color / name / kind). Only sent keys are changed.
+  if ("icon" in body || "color" in body || "name" in body || "kind" in body) {
+    const patch: { icon?: string; color?: string; name?: string; kind?: "expense" | "income" } = {};
     if ("icon" in body) patch.icon = String(body.icon).trim() || "🏷️";
     if ("color" in body) patch.color = String(body.color).trim();
     if ("name" in body) {
       const name = String(body.name).trim();
       if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
       patch.name = name;
+    }
+    if ("kind" in body) {
+      if (body.kind !== "expense" && body.kind !== "income") {
+        return NextResponse.json({ error: "invalid kind" }, { status: 400 });
+      }
+      patch.kind = body.kind;
     }
     updateCategory(Number(id), patch);
     return NextResponse.json({ ok: true });

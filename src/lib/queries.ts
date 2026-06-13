@@ -732,6 +732,17 @@ export function setTransactionNote(id: number, note: string | null) {
     .run(trimmed, id);
 }
 
+// Exclude/include a single transaction from all totals (the dashboard net, the
+// transactions-page net, category and day subtotals all skip excluded rows).
+// A manual one-off counterpart to a category's excludeFromTotals — e.g. a
+// reimbursed charge or a transfer the user doesn't want counted. Survives Plaid
+// re-sync because the upsert never touches the excluded column.
+export function setTransactionExcluded(id: number, excluded: boolean) {
+  getDb()
+    .prepare("UPDATE transactions SET excluded = ? WHERE id = ?")
+    .run(excluded ? 1 : 0, id);
+}
+
 // Recategorize every transaction of a merchant (used when editing a recurring's
 // category on the Recurrings page). Returns the rows changed.
 export function setMerchantCategory(merchant: string, categoryId: number | null) {
@@ -1221,17 +1232,20 @@ export function createCategory(c: {
     .run(c);
 }
 
-// Update a category's display attributes (icon/color/name). Only the keys
-// present in `patch` are changed; kind is fixed at creation and not editable.
+// Update a category's editable attributes (icon/color/name/kind). Only the keys
+// present in `patch` are changed. Kind (expense↔income) is editable as a
+// correction — it re-buckets the category and flips how its rows are summed
+// (outflow vs inflow); the route validates the value.
 export function updateCategory(
   id: number,
-  patch: { icon?: string; color?: string; name?: string }
+  patch: { icon?: string; color?: string; name?: string; kind?: "expense" | "income" }
 ) {
   const sets: string[] = [];
   const vals: (string | number)[] = [];
   if (patch.icon !== undefined) (sets.push("icon = ?"), vals.push(patch.icon));
   if (patch.color !== undefined) (sets.push("color = ?"), vals.push(patch.color));
   if (patch.name !== undefined) (sets.push("name = ?"), vals.push(patch.name));
+  if (patch.kind !== undefined) (sets.push("kind = ?"), vals.push(patch.kind));
   if (!sets.length) return;
   vals.push(id);
   getDb()
