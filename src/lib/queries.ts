@@ -309,7 +309,9 @@ export function listTransactions(
     limit?: number;
     offset?: number;
   }
-): TransactionWithCategory[] {
+  // recurringExcluded (a per-charge one-off flag) is computed in the SELECT and
+  // returned, so expose it in the type rather than hiding it behind the cast.
+): (TransactionWithCategory & { recurringExcluded: number })[] {
   const db = getDb();
   ensureRecurringTxExclusions(db);
   const { whereSql, params } = buildTxFilter(opts);

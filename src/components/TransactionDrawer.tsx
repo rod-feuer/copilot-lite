@@ -499,7 +499,9 @@ function EditableName({
         className="group/n flex max-w-full items-center gap-1 text-left"
       >
         <span className="truncate text-sm font-semibold">{value}</span>
-        <span className="shrink-0 text-[10px] text-[var(--muted)] opacity-0 transition-opacity group-hover/n:opacity-100">
+        {/* Persistent (faint) edit cue so the name reads as click-to-rename even
+            without hovering; darkens on hover. */}
+        <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
           <span className="inline-block -scale-x-100">✎</span>
         </span>
       </button>

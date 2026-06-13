@@ -771,10 +771,18 @@ function CategoryBadge({
       <button
         onClick={() => setOpen((o) => !o)}
         title="Change icon & color"
-        className={`${badgeClass} cursor-pointer ring-[var(--border)] transition hover:ring-2`}
+        className={`${badgeClass} group/badge relative cursor-pointer ring-[var(--border)] transition hover:ring-2`}
         style={{ background: color + "22" }}
       >
         {icon}
+        {/* Persistent (faint) corner cue so the badge reads as editable; darkens
+            on hover. The card background + border keep it legible on any color. */}
+        <span
+          aria-hidden
+          className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[var(--border)] bg-card text-[8px] leading-none text-[var(--muted)] transition-colors group-hover/badge:text-[var(--foreground)]"
+        >
+          <span className="inline-block -scale-x-100">✎</span>
+        </span>
       </button>
       {open && (
         <div className="absolute left-0 top-11 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
