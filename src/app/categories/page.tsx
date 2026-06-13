@@ -229,7 +229,7 @@ export default function CategoriesPage() {
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value as "expense" | "income")}
-            className="btn-ghost cursor-pointer"
+            className="btn-ghost select-caret cursor-pointer appearance-none pr-8"
           >
             <option value="expense">Expense</option>
             <option value="income">Income</option>
@@ -259,7 +259,7 @@ export default function CategoriesPage() {
           value={sort}
           onChange={(e) => setSort(e.target.value as typeof sort)}
           aria-label="Sort categories"
-          className="btn-ghost cursor-pointer text-sm"
+          className="btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm"
         >
           <option value="pressure">Budget used</option>
           <option value="spent">Most spent</option>

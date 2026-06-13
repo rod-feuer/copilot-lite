@@ -486,7 +486,8 @@ export default function TransactionsPage() {
     }
     if (id === "recurring") setRecurring("");
   }
-  const chipSelect = "max-w-40 cursor-pointer bg-transparent text-xs focus:outline-none";
+  const chipSelect =
+    "max-w-40 cursor-pointer appearance-none select-caret bg-transparent pr-5 text-xs focus:outline-none";
 
   return (
     <Shell
@@ -625,7 +626,7 @@ export default function TransactionsPage() {
             setSort(s);
             setDir(d);
           }}
-          className="btn-ghost ml-auto cursor-pointer text-sm"
+          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-sm"
         >
           <option value="date-desc">Newest</option>
           <option value="date-asc">Oldest</option>
