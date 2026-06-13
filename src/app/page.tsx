@@ -251,13 +251,15 @@ export default function DashboardPage() {
             <div className="card flex flex-col p-5 lg:col-span-3">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Spending this month</h3>
-                {data.pace.projectedMonthEnd != null && (
-                  <span className="text-xs text-[var(--muted)]">
-                    Projected month-end{" "}
-                    <span className="font-semibold text-[var(--foreground)]">
-                      {usd(data.pace.projectedMonthEnd, { cents: false })}
-                    </span>
-                  </span>
+                {/* The projected figure lives once, in the footer strip below; the
+                    header carries the trend the chart implies but never states — how
+                    this month's projection compares to last month's full total. */}
+                {data.pace.projectedMonthEnd != null && data.prev != null && (
+                  <PaceDelta
+                    projected={data.pace.projectedMonthEnd}
+                    series={data.pace.series}
+                    prevMonth={data.prev.month}
+                  />
                 )}
               </div>
               <ChartLegend
@@ -718,6 +720,40 @@ function DeltaLine({
   );
 }
 
+// Header delta for the pace chart: projected month-end vs last month's full
+// total (the gray curve's endpoint = the max of its cumulative series). States
+// the trend the chart shows visually, instead of repeating the projected dollar
+// figure that already appears in the footer strip. Mirrors DeltaLine's idiom
+// (▲/▼ · dollars · "vs <month>") for consistency; spending less is favorable.
+function PaceDelta({
+  projected,
+  series,
+  prevMonth,
+}: {
+  projected: number;
+  series: Dash["pace"]["series"];
+  prevMonth: string;
+}) {
+  const lastMonthEnd = Math.max(0, ...series.map((p) => p.prev ?? 0));
+  if (lastMonthEnd <= 0) return null;
+  const delta = projected - lastMonthEnd;
+  const label = shortMonth(prevMonth);
+  if (Math.round(delta) === 0)
+    return <span className="text-xs font-medium text-[var(--muted)]">On pace to match {label}</span>;
+  const under = delta < 0;
+  return (
+    <span
+      className={`flex items-center gap-1 text-xs font-medium ${
+        under ? "text-emerald-600" : "text-rose-600"
+      }`}
+    >
+      <span>{under ? "▼" : "▲"}</span>
+      <span className="tabular-nums">{usd(Math.abs(delta), { cents: false })}</span>
+      <span className="font-normal text-[var(--muted)]">vs {label}</span>
+    </span>
+  );
+}
+
 function CategoryBars({
   rows,
   month,
@@ -740,9 +776,20 @@ function CategoryBars({
   // both fit.
   const max = Math.max(...rows.map((r) => Math.max(r.total, r.budget ?? 0)));
   const pct = (v: number) => `${(v / max) * 100}%`;
+  const fmt = (v: number) => usd(v, { cents: false });
+  const shown = rows.slice(0, 7);
+  // Shared column width so the spent and budget figures right-align into clean
+  // tabular columns down the list (rather than each row right-aligning the whole
+  // "$x / $y" run, which lets the slash zig-zag). Derived from the widest figure
+  // in the data — structural, not a tuned offset; ch over-counts the proportional
+  // $ and , glyphs, so the cell never under-sizes and clips a value.
+  const numCh = Math.max(
+    3,
+    ...shown.flatMap((r) => [fmt(r.total).length, r.budget != null ? fmt(r.budget).length : 0])
+  );
   return (
     <div className="flex flex-col gap-3">
-      {rows.slice(0, 7).map((r) => {
+      {shown.map((r) => {
         const over = r.budget != null && r.total > r.budget;
         const active = r.categoryId != null && shelfActive.isCategory(r.categoryId, month);
         const cls = `group block w-full cursor-pointer rounded-lg text-left transition-opacity hover:opacity-80${
@@ -756,13 +803,26 @@ function CategoryBars({
                 <span className="font-medium">{r.name}</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className={over ? "font-semibold text-rose-600" : "text-[var(--muted)]"}>
-                  {usd(r.total, { cents: false })}
+                {/* Two right-aligned tabular columns with a fixed slash gutter.
+                    Spent (the live figure) is ranked foreground; the budget
+                    reference is muted — the bar below already shows the ratio. */}
+                <span className="flex items-baseline gap-1 tabular-nums">
+                  <span
+                    className={`text-right ${over ? "font-semibold text-rose-600" : "font-medium"}`}
+                    style={{ minWidth: `${numCh}ch` }}
+                  >
+                    {fmt(r.total)}
+                  </span>
                   {r.budget != null && (
-                    <span className="font-normal text-[var(--muted)]">
-                      {" "}
-                      / {usd(r.budget, { cents: false })}
-                    </span>
+                    <>
+                      <span className="text-[var(--muted)]">/</span>
+                      <span
+                        className="text-right font-normal text-[var(--muted)]"
+                        style={{ minWidth: `${numCh}ch` }}
+                      >
+                        {fmt(r.budget)}
+                      </span>
+                    </>
                   )}
                 </span>
                 <DrillChevron className="-mr-1 h-3.5 w-3.5" />
