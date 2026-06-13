@@ -778,15 +778,6 @@ function CategoryBars({
   const pct = (v: number) => `${(v / max) * 100}%`;
   const fmt = (v: number) => usd(v, { cents: false });
   const shown = rows.slice(0, 7);
-  // Shared column width so the spent and budget figures right-align into clean
-  // tabular columns down the list (rather than each row right-aligning the whole
-  // "$x / $y" run, which lets the slash zig-zag). Derived from the widest figure
-  // in the data — structural, not a tuned offset; ch over-counts the proportional
-  // $ and , glyphs, so the cell never under-sizes and clips a value.
-  const numCh = Math.max(
-    3,
-    ...shown.flatMap((r) => [fmt(r.total).length, r.budget != null ? fmt(r.budget).length : 0])
-  );
   return (
     <div className="flex flex-col gap-3">
       {shown.map((r) => {
@@ -803,29 +794,18 @@ function CategoryBars({
                 <span className="font-medium">{r.name}</span>
               </span>
               <span className="flex items-center gap-1.5">
-                {/* The slash is a fixed center gutter: spent (the ranked-foreground
-                    live figure) right-aligns into it, the muted budget left-aligns
-                    out of it — so the "/" hugs the fraction on both sides and stays
-                    at a constant x, while each figure still forms a column. The
-                    budget's right edge goes ragged, but that lands before the faint
-                    chevron (breathing room), not inside the fraction. */}
-                <span className="flex items-baseline gap-1 tabular-nums">
-                  <span
-                    className={`text-right ${over ? "font-semibold text-rose-600" : "font-medium"}`}
-                    style={{ minWidth: `${numCh}ch` }}
-                  >
+                {/* The whole spent/budget pair right-aligns to one clean edge before
+                    the chevron (matching the aligned chevron column), with the slash
+                    snug between. Spent is ranked foreground; the budget reference is
+                    muted — the bar below already encodes the ratio, so these are a
+                    per-row readout, not a column to scan. Spent's left edge goes
+                    ragged, but that's hidden in the gap after the category name. */}
+                <span className="whitespace-nowrap text-right tabular-nums">
+                  <span className={over ? "font-semibold text-rose-600" : "font-medium"}>
                     {fmt(r.total)}
                   </span>
                   {r.budget != null && (
-                    <>
-                      <span className="text-[var(--muted)]">/</span>
-                      <span
-                        className="text-left font-normal text-[var(--muted)]"
-                        style={{ minWidth: `${numCh}ch` }}
-                      >
-                        {fmt(r.budget)}
-                      </span>
-                    </>
+                    <span className="font-normal text-[var(--muted)]"> / {fmt(r.budget)}</span>
                   )}
                 </span>
                 <DrillChevron className="-mr-1 h-3.5 w-3.5" />
