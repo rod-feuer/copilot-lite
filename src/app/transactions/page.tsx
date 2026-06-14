@@ -789,7 +789,7 @@ export default function TransactionsPage() {
                   <li className="flex items-center justify-between pb-1.5 pl-4 pr-2 pt-3.5 sm:pr-4">
                     {/* Quiet typographic section header (no heavy gray fill);
                         the total mirrors the row's trailing columns (w-24 amount
-                        + w-7 ⋯) so it lines up with the row amounts. */}
+                        + w-6 ⋯) so it lines up with the row amounts. */}
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
                       {g.label}
                     </span>
@@ -797,7 +797,7 @@ export default function TransactionsPage() {
                       <span className="w-24 text-right text-[15px] font-medium tabular-nums text-[var(--muted)]">
                         {usd(g.total, { sign: true })}
                       </span>
-                      <span className="w-7" aria-hidden />
+                      <span className="w-6" aria-hidden />
                     </div>
                   </li>
                 )}
@@ -958,7 +958,7 @@ function RowActionsMenu({
       {/* Fixed-width trailing column (mirrored by a w-7 spacer in the day
           header so totals align); glyph biased right so its edge matches the
           avatar's left gutter. */}
-      <Tooltip label="More actions" onlyIfTruncated={false} className="flex w-7 shrink-0 items-center justify-end">
+      <Tooltip label="More actions" onlyIfTruncated={false} className="flex w-6 shrink-0 items-center justify-end">
         <button
           ref={btnRef}
           onClick={toggle}
