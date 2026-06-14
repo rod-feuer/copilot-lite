@@ -1217,7 +1217,9 @@ const TxRow = memo(function TxRow({
                     />
                     {headed ? (
                       <>
-                        <span className="whitespace-nowrap">{t.account}</span>
+                        {/* Account dropped on mobile (it's tertiary — in the bottom
+                            sheet); the date is already in the day-group header. */}
+                        <span className="hidden whitespace-nowrap sm:inline">{t.account}</span>
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-amber-600">
                             · posted {shortDate(t.date)}
@@ -1298,7 +1300,9 @@ const TxRow = memo(function TxRow({
                             </Tooltip>
                           </span>
                         )}
-                        <span className="whitespace-nowrap">· {t.account}</span>
+                        {/* Account dropped on mobile (tertiary; lives in the sheet).
+                            The date stays here — this sort isn't day-grouped. */}
+                        <span className="hidden whitespace-nowrap sm:inline">· {t.account}</span>
                       </>
                     )}
                     {/* Adding a note is reached via the row's ⋯ menu (Add note);
