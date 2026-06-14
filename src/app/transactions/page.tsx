@@ -786,7 +786,7 @@ export default function TransactionsPage() {
               return (
               <Fragment key={g.key}>
                 {headed && (
-                  <li className="flex items-center justify-between pb-1.5 pl-4 pr-2 pt-3.5 sm:pr-4">
+                  <li className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-3.5 sm:pr-4">
                     {/* Quiet typographic section header (no heavy gray fill);
                         the total mirrors the row's trailing columns (w-24 amount
                         + w-6 ⋯) so it lines up with the row amounts. */}
@@ -1239,7 +1239,7 @@ const TxRow = memo(function TxRow({
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-2 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${
+                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-3 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"
