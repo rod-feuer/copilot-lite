@@ -19,13 +19,13 @@ export function MonthPicker({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="btn-ghost select-caret cursor-pointer appearance-none pr-8"
+      className="btn-ghost select-caret cursor-pointer appearance-none py-1.5 pr-6"
     >
       {allowAll && <option value="">All months</option>}
       {months.map((m) => (
         <option key={m} value={m}>
           {new Date(m + "-01T00:00:00Z").toLocaleDateString("en-US", {
-            month: "long",
+            month: "short",
             year: "numeric",
             timeZone: "UTC",
           })}

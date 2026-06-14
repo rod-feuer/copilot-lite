@@ -16,6 +16,7 @@ import {
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
 import { MonthPicker, ImportButton } from "@/components/Actions";
+import { HeaderMenu } from "@/components/HeaderMenu";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
@@ -564,16 +565,41 @@ export default function TransactionsPage() {
   return (
     <Shell
       title="Transactions"
-      subtitle={`${totalCount} shown · net ${usd(netTotal, { sign: true })}`}
+      subtitle={`${totalCount} shown · ${usd(netTotal, { sign: true })}`}
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={setMonth} allowAll />
-          <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          {/* Import is rare — inline on desktop, behind a ⋯ on mobile so it
+              doesn't wear a primary-button costume at the top of a phone. */}
+          <span className="hidden sm:inline-flex">
+            <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          </span>
+          <span className="sm:hidden">
+            <HeaderMenu>
+              <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+            </HeaderMenu>
+          </span>
         </>
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="w-full sm:w-60" />
+        {/* On mobile, search owns the row and sort+filter collapse into one
+            trailing icon (sm:contents dissolves this wrapper on desktop, where
+            the inline +Filter and sort controls return). */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:contents">
+          <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="min-w-0 flex-1 sm:w-60 sm:flex-none" />
+          <MobileSortFilter
+            sort={sort}
+            dir={dir}
+            onSort={(s, d) => {
+              setSort(s);
+              setDir(d);
+            }}
+            available={FILTERS.filter((f) => !shown(f.id))}
+            filtersActive={FILTERS.some((f) => shown(f.id))}
+            onAddFilter={(id) => setAdded((a) => [...a, id])}
+          />
+        </div>
 
         {vendor && (
           <Chip onRemove={() => setVendor("")}>
@@ -662,7 +688,7 @@ export default function TransactionsPage() {
         )}
 
         {FILTERS.some((f) => !shown(f.id)) && (
-          <div className="relative">
+          <div className="relative hidden sm:block">
             <button
               onClick={() => setMenuOpen((o) => !o)}
               className="rounded-lg border border-dashed border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -698,7 +724,7 @@ export default function TransactionsPage() {
             setSort(s);
             setDir(d);
           }}
-          className="btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm sm:ml-auto"
+          className="btn-ghost select-caret hidden cursor-pointer appearance-none pr-8 text-sm sm:ml-auto sm:block"
         >
           <option value="date-desc">Newest</option>
           <option value="date-asc">Oldest</option>
@@ -751,7 +777,7 @@ export default function TransactionsPage() {
                 </div>
               </div>
             )}
-            <ul className="divide-y divide-[var(--border)]">
+            <ul className="divide-y divide-[var(--border)]/60">
             {grouped.map((g) => {
               // Only group under a day header when the day actually has more than
               // one transaction — otherwise the header + its subtotal just echo the
@@ -760,11 +786,19 @@ export default function TransactionsPage() {
               return (
               <Fragment key={g.key}>
                 {headed && (
-                  <li className="flex items-center justify-between bg-[var(--background)] px-4 py-1.5">
-                    <span className="text-xs font-semibold text-[var(--muted)]">{g.label}</span>
-                    <span className="text-xs tabular-nums text-[var(--muted)]">
-                      {usd(g.total, { sign: true })}
+                  <li className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-3.5 sm:pr-4">
+                    {/* Quiet typographic section header (no heavy gray fill);
+                        the total mirrors the row's trailing columns (w-24 amount
+                        + w-6 ⋯) so it lines up with the row amounts. */}
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                      {g.label}
                     </span>
+                    <div className="flex items-center gap-x-2 sm:gap-3">
+                      <span className="w-24 text-right text-[15px] font-medium tabular-nums text-[var(--muted)]">
+                        {usd(g.total, { sign: true })}
+                      </span>
+                      <span className="w-6" aria-hidden />
+                    </div>
                   </li>
                 )}
                 {g.rows.map((t) => (
@@ -921,14 +955,17 @@ function RowActionsMenu({
 
   return (
     <>
-      <Tooltip label="More actions" onlyIfTruncated={false} className="shrink-0">
+      {/* Fixed-width trailing column (mirrored by a w-7 spacer in the day
+          header so totals align); glyph biased right so its edge matches the
+          avatar's left gutter. */}
+      <Tooltip label="More actions" onlyIfTruncated={false} className="flex w-6 shrink-0 items-center justify-end">
         <button
           ref={btnRef}
           onClick={toggle}
           aria-label="More actions"
           aria-haspopup="menu"
           aria-expanded={open}
-          className={`rounded-md px-1.5 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+          className={`rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
             open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
@@ -964,6 +1001,175 @@ function RowActionsMenu({
           document.body
         )}
     </>
+  );
+}
+
+// Mobile-only: search owns its row, so sort + add-filter collapse behind one
+// "adjustments" icon (the iOS convention for refining a list). An accent dot
+// signals when a non-default sort or any filter is active, so the hidden state
+// stays legible. Desktop keeps the inline +Filter button and sort <select>.
+const SORT_OPTIONS: [string, string][] = [
+  ["date-desc", "Newest"],
+  ["date-asc", "Oldest"],
+  ["amount-desc", "Largest amount"],
+  ["amount-asc", "Smallest amount"],
+  ["merchant-asc", "Merchant A–Z"],
+];
+
+function MobileSortFilter({
+  sort,
+  dir,
+  onSort,
+  available,
+  filtersActive,
+  onAddFilter,
+}: {
+  sort: string;
+  dir: string;
+  onSort: (sort: string, dir: string) => void;
+  available: { id: string; label: string }[];
+  filtersActive: boolean;
+  onAddFilter: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const value = `${sort}-${dir}`;
+  const refined = value !== "date-desc" || filtersActive;
+  return (
+    <div className="relative shrink-0 sm:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Sort and filter"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0 1.5 1.5 0 0 1 3 0Zm-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0 1.5 1.5 0 0 1 3 0Zm-9.75 0h9.75" />
+        </svg>
+        {refined && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-[var(--background)] bg-[var(--accent)]" />
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
+            <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+              Sort
+            </div>
+            {SORT_OPTIONS.map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => {
+                  const [s, d] = v.split("-");
+                  onSort(s, d);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+              >
+                {label}
+                {value === v && <span className="text-[var(--accent)]">✓</span>}
+              </button>
+            ))}
+            {available.length > 0 && (
+              <>
+                <div className="my-1 border-t border-[var(--border)]" />
+                <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  Add filter
+                </div>
+                {available.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      onAddFilter(f.id);
+                      setOpen(false);
+                    }}
+                    className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// The per-transaction category control. Two responsive variants of the same
+// <select>:
+//   - "pill"  → desktop right-side pill (hidden on mobile)
+//   - "chip"  → compact chip in the row subtitle (mobile only), so the category
+//               shares a line instead of taking a full-width row → denser list.
+// Resting state shows the category NAME ONLY — the row's round badge already
+// carries the icon + color, so repeating the icon here is redundant. The OPEN
+// dropdown keeps icons (they speed up scanning ~27 categories). Lazy options
+// (full list mounted only once active) preserved.
+function CategorySelect({
+  t,
+  cats,
+  active,
+  onActivate,
+  onDeactivate,
+  onChange,
+  variant,
+}: {
+  t: Tx;
+  cats: Cat[];
+  active: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
+  onChange: (categoryId: number | null) => void;
+  variant: "pill" | "chip";
+}) {
+  const set = t.categoryId != null;
+  const visibility = variant === "pill" ? "hidden sm:inline-block" : "sm:hidden";
+  const sizing =
+    variant === "pill"
+      ? "max-w-[9rem] py-1 pl-2.5 pr-6 text-xs"
+      : "max-w-[10rem] py-0.5 pl-2 pr-4 text-[11px]";
+  // The pill (desktop) keeps the standard caret; the chip (mobile, on every row)
+  // uses the quieter small caret so the edit affordance stays without the noise.
+  const caretClass = variant === "pill" ? "select-caret" : "select-caret-sm";
+  const tone = set
+    ? `text-[var(--foreground)]${
+        variant === "pill" ? " group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]" : ""
+      }`
+    : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+  return (
+    <select
+      value={t.categoryId ?? ""}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={onActivate}
+      onFocus={onActivate}
+      onBlur={onDeactivate}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className={`${visibility} ${caretClass} shrink-0 cursor-pointer appearance-none truncate rounded-full font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${sizing} ${tone}`}
+      // backgroundColor (not the `background` shorthand) so the .select-caret
+      // chevron's background-image isn't reset.
+      style={set ? { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" } : undefined}
+    >
+      {active ? (
+        <>
+          <option value="">Uncategorized</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.icon} {c.name}
+            </option>
+          ))}
+        </>
+      ) : set ? (
+        // Resting: name only — the row's badge already shows the icon + color.
+        <option value={t.categoryId as number}>{t.categoryName}</option>
+      ) : (
+        <option value="">Uncategorized</option>
+      )}
+    </select>
   );
 }
 
@@ -1019,6 +1225,11 @@ const TxRow = memo(function TxRow({
   const commitDate = onCommitDate;
   const saveNote = onSaveNote;
   const setCategory = onSetCategory;
+  // "•" is the app's placeholder for a category with no real emoji (see core.ts),
+  // so it's not null — treat it (and empty) as no icon and use the merchant's
+  // initial instead, which reads intentional rather than like a broken image.
+  const trimmedIcon = t.categoryIcon?.trim();
+  const avatarIcon = trimmedIcon && trimmedIcon !== "•" ? trimmedIcon : null;
   return (
               <li
                 data-drawer-row
@@ -1028,7 +1239,7 @@ const TxRow = memo(function TxRow({
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:gap-3 ${
+                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-3 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"
@@ -1036,10 +1247,16 @@ const TxRow = memo(function TxRow({
               >
                 {!modal && (
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-full text-base"
                     style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
                   >
-                    {t.categoryIcon ?? "•"}
+                    {/* Emoji when the category has one; otherwise the merchant's
+                        initial — reads intentional, not like a broken image. */}
+                    {avatarIcon ?? (
+                      <span className="text-sm font-semibold text-[var(--muted)]">
+                        {t.displayName?.slice(0, 1).toUpperCase() || "?"}
+                      </span>
+                    )}
                   </span>
                 )}
                 <div className="min-w-0 flex-1">
@@ -1134,9 +1351,23 @@ const TxRow = memo(function TxRow({
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                    {/* Mobile: the category as a compact chip inline in the
+                        subtitle (denser than a full-width pill row). Desktop uses
+                        the right-side pill above. */}
+                    <CategorySelect
+                      variant="chip"
+                      t={t}
+                      cats={cats}
+                      active={isCatActive}
+                      onActivate={() => setActiveCatSelect(t.id)}
+                      onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
+                      onChange={(id) => setCategory(t.id, id)}
+                    />
                     {headed ? (
                       <>
-                        <span className="whitespace-nowrap">{t.account}</span>
+                        {/* Account dropped on mobile (it's tertiary — in the bottom
+                            sheet); the date is already in the day-group header. */}
+                        <span className="hidden whitespace-nowrap sm:inline">{t.account}</span>
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-amber-600">
                             · posted {shortDate(t.date)}
@@ -1217,7 +1448,9 @@ const TxRow = memo(function TxRow({
                             </Tooltip>
                           </span>
                         )}
-                        <span className="whitespace-nowrap">· {t.account}</span>
+                        {/* Account dropped on mobile (tertiary; lives in the sheet).
+                            The date stays here — this sort isn't day-grouped. */}
+                        <span className="hidden whitespace-nowrap sm:inline">· {t.account}</span>
                       </>
                     )}
                     {/* Adding a note is reached via the row's ⋯ menu (Add note);
@@ -1259,52 +1492,18 @@ const TxRow = memo(function TxRow({
                     </>
                   )}
                 </div>
+                {/* Desktop: the right-side category pill (hidden on mobile, where
+                    the compact chip in the subtitle handles it instead). */}
                 {(!modal || !sameCat) && (
-                <select
-                  value={t.categoryId ?? ""}
-                  onClick={(e) => e.stopPropagation()}
-                  // Mount the full option list before the native menu opens
-                  // (mousedown/focus both fire first); React flushes the update
-                  // synchronously for these discrete events, so the options are
-                  // present when the dropdown appears.
-                  onMouseDown={() => setActiveCatSelect(t.id)}
-                  onFocus={() => setActiveCatSelect(t.id)}
-                  onBlur={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
-                  onChange={(e) =>
-                    setCategory(t.id, e.target.value ? Number(e.target.value) : null)
-                  }
-                  className={`select-caret order-last w-auto max-w-full basis-full shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:order-none sm:max-w-[9rem] sm:basis-auto ${
-                    t.categoryId != null
-                      ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
-                      : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
-                  }`}
-                  style={
-                    t.categoryId != null
-                      ? // backgroundColor (not the `background` shorthand) so the
-                        // .select-caret chevron's background-image isn't reset.
-                        { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" }
-                      : undefined
-                  }
-                >
-                  {isCatActive ? (
-                    <>
-                      <option value="">Uncategorized</option>
-                      {cats.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.icon} {c.name}
-                        </option>
-                      ))}
-                    </>
-                  ) : t.categoryId != null ? (
-                    // At rest: just the current value, so the pill shows correctly.
-                    <option value={t.categoryId}>
-                      {t.categoryIcon ? `${t.categoryIcon} ` : ""}
-                      {t.categoryName}
-                    </option>
-                  ) : (
-                    <option value="">Uncategorized</option>
-                  )}
-                </select>
+                  <CategorySelect
+                    variant="pill"
+                    t={t}
+                    cats={cats}
+                    active={isCatActive}
+                    onActivate={() => setActiveCatSelect(t.id)}
+                    onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
+                    onChange={(id) => setCategory(t.id, id)}
+                  />
                 )}
                 <div
                   className={`w-24 text-right text-[15px] font-semibold tabular-nums ${

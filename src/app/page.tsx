@@ -13,6 +13,7 @@ import {
 import { usd, shortDate, defaultMonth } from "@/lib/format";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
 import Shell from "@/components/Shell";
+import { HeaderMenu } from "@/components/HeaderMenu";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { useToast } from "@/components/Toast";
@@ -554,34 +555,6 @@ function PaceStrip({ pace, spent }: { pace: Dash["pace"]; spent: number }) {
 // nudges right on hover. Parent must carry `group`.
 // Secondary header actions behind a "⋯" on mobile (rendered inline on desktop by
 // the caller). Lightweight dropdown — mirrors the transactions "+ Filter" menu.
-function HeaderMenu({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="btn-ghost px-3 text-base leading-none"
-      >
-        ⋯
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div
-            onClick={() => setOpen(false)}
-            className="absolute right-0 z-40 mt-1 flex flex-col items-stretch gap-1 rounded-xl border border-[var(--border)] bg-card p-1 shadow-lg"
-          >
-            {children}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 function DrillChevron({ className = "" }: { className?: string }) {
   return (
     <svg

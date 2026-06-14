@@ -28,7 +28,7 @@ export function SearchBox({
           }
         }}
         placeholder={placeholder}
-        className="btn-ghost w-full pr-7 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+        className="btn-ghost w-full pl-4 pr-7 font-normal placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
       />
       {value && (
         <button
