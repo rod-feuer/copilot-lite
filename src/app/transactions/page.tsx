@@ -967,6 +967,75 @@ function RowActionsMenu({
   );
 }
 
+// The per-transaction category control. Two responsive variants of the same
+// <select>:
+//   - "pill"  → desktop right-side pill (hidden on mobile)
+//   - "chip"  → compact chip in the row subtitle (mobile only), so the category
+//               shares a line instead of taking a full-width row → denser list.
+// Resting state shows the category NAME ONLY — the row's round badge already
+// carries the icon + color, so repeating the icon here is redundant. The OPEN
+// dropdown keeps icons (they speed up scanning ~27 categories). Lazy options
+// (full list mounted only once active) preserved.
+function CategorySelect({
+  t,
+  cats,
+  active,
+  onActivate,
+  onDeactivate,
+  onChange,
+  variant,
+}: {
+  t: Tx;
+  cats: Cat[];
+  active: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
+  onChange: (categoryId: number | null) => void;
+  variant: "pill" | "chip";
+}) {
+  const set = t.categoryId != null;
+  const visibility = variant === "pill" ? "hidden sm:inline-block" : "sm:hidden";
+  const sizing =
+    variant === "pill"
+      ? "max-w-[9rem] py-1 pl-2.5 pr-6 text-xs"
+      : "max-w-[10rem] py-0.5 pl-2 pr-5 text-[11px]";
+  const tone = set
+    ? `text-[var(--foreground)]${
+        variant === "pill" ? " group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]" : ""
+      }`
+    : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+  return (
+    <select
+      value={t.categoryId ?? ""}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={onActivate}
+      onFocus={onActivate}
+      onBlur={onDeactivate}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className={`${visibility} select-caret shrink-0 cursor-pointer appearance-none truncate rounded-full font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${sizing} ${tone}`}
+      // backgroundColor (not the `background` shorthand) so the .select-caret
+      // chevron's background-image isn't reset.
+      style={set ? { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" } : undefined}
+    >
+      {active ? (
+        <>
+          <option value="">Uncategorized</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.icon} {c.name}
+            </option>
+          ))}
+        </>
+      ) : set ? (
+        // Resting: name only — the row's badge already shows the icon + color.
+        <option value={t.categoryId as number}>{t.categoryName}</option>
+      ) : (
+        <option value="">Uncategorized</option>
+      )}
+    </select>
+  );
+}
+
 // One transaction row, memoized so an edit or keystroke elsewhere in the list
 // doesn't re-render every row. Receives per-row flags (computed by the parent
 // from a single piece of state, e.g. isEditingDate) and stable
@@ -1134,6 +1203,18 @@ const TxRow = memo(function TxRow({
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                    {/* Mobile: the category as a compact chip inline in the
+                        subtitle (denser than a full-width pill row). Desktop uses
+                        the right-side pill above. */}
+                    <CategorySelect
+                      variant="chip"
+                      t={t}
+                      cats={cats}
+                      active={isCatActive}
+                      onActivate={() => setActiveCatSelect(t.id)}
+                      onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
+                      onChange={(id) => setCategory(t.id, id)}
+                    />
                     {headed ? (
                       <>
                         <span className="whitespace-nowrap">{t.account}</span>
@@ -1259,52 +1340,18 @@ const TxRow = memo(function TxRow({
                     </>
                   )}
                 </div>
+                {/* Desktop: the right-side category pill (hidden on mobile, where
+                    the compact chip in the subtitle handles it instead). */}
                 {(!modal || !sameCat) && (
-                <select
-                  value={t.categoryId ?? ""}
-                  onClick={(e) => e.stopPropagation()}
-                  // Mount the full option list before the native menu opens
-                  // (mousedown/focus both fire first); React flushes the update
-                  // synchronously for these discrete events, so the options are
-                  // present when the dropdown appears.
-                  onMouseDown={() => setActiveCatSelect(t.id)}
-                  onFocus={() => setActiveCatSelect(t.id)}
-                  onBlur={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
-                  onChange={(e) =>
-                    setCategory(t.id, e.target.value ? Number(e.target.value) : null)
-                  }
-                  className={`select-caret order-last w-auto max-w-full basis-full shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:order-none sm:max-w-[9rem] sm:basis-auto ${
-                    t.categoryId != null
-                      ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
-                      : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
-                  }`}
-                  style={
-                    t.categoryId != null
-                      ? // backgroundColor (not the `background` shorthand) so the
-                        // .select-caret chevron's background-image isn't reset.
-                        { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" }
-                      : undefined
-                  }
-                >
-                  {isCatActive ? (
-                    <>
-                      <option value="">Uncategorized</option>
-                      {cats.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.icon} {c.name}
-                        </option>
-                      ))}
-                    </>
-                  ) : t.categoryId != null ? (
-                    // At rest: just the current value, so the pill shows correctly.
-                    <option value={t.categoryId}>
-                      {t.categoryIcon ? `${t.categoryIcon} ` : ""}
-                      {t.categoryName}
-                    </option>
-                  ) : (
-                    <option value="">Uncategorized</option>
-                  )}
-                </select>
+                  <CategorySelect
+                    variant="pill"
+                    t={t}
+                    cats={cats}
+                    active={isCatActive}
+                    onActivate={() => setActiveCatSelect(t.id)}
+                    onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
+                    onChange={(id) => setCategory(t.id, id)}
+                  />
                 )}
                 <div
                   className={`w-24 text-right text-[15px] font-semibold tabular-nums ${
