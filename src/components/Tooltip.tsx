@@ -23,6 +23,10 @@ export function Tooltip({
   function show() {
     const el = ref.current;
     if (!el) return;
+    // Touch devices have no hover, so `mouseleave` may never fire and the bubble
+    // sticks — and there's no cursor to reveal it anyway. Don't show on coarse
+    // pointers; the tooltip is a hover-only enhancement.
+    if (!window.matchMedia("(hover: hover)").matches) return;
     if (onlyIfTruncated && el.scrollWidth <= el.clientWidth) return; // not cut off
     setRect(el.getBoundingClientRect());
   }

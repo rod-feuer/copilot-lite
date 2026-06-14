@@ -15,7 +15,10 @@ export default function Shell({
           viewport back to content; sticky on desktop where there's room. */}
       <header className="z-30 flex flex-col items-stretch justify-between gap-3 border-b border-[var(--border)] bg-[var(--background)] px-5 py-3 sm:sticky sm:top-0 sm:flex-row sm:flex-wrap sm:items-center sm:px-8 sm:py-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+          {/* The bottom nav already names the active page on mobile, so the h1
+              is redundant there — hide it to reclaim a band; the subtitle (count,
+              net, etc.) stays as the lead line. Title returns on desktop. */}
+          <h1 className="hidden text-xl font-semibold tracking-tight sm:block">{title}</h1>
           {subtitle && <p className="text-sm text-[var(--muted)]">{subtitle}</p>}
         </div>
         <div className="flex flex-wrap items-center justify-start gap-2">{actions}</div>
