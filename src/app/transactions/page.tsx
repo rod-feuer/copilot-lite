@@ -16,6 +16,7 @@ import {
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
 import { MonthPicker, ImportButton } from "@/components/Actions";
+import { HeaderMenu } from "@/components/HeaderMenu";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
@@ -568,7 +569,16 @@ export default function TransactionsPage() {
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={setMonth} allowAll />
-          <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          {/* Import is rare — inline on desktop, behind a ⋯ on mobile so it
+              doesn't wear a primary-button costume at the top of a phone. */}
+          <span className="hidden sm:inline-flex">
+            <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          </span>
+          <span className="sm:hidden">
+            <HeaderMenu>
+              <ImportButton onDone={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+            </HeaderMenu>
+          </span>
         </>
       }
     >
