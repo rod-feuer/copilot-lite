@@ -573,7 +573,23 @@ export default function TransactionsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="min-w-0 flex-1 sm:w-60 sm:flex-none" />
+        {/* On mobile, search owns the row and sort+filter collapse into one
+            trailing icon (sm:contents dissolves this wrapper on desktop, where
+            the inline +Filter and sort controls return). */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:contents">
+          <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="min-w-0 flex-1 sm:w-60 sm:flex-none" />
+          <MobileSortFilter
+            sort={sort}
+            dir={dir}
+            onSort={(s, d) => {
+              setSort(s);
+              setDir(d);
+            }}
+            available={FILTERS.filter((f) => !shown(f.id))}
+            filtersActive={FILTERS.some((f) => shown(f.id))}
+            onAddFilter={(id) => setAdded((a) => [...a, id])}
+          />
+        </div>
 
         {vendor && (
           <Chip onRemove={() => setVendor("")}>
@@ -662,7 +678,7 @@ export default function TransactionsPage() {
         )}
 
         {FILTERS.some((f) => !shown(f.id)) && (
-          <div className="relative">
+          <div className="relative hidden sm:block">
             <button
               onClick={() => setMenuOpen((o) => !o)}
               className="rounded-lg border border-dashed border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -698,7 +714,7 @@ export default function TransactionsPage() {
             setSort(s);
             setDir(d);
           }}
-          className="btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm sm:ml-auto"
+          className="btn-ghost select-caret hidden cursor-pointer appearance-none pr-8 text-sm sm:ml-auto sm:block"
         >
           <option value="date-desc">Newest</option>
           <option value="date-asc">Oldest</option>
@@ -967,6 +983,103 @@ function RowActionsMenu({
   );
 }
 
+// Mobile-only: search owns its row, so sort + add-filter collapse behind one
+// "adjustments" icon (the iOS convention for refining a list). An accent dot
+// signals when a non-default sort or any filter is active, so the hidden state
+// stays legible. Desktop keeps the inline +Filter button and sort <select>.
+const SORT_OPTIONS: [string, string][] = [
+  ["date-desc", "Newest"],
+  ["date-asc", "Oldest"],
+  ["amount-desc", "Largest amount"],
+  ["amount-asc", "Smallest amount"],
+  ["merchant-asc", "Merchant A–Z"],
+];
+
+function MobileSortFilter({
+  sort,
+  dir,
+  onSort,
+  available,
+  filtersActive,
+  onAddFilter,
+}: {
+  sort: string;
+  dir: string;
+  onSort: (sort: string, dir: string) => void;
+  available: { id: string; label: string }[];
+  filtersActive: boolean;
+  onAddFilter: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const value = `${sort}-${dir}`;
+  const refined = value !== "date-desc" || filtersActive;
+  return (
+    <div className="relative shrink-0 sm:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Sort and filter"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0 1.5 1.5 0 0 1 3 0Zm-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0 1.5 1.5 0 0 1 3 0Zm-9.75 0h9.75" />
+        </svg>
+        {refined && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-[var(--background)] bg-[var(--accent)]" />
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
+            <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+              Sort
+            </div>
+            {SORT_OPTIONS.map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => {
+                  const [s, d] = v.split("-");
+                  onSort(s, d);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+              >
+                {label}
+                {value === v && <span className="text-[var(--accent)]">✓</span>}
+              </button>
+            ))}
+            {available.length > 0 && (
+              <>
+                <div className="my-1 border-t border-[var(--border)]" />
+                <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  Add filter
+                </div>
+                {available.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      onAddFilter(f.id);
+                      setOpen(false);
+                    }}
+                    className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // The per-transaction category control. Two responsive variants of the same
 // <select>:
 //   - "pill"  → desktop right-side pill (hidden on mobile)
@@ -998,7 +1111,10 @@ function CategorySelect({
   const sizing =
     variant === "pill"
       ? "max-w-[9rem] py-1 pl-2.5 pr-6 text-xs"
-      : "max-w-[10rem] py-0.5 pl-2 pr-5 text-[11px]";
+      : "max-w-[10rem] py-0.5 pl-2 pr-4 text-[11px]";
+  // The pill (desktop) keeps the standard caret; the chip (mobile, on every row)
+  // uses the quieter small caret so the edit affordance stays without the noise.
+  const caretClass = variant === "pill" ? "select-caret" : "select-caret-sm";
   const tone = set
     ? `text-[var(--foreground)]${
         variant === "pill" ? " group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]" : ""
@@ -1012,7 +1128,7 @@ function CategorySelect({
       onFocus={onActivate}
       onBlur={onDeactivate}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-      className={`${visibility} select-caret shrink-0 cursor-pointer appearance-none truncate rounded-full font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${sizing} ${tone}`}
+      className={`${visibility} ${caretClass} shrink-0 cursor-pointer appearance-none truncate rounded-full font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${sizing} ${tone}`}
       // backgroundColor (not the `background` shorthand) so the .select-caret
       // chevron's background-image isn't reset.
       style={set ? { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" } : undefined}
