@@ -1213,7 +1213,7 @@ const TxRow = memo(function TxRow({
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:gap-3 ${
+                className={`group flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-2 px-4 py-3 sm:flex-nowrap sm:gap-3 ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"
@@ -1224,7 +1224,13 @@ const TxRow = memo(function TxRow({
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
                     style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
                   >
-                    {t.categoryIcon ?? "•"}
+                    {/* Emoji when the category has one; otherwise the merchant's
+                        initial — reads intentional, not like a broken image. */}
+                    {t.categoryIcon ?? (
+                      <span className="text-sm font-semibold text-[var(--muted)]">
+                        {t.displayName?.slice(0, 1).toUpperCase() || "•"}
+                      </span>
+                    )}
                   </span>
                 )}
                 <div className="min-w-0 flex-1">
