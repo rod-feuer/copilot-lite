@@ -794,7 +794,7 @@ export default function TransactionsPage() {
                       {g.label}
                     </span>
                     <div className="flex items-center gap-x-2 sm:gap-3">
-                      <span className="w-24 text-right text-[11px] font-medium tabular-nums text-[var(--muted)]">
+                      <span className="w-24 text-right text-[15px] font-medium tabular-nums text-[var(--muted)]">
                         {usd(g.total, { sign: true })}
                       </span>
                       <span className="w-7" aria-hidden />
