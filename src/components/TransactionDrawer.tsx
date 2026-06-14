@@ -370,10 +370,25 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={{ openMerchant, openCategory, active: target }}>
       {children}
       {target && (
-        <aside
-          ref={asideRef}
-          className="fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col border-l border-[var(--border)] bg-card shadow-2xl"
-        >
+        <>
+          {/* Dim backdrop on mobile (this is a bottom sheet there); the desktop
+              right-side panel has none, as before. */}
+          <div
+            className="fixed inset-0 z-40 bg-black/30 sm:hidden"
+            onClick={close}
+            aria-hidden
+          />
+          <aside
+            ref={asideRef}
+            // Bottom sheet on mobile (slides up, capped height, rounded top);
+            // right-side panel on desktop (sm:+) exactly as before.
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88vh] flex-col rounded-t-2xl border-t border-[var(--border)] bg-card shadow-2xl sm:inset-x-auto sm:right-0 sm:top-0 sm:bottom-auto sm:h-full sm:max-h-none sm:w-full sm:max-w-sm sm:rounded-none sm:border-t-0 sm:border-l"
+          >
+            {/* Grab handle — bottom-sheet affordance (mobile only). */}
+            <div
+              className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--border)] sm:hidden"
+              aria-hidden
+            />
           <header className="flex items-start justify-between border-b border-[var(--border)] px-4 py-3">
             <div className="min-w-0">
               {back && (
@@ -446,7 +461,8 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               View all transactions →
             </Link>
           </footer>
-        </aside>
+          </aside>
+        </>
       )}
     </Ctx.Provider>
   );

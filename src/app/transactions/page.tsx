@@ -1273,7 +1273,7 @@ const TxRow = memo(function TxRow({
                   onChange={(e) =>
                     setCategory(t.id, e.target.value ? Number(e.target.value) : null)
                   }
-                  className={`select-caret order-last w-auto max-w-full basis-full shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:order-none sm:max-w-[9rem] sm:basis-auto ${
+                  className={`select-caret order-last max-w-[60%] shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:order-none sm:max-w-[9rem] ${
                     t.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
                       : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
