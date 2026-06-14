@@ -573,7 +573,7 @@ export default function TransactionsPage() {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="w-full sm:w-60" />
+        <SearchBox value={q} onChange={search} placeholder="Search merchant or amount…" className="min-w-0 flex-1 sm:w-60 sm:flex-none" />
 
         {vendor && (
           <Chip onRemove={() => setVendor("")}>

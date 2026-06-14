@@ -20,7 +20,7 @@ export default function Shell({
         </div>
         <div className="flex flex-wrap items-center justify-start gap-2">{actions}</div>
       </header>
-      <div className="px-5 py-6 sm:px-8">{children}</div>
+      <div className="px-5 pb-6 pt-4 sm:px-8 sm:py-6">{children}</div>
     </div>
   );
 }
