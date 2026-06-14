@@ -565,7 +565,7 @@ export default function TransactionsPage() {
   return (
     <Shell
       title="Transactions"
-      subtitle={`${totalCount} shown · net ${usd(netTotal, { sign: true })}`}
+      subtitle={`${totalCount} shown · ${usd(netTotal, { sign: true })}`}
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={setMonth} allowAll />
@@ -777,7 +777,7 @@ export default function TransactionsPage() {
                 </div>
               </div>
             )}
-            <ul className="divide-y divide-[var(--border)]">
+            <ul className="divide-y divide-[var(--border)]/60">
             {grouped.map((g) => {
               // Only group under a day header when the day actually has more than
               // one transaction — otherwise the header + its subtotal just echo the
@@ -786,12 +786,15 @@ export default function TransactionsPage() {
               return (
               <Fragment key={g.key}>
                 {headed && (
-                  <li className="flex items-center justify-between bg-[var(--background)] px-4 py-1.5">
-                    <span className="text-xs font-semibold text-[var(--muted)]">{g.label}</span>
-                    {/* Mirror the row's trailing columns (w-24 amount + w-7 ⋯)
-                        and gap so the day total lines up with the row amounts. */}
+                  <li className="flex items-center justify-between px-4 pb-1.5 pt-3.5">
+                    {/* Quiet typographic section header (no heavy gray fill);
+                        the total mirrors the row's trailing columns (w-24 amount
+                        + w-7 ⋯) so it lines up with the row amounts. */}
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                      {g.label}
+                    </span>
                     <div className="flex items-center gap-x-2 sm:gap-3">
-                      <span className="w-24 text-right text-xs tabular-nums text-[var(--muted)]">
+                      <span className="w-24 text-right text-[11px] font-medium tabular-nums text-[var(--muted)]">
                         {usd(g.total, { sign: true })}
                       </span>
                       <span className="w-7" aria-hidden />
@@ -1236,7 +1239,7 @@ const TxRow = memo(function TxRow({
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-2 px-4 py-3 sm:flex-nowrap sm:gap-3 ${
+                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 px-4 py-3 sm:flex-nowrap sm:items-center sm:gap-3 ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"
@@ -1244,7 +1247,7 @@ const TxRow = memo(function TxRow({
               >
                 {!modal && (
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-full text-base"
                     style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
                   >
                     {/* Emoji when the category has one; otherwise the merchant's
