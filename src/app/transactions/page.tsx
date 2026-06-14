@@ -1214,6 +1214,11 @@ const TxRow = memo(function TxRow({
   const commitDate = onCommitDate;
   const saveNote = onSaveNote;
   const setCategory = onSetCategory;
+  // "•" is the app's placeholder for a category with no real emoji (see core.ts),
+  // so it's not null — treat it (and empty) as no icon and use the merchant's
+  // initial instead, which reads intentional rather than like a broken image.
+  const trimmedIcon = t.categoryIcon?.trim();
+  const avatarIcon = trimmedIcon && trimmedIcon !== "•" ? trimmedIcon : null;
   return (
               <li
                 data-drawer-row
@@ -1236,9 +1241,9 @@ const TxRow = memo(function TxRow({
                   >
                     {/* Emoji when the category has one; otherwise the merchant's
                         initial — reads intentional, not like a broken image. */}
-                    {t.categoryIcon ?? (
+                    {avatarIcon ?? (
                       <span className="text-sm font-semibold text-[var(--muted)]">
-                        {t.displayName?.slice(0, 1).toUpperCase() || "•"}
+                        {t.displayName?.slice(0, 1).toUpperCase() || "?"}
                       </span>
                     )}
                   </span>
