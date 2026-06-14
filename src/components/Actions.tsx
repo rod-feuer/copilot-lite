@@ -19,7 +19,7 @@ export function MonthPicker({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="btn-ghost select-caret cursor-pointer appearance-none pr-6"
+      className="btn-ghost select-caret cursor-pointer appearance-none py-1.5 pr-6"
     >
       {allowAll && <option value="">All months</option>}
       {months.map((m) => (

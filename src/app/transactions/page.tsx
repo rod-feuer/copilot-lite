@@ -788,9 +788,14 @@ export default function TransactionsPage() {
                 {headed && (
                   <li className="flex items-center justify-between bg-[var(--background)] px-4 py-1.5">
                     <span className="text-xs font-semibold text-[var(--muted)]">{g.label}</span>
-                    <span className="text-xs tabular-nums text-[var(--muted)]">
-                      {usd(g.total, { sign: true })}
-                    </span>
+                    {/* Mirror the row's trailing columns (w-24 amount + w-7 ⋯)
+                        and gap so the day total lines up with the row amounts. */}
+                    <div className="flex items-center gap-x-2 sm:gap-3">
+                      <span className="w-24 text-right text-xs tabular-nums text-[var(--muted)]">
+                        {usd(g.total, { sign: true })}
+                      </span>
+                      <span className="w-7" aria-hidden />
+                    </div>
                   </li>
                 )}
                 {g.rows.map((t) => (
@@ -947,14 +952,17 @@ function RowActionsMenu({
 
   return (
     <>
-      <Tooltip label="More actions" onlyIfTruncated={false} className="shrink-0">
+      {/* Fixed-width trailing column (mirrored by a w-7 spacer in the day
+          header so totals align); glyph biased right so its edge matches the
+          avatar's left gutter. */}
+      <Tooltip label="More actions" onlyIfTruncated={false} className="flex w-7 shrink-0 items-center justify-end">
         <button
           ref={btnRef}
           onClick={toggle}
           aria-label="More actions"
           aria-haspopup="menu"
           aria-expanded={open}
-          className={`rounded-md px-1.5 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+          className={`rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
             open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
