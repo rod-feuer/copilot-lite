@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Date rot arrives with the calendar, not with a commit — the ended-subscription
+  # invariant broke in August without anyone touching the repo. Push-triggered runs
+  # never see that on a project between pushes. NOTE: GitHub disables scheduled
+  # workflows after 60 days of repo inactivity; re-enable it in the Actions tab.
+  schedule:
+    - cron: "17 14 * * 1" # Mondays 14:17 UTC (off the hour, which is congested)
 
 jobs:
   tests:
