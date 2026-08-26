@@ -1,5 +1,13 @@
 # POSITIONING.md — Product point of view & competitive strategy
 
+> **Status (2026-06): Personal tool, not commercialized.** After this analysis plus an
+> eight-strategist evaluation, the founder chose to keep copilot-lite as a personal tool.
+> The biggest "what we have to believe" — *people will pay for a better-feeling owned finance
+> app when a free, good, owned one (Actual) already exists* — is an unfavorable bet here
+> (free OSS competition + papercut-level pain). This document stands as a **completed strategy
+> exercise and a reusable template**; the buyability experiment has moved to a different
+> problem. See memory note `copilot-lite-personal-tool-decision` for the decision + portable playbook.
+
 This is the strategy companion to `DESIGN.md`. `DESIGN.md` says *how we build*;
 this says *what we believe, who it's for, and why we win*. When a product,
 scoping, or messaging call is ambiguous, the answer should be derivable from
