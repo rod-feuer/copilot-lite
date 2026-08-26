@@ -3,6 +3,8 @@
 // and hit every API route for a 200 + valid JSON. Requires the dev server up.
 //   BASE_URL (default http://localhost:3000)
 //   PUPPETEER_EXECUTABLE_PATH (default: system Chrome on macOS)
+//   APP_PASSWORD (only when the login gate is on; read from .env.local by the
+//     --env-file-if-exists flag in package.json, same file `next dev` reads)
 import puppeteer from "puppeteer-core";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -27,18 +29,49 @@ const IGNORE = [/favicon/i, /Download the React DevTools/i];
 
 const failures = [];
 
-// Fail fast if the server isn't up.
+// Fail fast if the server isn't up. A 401 is NOT "down" — it's the login gate
+// (APP_PASSWORD set), which this script used to misread as an unreachable
+// server, so the whole browser check silently stopped running once auth landed.
+let gated = false;
 try {
   const r = await fetch(BASE + "/api/months");
-  if (!r.ok) throw new Error(`status ${r.status}`);
+  if (r.status === 401) gated = true;
+  else if (!r.ok) throw new Error(`status ${r.status}`);
 } catch (e) {
   console.error(`✖ dev server not reachable at ${BASE} (${e.message}). Start it first.`);
   process.exit(1);
 }
 
+// Log in the same way a browser does: a native form POST, then carry the session
+// cookie on every later request. The cookie NAME is read off the response rather
+// than hard-coded, so it can't drift from src/lib/auth.ts.
+let cookie = null;
+if (gated) {
+  if (!process.env.APP_PASSWORD) {
+    console.error(
+      `✖ ${BASE} requires a login (APP_PASSWORD is set for the server) but this ` +
+        `process has no APP_PASSWORD to log in with. Put it in .env.local, or ` +
+        `unset it on the server to run without auth.`
+    );
+    process.exit(1);
+  }
+  const r = await fetch(BASE + "/api/login", {
+    method: "POST",
+    redirect: "manual",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ password: process.env.APP_PASSWORD, from: "/" }),
+  });
+  cookie = (r.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0])[0] ?? null;
+  if (!cookie) {
+    console.error(`✖ login rejected at ${BASE} — check APP_PASSWORD.`);
+    process.exit(1);
+  }
+}
+const headers = cookie ? { Cookie: cookie } : undefined;
+
 for (const route of APIS) {
   try {
-    const r = await fetch(BASE + route);
+    const r = await fetch(BASE + route, { headers });
     if (!r.ok) failures.push(`API ${route} → HTTP ${r.status}`);
     else await r.json();
   } catch (e) {
@@ -48,6 +81,15 @@ for (const route of APIS) {
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
 try {
+  if (cookie) {
+    const [name, ...rest] = cookie.split("=");
+    await browser.setCookie({
+      name,
+      value: rest.join("="),
+      domain: new URL(BASE).hostname,
+      path: "/",
+    });
+  }
   for (const route of PAGES) {
     const page = await browser.newPage();
     const errs = [];
@@ -70,4 +112,7 @@ if (failures.length) {
   for (const f of failures) console.error("  - " + f);
   process.exit(1);
 }
-console.log(`✔ smoke passed — ${PAGES.length} pages, ${APIS.length} APIs, no console errors`);
+console.log(
+  `✔ smoke passed — ${PAGES.length} pages, ${APIS.length} APIs, no console errors` +
+    (gated ? " (logged in)" : "")
+);

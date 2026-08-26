@@ -66,7 +66,8 @@ npm start        # serve the production build
 npm run lint     # eslint
 npm test         # node:test suite (uses a temp DB via COPILOT_DB_PATH)
 npm run smoke    # load every page/route in a real browser and assert no errors
-                 # (requires the dev server running + Chrome)
+                 # (requires the dev server running + Chrome; logs in with
+                 # APP_PASSWORD from .env.local when the gate is on)
 npm run test:clock  # re-run the suite against future clocks to catch date-rotted
                     # tests (ones that pass only because of today's date)
 ```

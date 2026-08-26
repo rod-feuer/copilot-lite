@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
-    "smoke": "node scripts/smoke.mjs",
+    "smoke": "node --env-file-if-exists=.env.local scripts/smoke.mjs",
     "test:clock": "node scripts/test-clock.mjs"
   },
   "dependencies": {
