@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "test:clock": "node scripts/test-clock.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

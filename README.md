@@ -67,6 +67,8 @@ npm run lint     # eslint
 npm test         # node:test suite (uses a temp DB via COPILOT_DB_PATH)
 npm run smoke    # load every page/route in a real browser and assert no errors
                  # (requires the dev server running + Chrome)
+npm run test:clock  # re-run the suite against future clocks to catch date-rotted
+                    # tests (ones that pass only because of today's date)
 ```
 
 ## Design principle: code does the math, the model only judges
