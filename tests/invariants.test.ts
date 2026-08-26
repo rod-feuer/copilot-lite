@@ -352,20 +352,29 @@ test("ending a subscription drops it from expected outflow immediately, and reac
   // (~1.5 cycles). Marking it ended must remove it from the recurring outflow NOW,
   // while keeping history — and a charge after the end date must bring it back.
   const M = "Streamflix";
-  for (const d of ["2026-03-10", "2026-04-10", "2026-05-10", "2026-06-10"])
+  // Dates are relative to now, not pinned: the first assertion only means
+  // something while the bill is still active, and pinned dates age past that
+  // window and start failing on a date nobody chose.
+  const iso = (offsetDays: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - offsetDays);
+    return d.toISOString().slice(0, 10);
+  };
+  const lastCharge = iso(5);
+  for (const d of [iso(95), iso(65), iso(35), lastCharge])
     tx(M, { amount: -16, date: d, categoryId: CAT });
   detectRecurrings();
   const active = recurringMonthlyByCategory()[CAT] ?? 0;
   assert.ok(active >= 16, `expected the bill to count while active, got ${active}`);
 
-  setRecurringSetting(M, { endedDate: "2026-06-11" }); // after the last charge → ended
+  setRecurringSetting(M, { endedDate: iso(4) }); // after the last charge → ended
   assert.equal(
     recurringMonthlyByCategory()[CAT] ?? 0,
     0,
     "an ended subscription stops counting toward expected outflow"
   );
 
-  setRecurringSetting(M, { endedDate: "2026-06-09" }); // before the last (06-10) charge → resubscribed
+  setRecurringSetting(M, { endedDate: iso(6) }); // before the last charge → resubscribed
   assert.ok(
     (recurringMonthlyByCategory()[CAT] ?? 0) >= 16,
     "a charge after the end date reactivates the bill"
