@@ -2,6 +2,7 @@
 
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
+import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
@@ -547,8 +548,8 @@ function Group({
             <div
               key={c.id}
               data-drawer-row
-              onClick={() => openCategory(c.id, month, { onChange })}
-              className="group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)]"
+              {...rowButtonProps(() => openCategory(c.id, month, { onChange }))}
+              className={`group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)] ${ROW_FOCUS}`}
             >
               <CategoryBadge
                 icon={c.icon}

@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson } from "@/lib/http";
 import { LoadError } from "@/components/LoadState";
@@ -1105,9 +1106,9 @@ function ShelfRow({
   return (
     <li>
       <div
-        onClick={onClick}
+        {...(onClick ? rowButtonProps(onClick) : {})}
         className={`group flex w-full items-center gap-2 px-3 py-2 text-xs ${
-          onClick ? "cursor-pointer hover:bg-[var(--background)]" : ""
+          onClick ? `cursor-pointer hover:bg-[var(--background)] ${ROW_FOCUS}` : ""
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
