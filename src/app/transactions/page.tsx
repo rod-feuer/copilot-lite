@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { LoadError, LoadingRows } from "@/components/LoadState";
 import { MonthPicker, ImportButton } from "@/components/Actions";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useToast } from "@/components/Toast";
@@ -126,6 +127,11 @@ export default function TransactionsPage() {
   // Gate the URL←→filter sync until the initial deep-link has been read, so the
   // sync never wipes the incoming params before loadStatic applies them.
   const [ready, setReady] = useState(false);
+  // First-page read state. Loading only replaces the list while it is empty
+  // (a filter change keeps the old rows until the new ones land); "error" is
+  // set once the retries are exhausted, so a dead API never reads as
+  // "No transactions match."
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
@@ -209,6 +215,7 @@ export default function TransactionsPage() {
     (f: Filters) => {
       filtersRef.current = f;
       const token = guardRef.current.begin(); // one token for this load + its retries
+      setStatus("loading");
       const run = async (attempt: number): Promise<void> => {
         if (!guardRef.current.isCurrent(token)) return; // a newer load superseded this one
         try {
@@ -219,12 +226,13 @@ export default function TransactionsPage() {
           setTxs(data.rows ?? []);
           setTotalCount(data.count ?? data.rows?.length ?? 0);
           setNetTotal(data.net ?? 0);
+          setStatus("ready");
         } catch {
           // Transient failure (cold dev route / blip) → retry, so the first load
           // self-recovers instead of leaving an empty list that needs a refresh.
-          if (guardRef.current.isCurrent(token) && attempt < 2) {
-            setTimeout(() => run(attempt + 1), 500);
-          }
+          if (!guardRef.current.isCurrent(token)) return;
+          if (attempt < 2) setTimeout(() => run(attempt + 1), 500);
+          else setStatus("error");
         }
       };
       void run(0);
@@ -247,11 +255,13 @@ export default function TransactionsPage() {
       ).then((r) => r.json());
       if (!guardRef.current.isCurrent(token)) return; // filters changed mid-flight — discard
       setTxs((prev) => [...prev, ...(data.rows ?? [])]);
+    } catch {
+      if (guardRef.current.isCurrent(token)) toast("Couldn't load more — please try again", "error");
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [buildTxQuery]);
+  }, [buildTxQuery, toast]);
 
   useEffect(() => {
     // Retry a transient first-load failure (a just-started dev route / network
@@ -745,7 +755,15 @@ export default function TransactionsPage() {
       )}
 
       <div className="card overflow-hidden">
-        {txs.length === 0 ? (
+        {txs.length === 0 && status === "loading" ? (
+          <div className="p-4">
+            <LoadingRows />
+          </div>
+        ) : txs.length === 0 && status === "error" ? (
+          <div className="p-4">
+            <LoadError what="transactions" onRetry={() => setRefreshKey((k) => k + 1)} />
+          </div>
+        ) : txs.length === 0 ? (
           <p className="p-8 text-center text-sm text-[var(--muted)]">
             No transactions match.
           </p>
