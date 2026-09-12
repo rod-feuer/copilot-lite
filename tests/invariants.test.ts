@@ -39,6 +39,8 @@ import {
   linkMerchant,
   setRecurringOverride,
   suggestedRecurrings,
+  resetRecurringOverrides,
+  getRecurringSettings,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -378,6 +380,35 @@ test("ending a subscription drops it from expected outflow immediately, and reac
   assert.ok(
     (recurringMonthlyByCategory()[CAT] ?? 0) >= 16,
     "a charge after the end date reactivates the bill"
+  );
+});
+
+test("Reset all clears overrides but keeps a subscription ended", () => {
+  // WHY: "Reset all" on the recurrings page means "forget my tuning" — rename,
+  // amount, cadence, matching. It used to send every field to null, including
+  // endedDate, so resetting a canceled subscription silently reactivated it and
+  // its amount reappeared in expected outflow. Ended is a fact, not a tuning.
+  const M = "Streamflix";
+  const iso = (offsetDays: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - offsetDays);
+    return d.toISOString().slice(0, 10);
+  };
+  for (const d of [iso(95), iso(65), iso(35), iso(5)])
+    tx(M, { amount: -16, date: d, categoryId: CAT });
+  detectRecurrings();
+  setRecurringSetting(M, { alias: "Stream Flix", expectedAmount: 18, endedDate: iso(4) });
+  assert.equal(recurringMonthlyByCategory()[CAT] ?? 0, 0, "ended → not counted");
+
+  resetRecurringOverrides(M);
+  const s = getRecurringSettings()[M];
+  assert.equal(s.alias, null, "rename cleared");
+  assert.equal(s.expectedAmount, null, "expected amount cleared");
+  assert.equal(s.endedDate, iso(4), "ended date survives a reset");
+  assert.equal(
+    recurringMonthlyByCategory()[CAT] ?? 0,
+    0,
+    "a reset must not reactivate a canceled subscription"
   );
 });
 

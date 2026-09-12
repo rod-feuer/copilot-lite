@@ -181,6 +181,22 @@ export function setRecurringSetting(merchant: string, patch: Partial<RecurringSe
   ).run(merged);
 }
 
+// "Reset all" on a recurring: drop every user override (rename, amount, cadence,
+// next-due, matching) but NOT endedDate. Ended is a fact about the subscription,
+// not a tuning of its detection — wiping it would silently reactivate a
+// canceled bill and put it back into expected outflow.
+export function resetRecurringOverrides(merchant: string) {
+  setRecurringSetting(merchant, {
+    alias: null,
+    expectedAmount: null,
+    cadence: null,
+    nextDate: null,
+    matchMode: null,
+    matchText: null,
+    amountTolerance: null,
+  });
+}
+
 // Back-compat helpers for the match-rule API route.
 export function setMatchRule(merchant: string, rule: MatchRule) {
   setRecurringSetting(merchant, {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   setRecurringSetting,
+  resetRecurringOverrides,
   getMerchantLinks,
   canonicalMerchant,
   getRecurringSettings,
@@ -24,7 +25,8 @@ const ALL_NULL_SETTINGS = {
 } as const;
 
 // Update a recurring's per-merchant settings. Only keys present in the body are
-// changed; send a key as null to clear it. `clear: true` removes all settings.
+// changed; send a key as null to clear it. `clear: true` removes every override
+// except endedDate (see resetRecurringOverrides).
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const raw = String(body.merchant ?? "").trim();
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.clear) {
-    setRecurringSetting(merchant, { ...ALL_NULL_SETTINGS });
+    resetRecurringOverrides(merchant);
     return NextResponse.json({ ok: true });
   }
 
