@@ -11,6 +11,7 @@ import {
   linkedAliases,
 } from "./queries";
 import type { Category, Recurring } from "./types";
+import { CADENCE_DAYS, medianGap } from "./cadence";
 
 // ---- Dedupe key -----------------------------------------------------------
 // A transaction is uniquely identified by date + merchant + amount + account.
@@ -95,14 +96,6 @@ export function learnRule(pattern: string, categoryId: number, origin: string) {
 // Pure pattern detection, no model. A merchant is "recurring" if it has >= 3
 // charges of similar amount spaced at a regular cadence. (Rule 5: deterministic)
 const DAY = 86_400_000;
-const PERIOD_DAYS: Record<Recurring["cadence"], number> = {
-  weekly: 7,
-  biweekly: 14,
-  monthly: 30,
-  quarterly: 91,
-  semiannual: 182,
-  yearly: 365,
-};
 
 // Fraction of gaps that sit near an integer multiple of the cadence period. This
 // is the timing-regularity test: a missing month (gap ≈ 2×, 3× period) still
@@ -116,16 +109,6 @@ function onGridFraction(gaps: number[], period: number): number {
     return Math.abs(g - k * period) <= 0.35 * period;
   }).length;
   return on / gaps.length;
-}
-
-// Median gap, not mean — robust to missing occurrences. A skipped month, or a
-// payment that landed under a drifted descriptor, would otherwise inflate the
-// mean gap and push a genuine monthly bill out of the cadence window.
-function medianGap(gaps: number[]): number {
-  if (gaps.length === 0) return 0;
-  const s = [...gaps].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
 export function classifyCadence(avgGapDays: number): Recurring["cadence"] | null {
@@ -284,7 +267,7 @@ export function detectRecurrings(): Recurring[] {
     const cadence = classifyCadence(medianGap(gaps));
     if (!cadence) continue;
     // Timing must be regular, not just a median that happens to land in range.
-    if (onGridFraction(gaps, PERIOD_DAYS[cadence]) < 0.6) continue;
+    if (onGridFraction(gaps, CADENCE_DAYS[cadence]) < 0.6) continue;
 
     const lastDate = txs[txs.length - 1].date;
     const categoryId = modalCategory(txs);

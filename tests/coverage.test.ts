@@ -99,6 +99,19 @@ test("suggestedRecurrings surfaces variable + new tiers and groups by canonical 
   assert.equal(vec[0].count, 6);
 });
 
+test("suggestedRecurrings uses the shared median, so a boundary gap set still suggests", () => {
+  // WHY: gaps [20,34,36,50] have median 35 (monthly) when the middles are averaged,
+  // but 36 (off-cadence) with the upper-middle shortcut the suggester used to
+  // carry. Timing is on-grid and amounts vary (cv ≈ 0.67) → "variable" tier.
+  const dates = ["2025-01-01", "2025-01-21", "2025-02-24", "2025-04-01", "2025-05-21"];
+  const amounts = [-10, -40, -10, -40, -10];
+  seed("Wobbly Utility", dates.map((date, i) => ({ date, amount: amounts[i] })));
+  const s = suggestedRecurrings().find((x) => x.merchant === "Wobbly Utility");
+  assert.ok(s, "boundary-median vendor should be suggested");
+  assert.equal(s!.cadence, "monthly");
+  assert.equal(s!.reason, "variable");
+});
+
 test("categorySummary reports month spend, prior month, trailing-12 avg, budget, txns", () => {
   const cat = addCat("Dining");
   setBudget(cat, 300);
@@ -112,6 +125,27 @@ test("categorySummary reports month spend, prior month, trailing-12 avg, budget,
   assert.equal(s.budget, 300);
   assert.equal(s.transactions.length, 2);
   assert.equal(s.upcoming.length, 0); // no recurrings here
+});
+
+test("categorySummary lists an excluded charge flagged, and the unflagged rows sum to spent", () => {
+  // WHY: the shelf shows a total and the rows beneath it. If a row is excluded
+  // from totals, it must still be visible (so the user can find and un-exclude it)
+  // but marked, so the rows visibly reconcile to the figure above them. Before,
+  // the list neither filtered nor returned the flag: rows didn't sum, no cue why.
+  const cat = addCat("Dining");
+  seed("Restaurant A", [{ date: "2025-06-10", amount: -100 }], cat);
+  seed("Restaurant B", [{ date: "2025-06-12", amount: -40 }], cat);
+  getDb().prepare("UPDATE transactions SET excluded = 1 WHERE merchant = 'Restaurant B'").run();
+  const s = categorySummary(cat, "2025-06")!;
+  assert.equal(s.spent, 100);
+  assert.equal(s.transactions.length, 2, "an excluded charge stays visible in the list");
+  const counted = s.transactions.filter((t) => !t.excluded);
+  assert.equal(counted.length, 1);
+  assert.equal(
+    counted.reduce((sum, t) => sum + Math.abs(t.amount), 0),
+    s.spent,
+    "rows not flagged excluded must reconcile to the shelf total"
+  );
 });
 
 test("categorySummary upcoming shows ACTIVE recurrings only (not stale/inactive)", () => {

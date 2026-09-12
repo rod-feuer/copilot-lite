@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeMerchant } from "../src/lib/merchant";
 import { classifyCadence, addCadence, txHash } from "../src/lib/core";
+import { medianGap } from "../src/lib/cadence";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
 import { createLatestGuard } from "../src/lib/latestGuard";
@@ -99,6 +100,17 @@ test("classifyCadence buckets gaps, rejects off-cadence", () => {
   assert.equal(classifyCadence(182), "semiannual");
   assert.equal(classifyCadence(365), "yearly");
   assert.equal(classifyCadence(50), null); // ~7 weeks: not a recognized cadence
+});
+
+test("medianGap averages the two middle gaps on an even count", () => {
+  // WHY: detection and suggestion used two medians — one averaged the middles,
+  // one took the upper middle — so the same four gaps could classify as monthly
+  // on one path and off-cadence on the other. [20,34,36,50] is the boundary:
+  // averaged → 35 (monthly's upper edge); upper-middle → 36 (rejected).
+  assert.equal(medianGap([20, 34, 36, 50]), 35);
+  assert.equal(classifyCadence(medianGap([20, 34, 36, 50])), "monthly");
+  assert.equal(medianGap([30]), 30);
+  assert.equal(medianGap([]), 0);
 });
 
 test("addCadence advances by the cadence period (UTC)", () => {
