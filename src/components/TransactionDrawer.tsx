@@ -13,7 +13,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import { Tooltip } from "@/components/Tooltip";
-import { postJson, patchJson } from "@/lib/http";
+import { getJson, postJson, patchJson } from "@/lib/http";
+import { LoadError } from "@/components/LoadState";
 import { usd, shortDate, shortDatePad, monthDayYear } from "@/lib/format";
 
 type Cat = { id: number; name: string; color: string; icon: string };
@@ -138,19 +139,23 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       .then(setVendors);
   }, []);
 
+  // A failed shelf read shows an error with Retry instead of the skeleton —
+  // `loading` below is derived from missing data, so without this flag a
+  // failed fetch would pulse forever.
+  const [loadError, setLoadError] = useState(false);
   const fetchMerchant = useCallback((m: string) => {
     setMData(null);
-    fetch(`/api/merchant?name=${encodeURIComponent(m)}`)
-      .then((r) => r.json())
+    setLoadError(false);
+    getJson<Summary>(`/api/merchant?name=${encodeURIComponent(m)}`)
       .then(setMData)
-      .catch(() => {});
+      .catch(() => setLoadError(true));
   }, []);
   const fetchCategory = useCallback((id: number, month: string) => {
     setCData(null);
-    fetch(`/api/category?id=${id}&month=${encodeURIComponent(month)}`)
-      .then((r) => r.json())
+    setLoadError(false);
+    getJson<CatSummary>(`/api/category?id=${id}&month=${encodeURIComponent(month)}`)
       .then(setCData)
-      .catch(() => {});
+      .catch(() => setLoadError(true));
   }, []);
 
   const close = useCallback(() => {
@@ -421,7 +426,16 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
           </header>
 
           <div className="flex-1 overflow-y-auto p-4">
-            {loading ? (
+            {loadError ? (
+              <LoadError
+                what={target.kind === "merchant" ? "this vendor" : "this category"}
+                onRetry={() =>
+                  target.kind === "merchant"
+                    ? fetchMerchant(target.merchant)
+                    : fetchCategory(target.categoryId, target.month)
+                }
+              />
+            ) : loading ? (
               <div className="space-y-2">
                 <div className="h-16 animate-pulse rounded-xl bg-[var(--background)]" />
                 <div className="h-9 animate-pulse rounded-xl bg-[var(--background)]" />

@@ -9,8 +9,9 @@ import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { InfoHint } from "@/components/InfoHint";
 import { Tooltip } from "@/components/Tooltip";
 import { SearchBox } from "@/components/SearchBox";
-import { postJson } from "@/lib/http";
+import { getJson, postJson } from "@/lib/http";
 import { CADENCE_DAYS } from "@/lib/cadence";
+import { LoadError, LoadingRows } from "@/components/LoadState";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
 
 type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
@@ -107,38 +108,56 @@ export default function RecurringsPage() {
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
 
+  // "loading" until the first bills read lands; a failed read is "error",
+  // never the "No recurring patterns detected yet" empty state.
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
   const load = useCallback(async (m: string) => {
-    const data = await fetch(`/api/recurrings?month=${m}`).then((r) => r.json());
-    setRecs(data);
+    try {
+      setRecs(await getJson<Rec[]>(`/api/recurrings?month=${m}`));
+      setStatus("ready");
+    } catch {
+      setStatus("error");
+    }
   }, []);
 
   const loadSuggestions = useCallback(async () => {
-    const data = await fetch("/api/recurrings/suggested").then((r) => r.json());
-    setSuggestions(data);
+    try {
+      setSuggestions(await getJson<Suggestion[]>("/api/recurrings/suggested"));
+    } catch {
+      // Suggestions are an aside; a failed read leaves the last list in place.
+    }
   }, []);
   useSyncedRefresh(() => {
     load(month);
     loadSuggestions();
   });
 
+  // Months, then the month's bills. Also the Retry path.
+  const boot = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const ms = await getJson<string[]>("/api/months");
+      setMonths(ms);
+      const def = defaultMonth(ms);
+      setMonth(def);
+      await load(def);
+    } catch {
+      setStatus("error");
+    }
+  }, [load]);
+
   useEffect(() => {
-    fetch("/api/categories")
-      .then((r) => r.json())
-      .then(setCats);
-    fetch("/api/months")
-      .then((r) => r.json())
-      .then((ms: string[]) => {
-        setMonths(ms);
-        const def = defaultMonth(ms);
-        setMonth(def);
-        load(def);
-      });
+    // Category and vendor pickers are secondary: a failed read leaves them
+    // empty rather than failing the page.
+    getJson<Cat[]>("/api/categories").then(setCats).catch(() => {});
+    getJson<{ merchant: string }[]>("/api/merchants")
+      .then((rows) => setMerchantOptions(rows.map((r) => r.merchant)))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadSuggestions();
-    fetch("/api/merchants")
-      .then((r) => r.json())
-      .then((rows: { merchant: string }[]) => setMerchantOptions(rows.map((r) => r.merchant)));
-  }, [load, loadSuggestions]);
+    void loadSuggestions();
+    void boot();
+  }, [boot, loadSuggestions]);
 
   async function linkMerchants(alias: string, primary: string, unlink = false) {
     try {
@@ -328,7 +347,11 @@ export default function RecurringsPage() {
           ))}
         </select>
       </div>
-      {recs.length === 0 ? (
+      {status === "loading" ? (
+        <LoadingRows />
+      ) : status === "error" ? (
+        <LoadError what="recurring bills" onRetry={boot} />
+      ) : recs.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="mb-2 text-4xl">↻</div>
           <p className="text-sm text-[var(--muted)]">

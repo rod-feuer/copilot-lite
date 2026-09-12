@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
+import { LoadError, LoadingRows } from "@/components/LoadState";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
@@ -19,7 +20,7 @@ import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { useToast } from "@/components/Toast";
 // Aliased: `Tooltip` is already taken by recharts' chart tooltip above.
 import { Tooltip as HoverTip } from "@/components/Tooltip";
-import { patchJson } from "@/lib/http";
+import { getJson, patchJson } from "@/lib/http";
 
 type Dash = {
   monthLabel: string;
@@ -94,54 +95,59 @@ export default function DashboardPage() {
   const [month, setMonth] = useState<string>("");
   const [data, setData] = useState<Dash | null>(null);
   const [recent, setRecent] = useState<Tx[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
 
-  const loadMonths = useCallback(async () => {
-    try {
-      const ms = (await (await fetch("/api/months")).json()) as string[];
-      setMonths(ms);
-      setMonth((cur) => cur || defaultMonth(ms));
-      return ms;
-    } catch {
-      // Transient failure (dev memory-restart / network blip) — keep the current
-      // view rather than throwing an unhandled rejection (which flashes the dev
-      // error indicator red). The next action/refresh recovers.
-      return [] as string[];
-    }
-  }, []);
-
   const load = useCallback(async (m: string) => {
-    setLoading(true);
+    setStatus("loading");
     try {
       const q = m ? `?month=${m}` : "";
       const [d, r] = await Promise.all([
-        fetch(`/api/dashboard${q}`).then((x) => x.json()),
-        fetch(`/api/transactions${m ? `?month=${m}&` : "?"}limit=8`).then((x) => x.json()),
+        getJson<Dash>(`/api/dashboard${q}`),
+        getJson<{ rows?: Tx[] } | Tx[]>(`/api/transactions${m ? `?month=${m}&` : "?"}limit=8`),
       ]);
       setData(d);
-      setRecent(r.rows ?? r); // route now returns { rows, count, net }
+      setRecent(Array.isArray(r) ? r : r.rows ?? []); // route now returns { rows, count, net }
+      setStatus("ready");
     } catch {
-      // Transient read failure (dev memory-restart / network blip) — keep the
-      // current view instead of surfacing an unhandled rejection (red dev
-      // indicator). The next refresh re-syncs.
-    } finally {
-      // Always clear loading, even on a failed/empty read, so the page can't
-      // hang on the spinner forever.
-      setLoading(false);
+      // A failed read is an error state, not a blank page and not "no data".
+      // Caught (rather than an unhandled rejection) so dev's red indicator
+      // doesn't flash on a transient blip; Retry re-runs the whole boot.
+      setStatus("error");
     }
   }, []);
 
+  // Months, then the month's data. Also the Retry path, so a failed months
+  // read and a failed dashboard read recover the same way.
+  const boot = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const ms = await getJson<string[]>("/api/months");
+      setMonths(ms);
+      setMonth((cur) => cur || defaultMonth(ms));
+      await load(defaultMonth(ms));
+    } catch {
+      setStatus("error");
+    }
+  }, [load]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadMonths().then((ms) => load(defaultMonth(ms)));
-  }, [loadMonths, load]);
+    void boot();
+  }, [boot]);
 
+  // After a sync: months may have grown, so re-read them, then reload the
+  // month on screen (or the default if none is chosen yet).
   const refresh = useCallback(async () => {
-    const ms = await loadMonths();
-    await load(month || defaultMonth(ms));
-  }, [loadMonths, load, month]);
+    try {
+      const ms = await getJson<string[]>("/api/months");
+      setMonths(ms);
+      await load(month || defaultMonth(ms));
+    } catch {
+      setStatus("error");
+    }
+  }, [load, month]);
   useSyncedRefresh(refresh);
 
   function changeMonth(m: string) {
@@ -149,7 +155,7 @@ export default function DashboardPage() {
     load(m);
   }
 
-  if (!loading && months.length === 0) {
+  if (status === "ready" && months.length === 0) {
     return (
       <Shell title="Dashboard" subtitle="No data yet">
         <div className="card flex flex-col items-center gap-4 p-12 text-center">
@@ -193,7 +199,9 @@ export default function DashboardPage() {
         </>
       }
     >
-      {data && (
+      {status === "error" && <LoadError what="the dashboard" onRetry={boot} />}
+      {status === "loading" && !data && <LoadingRows />}
+      {status !== "error" && data && (
         <div className="flex flex-col gap-5">
           {data.needsReview > 0 && (
             <UncategorizedResolver

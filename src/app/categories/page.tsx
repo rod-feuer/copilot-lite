@@ -7,9 +7,10 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { usd, defaultMonth } from "@/lib/format";
-import { patchJson } from "@/lib/http";
+import { getJson, patchJson } from "@/lib/http";
 import { CATEGORY_EMOJIS } from "@/lib/emoji";
 import { Tooltip } from "@/components/Tooltip";
+import { LoadError, LoadingRows } from "@/components/LoadState";
 
 type Cat = {
   id: number;
@@ -57,24 +58,38 @@ export default function CategoriesPage() {
   const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const toast = useToast();
 
+  // "loading" until the first read lands; a failed read is "error", never the
+  // "No categories." empty state.
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
   const load = useCallback(async (m: string) => {
-    const data = await fetch(`/api/categories${m ? `?month=${m}` : ""}`).then((r) =>
-      r.json()
-    );
-    setCats(data);
+    try {
+      setCats(await getJson<Cat[]>(`/api/categories${m ? `?month=${m}` : ""}`));
+      setStatus("ready");
+    } catch {
+      setStatus("error");
+    }
   }, []);
   useSyncedRefresh(() => load(month));
 
-  useEffect(() => {
-    fetch("/api/months")
-      .then((r) => r.json())
-      .then((ms: string[]) => {
-        setMonths(ms);
-        const def = defaultMonth(ms);
-        setMonth(def);
-        load(def);
-      });
+  // Months, then the month's categories. Also the Retry path.
+  const boot = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const ms = await getJson<string[]>("/api/months");
+      setMonths(ms);
+      const def = defaultMonth(ms);
+      setMonth(def);
+      await load(def);
+    } catch {
+      setStatus("error");
+    }
   }, [load]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void boot();
+  }, [boot]);
 
   function changeMonth(m: string) {
     setMonth(m);
@@ -287,6 +302,12 @@ export default function CategoriesPage() {
         </select>
       </div>
 
+      {status === "loading" ? (
+        <LoadingRows />
+      ) : status === "error" ? (
+        <LoadError what="categories" onRetry={boot} />
+      ) : (
+        <>
       <Group
         title={filter === "over" ? "Over budget" : filter === "unbudgeted" ? "Not budgeted" : "Expenses"}
         month={month}
@@ -329,6 +350,8 @@ export default function CategoriesPage() {
             confirmingId={confirmingDelete}
           />
         </div>
+      )}
+        </>
       )}
     </Shell>
   );

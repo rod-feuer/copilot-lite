@@ -10,5 +10,13 @@ async function sendJson(method: string, url: string, body: unknown): Promise<unk
   return res.json().catch(() => ({}));
 }
 
+// Client-side JSON read helper. Throws on a non-2xx response so a failed read
+// becomes an error state instead of an error body parsed as data.
+export async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  return res.json() as Promise<T>;
+}
+
 export const postJson = (url: string, body: unknown) => sendJson("POST", url, body);
 export const patchJson = (url: string, body: unknown) => sendJson("PATCH", url, body);
