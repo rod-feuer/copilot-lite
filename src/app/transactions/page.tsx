@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { MonthPicker, ImportButton } from "@/components/Actions";
 import { HeaderMenu } from "@/components/HeaderMenu";
@@ -1251,13 +1252,13 @@ const TxRow = memo(function TxRow({
   return (
               <li
                 data-drawer-row
-                onClick={() => onOpen(t.merchant)}
+                {...rowButtonProps(() => onOpen(t.merchant))}
                 // content-visibility lets the browser skip layout + paint for rows
                 // scrolled off-screen — virtualizing the render without unmounting
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-3 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${
+                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-3 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${ROW_FOCUS} ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--background)]"

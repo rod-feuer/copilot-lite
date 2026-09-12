@@ -116,8 +116,9 @@ and §3 carry over unchanged.
   and a bottom-sheet shelf, so every action has a resting state — secondary
   controls sit at `opacity-60` and strengthen on hover/focus (the dashboard's
   drill chevron is the reference). `opacity-0 group-hover` gating is a defect,
-  not a scope decision. Still open, written down: list rows are not yet
-  keyboard-focusable outside the dashboard and the merge queue. *(Reach)*
+  not a scope decision. List rows that open the shelf are keyboard rows
+  (`rowButtonProps` — role, tabIndex, Enter/Space) since they hold nested
+  controls and can't be `<button>`s. *(Reach)*
 - **Transactions are source-of-truth bank data** — no manual create, no delete, and
   the merchant/amount/posted-date aren't editable by design. Corrections happen at
   the *vendor* level (rename/combine/recategorize) or as overlays on the charge

@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Shell from "@/components/Shell";
+import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
@@ -441,13 +442,13 @@ export default function RecurringsPage() {
                       <div key={s.merchant}>
                       <div
                         data-drawer-row
-                        onClick={() =>
+                        {...rowButtonProps(() =>
                           openTx(s.merchant, {
                             onChange: loadSuggestions,
                             amountHint: Math.abs(s.avgAmount),
                           })
-                        }
-                        className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
+                        )}
+                        className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${ROW_FOCUS} ${
                           shelfActive.isMerchant(s.merchant)
                             ? "bg-[var(--accent)]/10"
                             : "hover:bg-[var(--background)]"
@@ -600,8 +601,8 @@ function BillList({
             <div key={r.id}>
             <div
               data-drawer-row
-              onClick={onOpen ? () => onOpen(r.merchant) : undefined}
-              className={`group flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:flex-nowrap ${
+              {...(onOpen ? rowButtonProps(() => onOpen(r.merchant)) : {})}
+              className={`group flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:flex-nowrap ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
