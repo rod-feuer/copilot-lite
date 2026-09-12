@@ -1129,7 +1129,7 @@ function ShelfRow({
                 className={`w-full text-center transition-opacity hover:text-[var(--accent)] ${
                   recurring
                     ? "text-[var(--accent)] opacity-100"
-                    : "text-[var(--muted)] opacity-0 focus:opacity-100 group-hover:opacity-100"
+                    : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100"
                 }`}
               >
                 ↻
@@ -1176,7 +1176,7 @@ function ShelfRow({
               setEditing((v) => !v);
             }}
             className={`w-5 shrink-0 rounded text-[var(--muted)] transition-opacity hover:text-[var(--foreground)] focus:opacity-100 ${
-              editing ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+              editing ? "opacity-100" : "opacity-60 focus-visible:opacity-100 group-hover:opacity-100"
             }`}
             aria-label="Edit transaction"
           >

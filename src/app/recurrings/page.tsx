@@ -688,7 +688,7 @@ function BillList({
                       e.stopPropagation();
                       onEnd(r.merchant, true);
                     }}
-                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover:opacity-100"
+                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 transition-opacity hover:text-[var(--foreground)]"
                   >
                     mark ended
                   </button>
@@ -705,7 +705,7 @@ function BillList({
                       e.stopPropagation();
                       onEnd(r.merchant, false);
                     }}
-                    className="rounded px-1.5 text-xs text-[var(--accent)] opacity-0 transition-opacity hover:underline group-hover:opacity-100"
+                    className="rounded px-1.5 text-xs text-[var(--accent)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 transition-opacity hover:underline"
                   >
                     reactivate
                   </button>
@@ -722,7 +722,7 @@ function BillList({
                       e.stopPropagation();
                       onMute(r.merchant);
                     }}
-                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-0 transition-opacity hover:text-rose-500 group-hover:opacity-100"
+                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 transition-opacity hover:text-rose-500"
                   >
                     not recurring
                   </button>

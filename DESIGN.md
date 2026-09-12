@@ -112,9 +112,12 @@ and §3 carry over unchanged.
 - **Tokens & theme.** One accent, neutral grays, 2xl card / xl control radii, dark
   mode via `data-theme` + CSS variables. New surfaces use the tokens — never
   hard-coded colors. *(One-pattern)*
-- **Known gaps, scoped on purpose.** Desktop-first: no mobile navigation, and some
-  affordances are hover-gated. *Documented, not accidental* — revisit if touch
-  becomes in scope. *(Reach)*
+- **Touch is in scope; hover only enhances.** The app ships a mobile bottom nav
+  and a bottom-sheet shelf, so every action has a resting state — secondary
+  controls sit at `opacity-60` and strengthen on hover/focus (the dashboard's
+  drill chevron is the reference). `opacity-0 group-hover` gating is a defect,
+  not a scope decision. Still open, written down: list rows are not yet
+  keyboard-focusable outside the dashboard and the merge queue. *(Reach)*
 - **Transactions are source-of-truth bank data** — no manual create, no delete, and
   the merchant/amount/posted-date aren't editable by design. Corrections happen at
   the *vendor* level (rename/combine/recategorize) or as overlays on the charge
