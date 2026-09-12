@@ -80,6 +80,7 @@ type CatSummary = {
     amount: number;
     account: string;
     recurringId: number | null;
+    excluded: 0 | 1;
   }[];
 };
 
@@ -1031,6 +1032,7 @@ function CategoryBody({
                 name={t.displayName}
                 amount={t.amount}
                 sign
+                muted={t.excluded === 1}
                 recurring={t.recurringId != null}
                 onClick={() => onOpenMerchant(t.merchant)}
                 editable={{

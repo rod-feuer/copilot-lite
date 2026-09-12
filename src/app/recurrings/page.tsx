@@ -10,6 +10,7 @@ import { InfoHint } from "@/components/InfoHint";
 import { Tooltip } from "@/components/Tooltip";
 import { SearchBox } from "@/components/SearchBox";
 import { postJson } from "@/lib/http";
+import { CADENCE_DAYS } from "@/lib/cadence";
 import { usd, shortDate, defaultMonth } from "@/lib/format";
 
 type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
@@ -79,15 +80,6 @@ const CADENCE_LABEL: Record<Rec["cadence"], string> = {
   quarterly: "Quarterly",
   semiannual: "Every 6 months",
   yearly: "Yearly",
-};
-
-const CADENCE_DAYS: Record<Rec["cadence"], number> = {
-  weekly: 7,
-  biweekly: 14,
-  monthly: 30,
-  quarterly: 91,
-  semiannual: 182,
-  yearly: 365,
 };
 
 // Active = charged within ~1.5 cycles (plus grace); else treated as stopped. A

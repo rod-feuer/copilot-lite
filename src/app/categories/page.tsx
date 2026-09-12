@@ -7,6 +7,7 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { usd, defaultMonth } from "@/lib/format";
+import { patchJson } from "@/lib/http";
 import { CATEGORY_EMOJIS } from "@/lib/emoji";
 import { Tooltip } from "@/components/Tooltip";
 
@@ -132,20 +133,20 @@ export default function CategoriesPage() {
     amount: number | null,
     period: "monthly" | "annual" = "monthly"
   ) {
-    await fetch(`/api/categories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ budget: amount, period }),
-    });
+    try {
+      await patchJson(`/api/categories/${id}`, { budget: amount, period });
+    } catch {
+      toast("Couldn't save budget — please try again", "error");
+    }
     load(month);
   }
 
   async function toggleExclude(id: number, excludeFromTotals: boolean) {
-    await fetch(`/api/categories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ excludeFromTotals }),
-    });
+    try {
+      await patchJson(`/api/categories/${id}`, { excludeFromTotals });
+    } catch {
+      toast("Couldn't update category — please try again", "error");
+    }
     load(month);
   }
 
@@ -154,11 +155,11 @@ export default function CategoriesPage() {
     id: number,
     patch: { icon?: string; color?: string; kind?: "expense" | "income" }
   ) {
-    await fetch(`/api/categories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
+    try {
+      await patchJson(`/api/categories/${id}`, patch);
+    } catch {
+      toast("Couldn't update category — please try again", "error");
+    }
     load(month);
   }
 

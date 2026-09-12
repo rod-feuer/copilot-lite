@@ -6,6 +6,7 @@ import {
 } from "./db";
 import type { TransactionWithCategory, Recurring, Category } from "./types";
 import { nameAffinity, LOW_MATCH } from "./similarity";
+import { CADENCE_DAYS, PER_YEAR, monthlyFactor, medianGap, type Cadence } from "./cadence";
 
 // ---- Merchant linking ----------------------------------------------------
 // User-declared "these descriptors are the same vendor" (e.g. a gas bill whose
@@ -618,14 +619,6 @@ export function merchantSummary(merchant: string) {
     .get(...variants) as
     | { cadence: string; avgAmount: number; nextDate: string; lastDate: string }
     | undefined;
-  const PER_YEAR: Record<string, number> = {
-    weekly: 52,
-    biweekly: 26,
-    monthly: 12,
-    quarterly: 4,
-    semiannual: 2,
-    yearly: 1,
-  };
   // recurringDetail reflects the EFFECTIVE schedule (a cadence correction wins and
   // re-derives next-due), so the shelf's metrics match what the user just set.
   // detectedCadence (raw) is exposed separately so the correction UI can show
@@ -636,7 +629,7 @@ export function merchantSummary(merchant: string) {
       ? {
           cadence: effCadence,
           perCharge: Number(Math.abs(rec.avgAmount).toFixed(2)),
-          annualized: Number((Math.abs(rec.avgAmount) * (PER_YEAR[effCadence] ?? 12)).toFixed(2)),
+          annualized: Number((Math.abs(rec.avgAmount) * (PER_YEAR[effCadence as Cadence] ?? 12)).toFixed(2)),
           nextDate: nextDueFromToday(
             sett?.nextDate ?? nextAfter(rec.lastDate, effCadence),
             effCadence
@@ -1047,22 +1040,6 @@ export function setCategoryExcluded(categoryId: number, excluded: boolean) {
 // category. This is the "known recurring" baseline shown when setting a budget,
 // so the user can size the discretionary (ad-hoc) portion. Same cadence factors
 // as the Recurrings screen.
-const MONTHLY_FACTOR: Record<string, number> = {
-  weekly: 52 / 12,
-  biweekly: 26 / 12,
-  monthly: 1,
-  yearly: 1 / 12,
-};
-
-// Approximate days between charges, used to decide if a recurring is still live.
-const CADENCE_DAYS: Record<string, number> = {
-  weekly: 7,
-  biweekly: 14,
-  monthly: 30,
-  quarterly: 91,
-  semiannual: 182,
-  yearly: 365,
-};
 
 // A recurring is "active" if it charged within ~1.5 cycles (+5d grace). When a
 // vendor stops or is renamed (its descriptor drifts to a new merchant), the old
@@ -1077,7 +1054,7 @@ export function isRecurringActive(
 ): boolean {
   const days =
     (now - new Date(lastDate + "T00:00:00Z").getTime()) / 86_400_000;
-  return days <= (CADENCE_DAYS[cadence] ?? 30) * 1.5 + 5;
+  return days <= (CADENCE_DAYS[cadence as Cadence] ?? 30) * 1.5 + 5;
 }
 
 export function recurringMonthlyByCategory(): Record<number, number> {
@@ -1099,7 +1076,7 @@ export function recurringMonthlyByCategory(): Record<number, number> {
     // A canceled (ended) subscription stops counting toward expected outflow now.
     if (recurringEnded(settings[r.merchant]?.endedDate, r.lastDate)) continue;
     out[r.categoryId] =
-      (out[r.categoryId] ?? 0) + Math.abs(r.avgAmount) * (MONTHLY_FACTOR[r.cadence] ?? 1);
+      (out[r.categoryId] ?? 0) + Math.abs(r.avgAmount) * monthlyFactor(r.cadence);
   }
   return out;
 }
@@ -1306,14 +1283,6 @@ export function suggestedRecurrings() {
     byMerchant.set(key, a);
   }
 
-  const PERIOD: Record<string, number> = {
-    weekly: 7,
-    biweekly: 14,
-    monthly: 30,
-    quarterly: 91,
-    semiannual: 182,
-    yearly: 365,
-  };
   const cadenceOf = (g: number): string | null =>
     Math.abs(g - 7) <= 2
       ? "weekly"
@@ -1375,11 +1344,9 @@ export function suggestedRecurrings() {
       const dates = txs.map((t) => new Date(t.d + "T00:00:00Z").getTime());
       const gaps: number[] = [];
       for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i - 1]) / 86_400_000);
-      const sorted = [...gaps].sort((a, b) => a - b);
-      const med = sorted[sorted.length >> 1];
-      const cadence = cadenceOf(med);
+      const cadence = cadenceOf(medianGap(gaps));
       if (!cadence) continue;
-      const period = PERIOD[cadence];
+      const period = CADENCE_DAYS[cadence as Cadence];
       const onGrid =
         gaps.filter((g) => Math.abs(g - Math.max(1, Math.round(g / period)) * period) <= 0.35 * period)
           .length / gaps.length;
@@ -1467,6 +1434,7 @@ export type CategorySummary = {
     amount: number;
     account: string;
     recurringId: number | null;
+    excluded: 0 | 1; // shown but not counted in `spent` — the shelf marks it
   }[];
 };
 
@@ -1516,7 +1484,7 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
   const links = getMerchantLinks();
   const txns = db
     .prepare(
-      `SELECT id, COALESCE(effectiveDate, date) AS date, merchant, amount, account, recurringId
+      `SELECT id, COALESCE(effectiveDate, date) AS date, merchant, amount, account, recurringId, excluded
        FROM transactions
        WHERE categoryId = ? AND substr(COALESCE(effectiveDate, date),1,7) = ?
        ORDER BY COALESCE(effectiveDate, date) DESC, id DESC`
@@ -1528,6 +1496,7 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
     amount: number;
     account: string;
     recurringId: number | null;
+    excluded: 0 | 1;
   }[];
 
   // Recurrings tied to this category still expected this month (unpaid) — only

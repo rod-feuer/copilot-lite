@@ -381,6 +381,27 @@ test("ending a subscription drops it from expected outflow immediately, and reac
   );
 });
 
+test("a quarterly bill counts one third per month toward the category baseline", () => {
+  // WHY: the baseline feeds the dashboard bar marker and the budget suggestion.
+  // A cadence missing from the monthly-factor table silently fell back to 1×,
+  // so a $300 quarterly bill was counted as $300 every month (3× too high)
+  // and a semiannual one 6× too high. Every cadence the detector can emit must
+  // have an explicit per-month factor.
+  const iso = (offsetDays: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - offsetDays);
+    return d.toISOString().slice(0, 10);
+  };
+  for (const d of [iso(275), iso(184), iso(93), iso(2)]) // 91-day gaps → quarterly
+    tx("Water District", { amount: -300, date: d, categoryId: CAT });
+  for (const d of [iso(366), iso(184), iso(2)]) // 182-day gaps → semiannual
+    tx("Car Insurance", { amount: -600, date: d, categoryId: CAT_X });
+  detectRecurrings();
+  const byCat = recurringMonthlyByCategory();
+  assert.equal(byCat[CAT], 100, "quarterly $300 → $100/month, not $300");
+  assert.equal(byCat[CAT_X], 100, "semiannual $600 → $100/month, not $600");
+});
+
 test("marking a vendor not-recurring clears its per-charge one-off exclusions", () => {
   // WHY: a muted vendor has no series, so a lingering "excluded from the series"
   // flag is a ghost marker on the charge (the Jimmy John's bug). Muting must
