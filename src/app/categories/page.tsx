@@ -652,7 +652,7 @@ function Group({
                           className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                             c.excludeFromTotals
                               ? "bg-amber-500/15 text-amber-600"
-                              : "text-[var(--muted)] opacity-0 hover:bg-[var(--background)] group-hover:opacity-100"
+                              : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 hover:bg-[var(--background)]"
                           }`}
                         >
                           {c.excludeFromTotals ? "excluded from totals ✓" : "exclude from totals"}
@@ -710,7 +710,7 @@ function Group({
                 className={`mt-0.5 shrink-0 text-xs transition-opacity ${
                   confirmingId === c.id
                     ? "font-semibold text-rose-600 opacity-100"
-                    : "text-[var(--muted)] opacity-0 hover:text-rose-500 group-hover:opacity-100"
+                    : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 hover:text-rose-500"
                 }`}
                 aria-label={`Delete ${c.name}`}
               >
