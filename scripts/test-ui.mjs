@@ -201,13 +201,19 @@ async function keyboardRows(browser) {
 
 async function restingActions(browser) {
   await withPage(browser, async (page) => {
+    // The guard is the RESTING value (the control exists without hover). The
+    // hover strengthening is only checkable where the browser reports a hover-
+    // capable pointer — Tailwind wraps `hover:` in @media (hover: hover), and
+    // headless Linux Chrome reports none, so there the hover half is n/a.
+    const canHover = await page.evaluate(() => matchMedia("(hover: hover)").matches);
     const measure = async (label, selector) => {
       const h = await page.waitForSelector(selector, { timeout: 8000 });
       const rest = Number(await h.evaluate((el) => getComputedStyle(el).opacity));
       await h.hover(); await sleep(250);
       const hover = Number(await h.evaluate((el) => getComputedStyle(el).opacity));
       await page.mouse.move(0, 0); await sleep(150);
-      record("resting actions", label, rest >= 0.5 && hover >= 0.99, `rest ${rest}, hover ${hover}`);
+      const ok = rest >= 0.5 && (!canHover || hover >= 0.99);
+      record("resting actions", label, ok, `rest ${rest}, hover ${canHover ? hover : "n/a (no hover pointer)"}`);
     };
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     await measure("categories · exclude from totals", "button::-p-text(exclude from totals)");
