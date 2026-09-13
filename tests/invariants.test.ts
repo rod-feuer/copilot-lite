@@ -113,6 +113,26 @@ after(() => {
   for (const ext of ["", "-wal", "-shm"]) fs.rmSync(p + ext, { force: true });
 });
 
+test("merchantSummary carries next-due and match-rule overrides, and whether any override exists", () => {
+  // WHY: the recurrings page's inline editor was the only place next-due and
+  // matching could be edited. Moving them to the shelf means the shelf's data
+  // must say what is set (auto vs edited) and whether "Reset all" applies.
+  for (const d of ["2025-03-15", "2025-04-15", "2025-05-15"]) tx("Water Co", { amount: -40, date: d, categoryId: CAT });
+  detectRecurrings();
+  let s = merchantSummary("Water Co");
+  assert.equal(s.nextDate, null); assert.equal(s.matchRule, null); assert.equal(s.hasSettings, false);
+  setRecurringSetting("Water Co", { nextDate: "2025-06-20", matchMode: "contains", matchText: "water", amountTolerance: 0.1 });
+  s = merchantSummary("Water Co");
+  assert.equal(s.nextDate, "2025-06-20");
+  assert.deepEqual(s.matchRule, { matchMode: "contains", matchText: "water", amountTolerance: 0.1 });
+  assert.equal(s.hasSettings, true);
+  setRecurringSetting("Water Co", { endedDate: "2025-06-01" });
+  resetRecurringOverrides("Water Co");
+  s = merchantSummary("Water Co");
+  assert.equal(s.hasSettings, false, "ended is not an override; nothing else is left");
+  assert.equal(s.endedDate, "2025-06-01", "and it survives the reset");
+});
+
 test("vendor variants: a payment-rail prefix is not the vendor", () => {
   // WHY: the variant key is the first two words after known prefixes. "Zelle
   // Payment To <payee>" keyed every payee to "zelle payment", so the shelf,
