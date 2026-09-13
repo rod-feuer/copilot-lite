@@ -1329,3 +1329,40 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   assert.ok(cats.filter((t) => t.date.endsWith("-26")).every((t) => t.categoryId === boat), "the 26th moved");
   assert.ok(cats.filter((t) => t.date.endsWith("-23")).every((t) => t.categoryId === subs), "the 23rd stayed");
 });
+
+// One monthly plan plus strays. Benjamin Franklin bills $11.99 on the 8th; in
+// August a $89.95 service call posted on the 21st and a second plan's first
+// $11.99 on the 22nd. Gap math over the whole descriptor read "biweekly"; the
+// 8th plan holds most of the charges and IS the bill — the strays stay
+// unlinked until the second plan has three charges, when the descriptor
+// splits and the vendor's name stays with the established plan.
+test("detector keeps the dominant monthly plan when strays break the rhythm, then splits and keeps the name", () => {
+  const home = addCat("Lake House (bf)");
+  const bf = "Benjamin Franklin Pl";
+  for (const m of ["06", "07", "08", "09"]) tx(bf, { amount: -11.99, date: `2026-${m}-08`, categoryId: home });
+  tx(bf, { amount: -89.95, date: "2026-08-21", categoryId: home });
+  tx(bf, { amount: -11.99, date: "2026-08-22", categoryId: home });
+  setRecurringSetting(bf, { alias: "Benjamin Franklin Plumbing" });
+
+  let recs = detectRecurrings().filter((r) => r.merchant.startsWith(bf));
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].merchant, bf, "one plan keeps the bare descriptor as its key");
+  assert.equal(recs[0].cadence, "monthly", "not biweekly");
+  assert.equal(recs[0].count, 4);
+  const linked = getDb().prepare("SELECT date FROM transactions WHERE merchant = ? AND recurringId IS NOT NULL ORDER BY date").all(bf) as { date: string }[];
+  assert.deepEqual(linked.map((t) => t.date), ["2026-06-08", "2026-07-08", "2026-08-08", "2026-09-08"], "the strays are not members");
+
+  // Two more months: the second plan reaches three charges and the descriptor splits.
+  tx(bf, { amount: -11.99, date: "2026-09-22", categoryId: home });
+  tx(bf, { amount: -11.99, date: "2026-10-08", categoryId: home });
+  tx(bf, { amount: -11.99, date: "2026-10-22", categoryId: home });
+  setTransactionRecurringExcluded(
+    (getDb().prepare("SELECT id FROM transactions WHERE merchant = ? AND amount = -89.95").get(bf) as { id: number }).id,
+    true
+  ); // the service call, flagged as a one-off
+  recs = detectRecurrings().filter((r) => r.merchant.startsWith(bf));
+  assert.deepEqual(recs.map((r) => r.merchant).sort(), [`${bf} · 22nd`, `${bf} · 8th`]);
+  const s = getRecurringSettings();
+  assert.equal(s[`${bf} · 8th`]?.alias, "Benjamin Franklin Plumbing", "the name follows the established plan");
+  assert.equal(s[`${bf} · 22nd`], undefined, "the new plan is unnamed until the user names it");
+});
