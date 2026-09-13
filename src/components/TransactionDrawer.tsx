@@ -35,6 +35,9 @@ type Summary = {
   expectedAmount: number | null; // user-set go-forward amount (null = detected)
   cadence: string | null; // user-set cadence override (null = using detected)
   detectedCadence: string | null; // what detection found, for the "detected X" hint
+  nextDate: string | null; // user-set next-due override (null = derived)
+  matchRule: { matchMode: "exact" | "contains"; matchText: string | null; amountTolerance: number | null } | null;
+  hasSettings: boolean; // any override set → "Reset all" is offered
   nameVariants: number;
   count: number;
   spent: number;
@@ -277,6 +280,11 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       expectedAmount?: number | null;
       cadence?: string | null;
       endedDate?: string | null;
+      nextDate?: string | null;
+      matchMode?: "exact" | "contains" | null;
+      matchText?: string | null;
+      amountTolerance?: number | null;
+      clear?: boolean; // reset every override (not endedDate)
     },
     message: string
   ) {
@@ -696,6 +704,11 @@ function MerchantBody({
       expectedAmount?: number | null;
       cadence?: string | null;
       endedDate?: string | null;
+      nextDate?: string | null;
+      matchMode?: "exact" | "contains" | null;
+      matchText?: string | null;
+      amountTolerance?: number | null;
+      clear?: boolean; // reset every override (not endedDate)
     },
     message: string
   ) => void;
@@ -778,6 +791,15 @@ function MerchantBody({
               />
             </div>
           )}
+          {data.recurring && (
+            <div className="min-w-[140px] flex-1">
+              <NextDueCorrection
+                derived={data.recurringDetail?.nextDate ?? null}
+                override={data.nextDate}
+                onSave={(d) => onSaveSettings({ nextDate: d }, d ? "Next due updated" : "Next due reset to auto")}
+              />
+            </div>
+          )}
 
           <div className="min-w-[140px] flex-1">
             <div className="flex flex-col gap-1.5">
@@ -797,6 +819,30 @@ function MerchantBody({
             </div>
           </div>
         </div>
+
+        {data.recurring && (
+          <MatchCorrection
+            key={JSON.stringify(data.matchRule)}
+            rule={data.matchRule}
+            onSave={(r) =>
+              onSaveSettings(
+                r
+                  ? { matchMode: r.matchMode, matchText: r.matchText, amountTolerance: r.amountTolerance }
+                  : { matchMode: null, matchText: null, amountTolerance: null },
+                r ? "Match rule updated" : "Match rule reset to auto"
+              )
+            }
+          />
+        )}
+        {data.hasSettings && (
+          <button
+            type="button"
+            onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
+            className="self-start text-xs text-[var(--muted)] hover:text-rose-500"
+          >
+            Reset all overrides
+          </button>
+        )}
 
         {/* A divider ranks the structural operations a tier below the money facts
             above — corrections you reach for occasionally, not every visit. */}
@@ -1463,6 +1509,97 @@ const CADENCE_LABELS: Record<string, string> = {
   semiannual: "Every 6 months",
   yearly: "Yearly",
 };
+
+// Next-due correction: the derived date (last charge + cadence) is the auto
+// value; a picked date overrides it for upcoming bills and the projection.
+// Clearing the field returns to auto. Same auto/edited convention as Cadence.
+function NextDueCorrection({
+  derived,
+  override,
+  onSave,
+}: {
+  derived: string | null;
+  override: string | null;
+  onSave: (date: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <label className="stat-label">Next due</label>
+        <StateTag edited={override != null} />
+      </div>
+      <input
+        type="date"
+        aria-label="Next due"
+        value={override ?? derived ?? ""}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "" || v === derived) onSave(null);
+          else if (v !== override) onSave(v);
+        }}
+        className="btn-ghost w-full cursor-pointer text-sm"
+      />
+    </div>
+  );
+}
+
+// Match correction: how a charge is recognised as this bill. Auto = exact
+// vendor, or the vendor's category + amount. "contains" widens it to any
+// descriptor containing the text; the tolerance bounds the amount.
+type MatchRule = { matchMode: "exact" | "contains"; matchText: string | null; amountTolerance: number | null };
+// A "contains" rule is incomplete until it has text (the route drops one without),
+// so the mode is held locally and saved only once the rule is whole: Auto and
+// "exact" save at once; "contains" saves when its text is entered. The parent
+// remounts this on every server change (key), so local state never goes stale.
+function MatchCorrection({ rule, onSave }: { rule: MatchRule | null; onSave: (rule: MatchRule | null) => void }) {
+  const [mode, setMode] = useState<string>(rule?.matchMode ?? "");
+  const [text, setText] = useState(rule?.matchText ?? "");
+  const [tol, setTol] = useState(rule ? (rule.amountTolerance == null ? "any" : String(rule.amountTolerance)) : "0.05");
+  const complete = (m: string, t: string) => m === "exact" || (m === "contains" && t.trim() !== "");
+  const save = (m: string, t: string, tl: string) => {
+    if (!m) return onSave(null);
+    if (!complete(m, t)) return; // wait for the text
+    onSave({ matchMode: m as "exact" | "contains", matchText: m === "contains" ? t.trim() : null, amountTolerance: tl === "any" ? null : Number(tl) });
+  };
+  const sel = "btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm";
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <label className="stat-label">Match</label>
+        <StateTag edited={rule != null} />
+      </div>
+      <div className="text-[11px] text-[var(--muted)]">
+        How a charge is recognised as this bill. Auto: the vendor exactly, or its category and amount.
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Match rule" value={mode} onChange={(e) => { setMode(e.target.value); save(e.target.value, text, tol); }} className={sel}>
+          <option value="">Auto</option>
+          <option value="exact">vendor exactly</option>
+          <option value="contains">descriptor contains…</option>
+        </select>
+        {mode === "contains" && (
+          <input
+            aria-label="Match text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => save(mode, text, tol)}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            placeholder="text in the description"
+            className="btn-ghost min-w-0 flex-1 text-sm"
+          />
+        )}
+        {mode && (
+          <select aria-label="Amount tolerance" value={tol} onChange={(e) => { setTol(e.target.value); save(mode, text, e.target.value); }} className={sel}>
+            <option value="0.05">±5%</option>
+            <option value="0.1">±10%</option>
+            <option value="0.25">±25%</option>
+            <option value="any">any amount</option>
+          </select>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // One-line correction for a misread cadence: pick the right rhythm and the
 // override saves + re-derives next-due (server-side). "Auto" shows what detection

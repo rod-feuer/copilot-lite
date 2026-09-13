@@ -688,6 +688,17 @@ export function merchantSummary(merchant: string) {
     expectedAmount: sett?.expectedAmount ?? null,
     cadence: sett?.cadence ?? null, // cadence override (null = using detected)
     detectedCadence: rec?.cadence ?? null, // what detection found, for "detected X"
+    nextDate: sett?.nextDate ?? null, // next-due override (null = derived from the last charge)
+    matchRule: sett?.matchMode
+      ? { matchMode: sett.matchMode, matchText: sett.matchText, amountTolerance: sett.amountTolerance }
+      : null,
+    // Any override at all — so the shelf can offer "Reset all" (endedDate is
+    // not an override and survives a reset; see resetRecurringOverrides).
+    hasSettings: !!(
+      sett &&
+      (sett.alias != null || sett.expectedAmount != null || sett.cadence != null ||
+        sett.nextDate != null || sett.matchMode != null)
+    ),
     nameVariants: variants.length,
     names,
     count: agg.n,

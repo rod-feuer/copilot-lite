@@ -324,6 +324,41 @@ async function splitUndo(browser) {
   });
 }
 
+async function shelfSettings(browser) {
+  await withPage(browser, async (page, errs) => {
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    // the inline editor is gone; Edit opens the shelf
+    const edit = await page.waitForSelector("[data-drawer-row] button::-p-text(Edit)", { timeout: 8000 });
+    await edit.click(); await shelfIs(page, true); await shelfSettled(page);
+    const shelf = () => page.evaluate((sel) => document.querySelector(sel).innerText.toLowerCase(), shelfSel);
+    let t = await shelf();
+    record("shelf settings", "Edit opens the shelf with Next due + Match", t.includes("next due") && t.includes("match"));
+    record("shelf settings", "no Reset all before any override", !t.includes("reset all overrides"));
+    const posts = [];
+    page.on("response", async (r) => { if (r.url().includes("/api/recurrings/settings")) posts.push({ status: r.status(), body: await r.text().catch(() => "?") }); });
+    await page.select(`${shelfSel} select[aria-label='Match rule']`, "contains");
+    // a contains rule is complete only with text — type it and commit with Enter
+    const txt = await page.waitForSelector(`${shelfSel} input[aria-label='Match text']`, { timeout: 8000 });
+    await txt.type("netflix"); await page.keyboard.press("Enter");
+    try {
+      await page.waitForFunction((sel) => document.querySelector(sel).innerText.toLowerCase().includes("reset all overrides"), { timeout: 8000 }, shelfSel);
+    } catch {
+      const diag = await page.evaluate((sel) => { const a = document.querySelector(sel); const s = a.querySelector("select[aria-label='Match rule']"); return { selectValue: s && s.value, shelfTail: a.innerText.slice(-400).replace(/\n/g, " | ") }; }, shelfSel);
+      record("shelf settings", "DIAG", false, JSON.stringify({ posts, ...diag }).slice(0, 700));
+      throw new Error("no Reset all after selecting a match rule");
+    }
+    t = await shelf();
+    const editedTags = await page.$$eval(`${shelfSel} span`, (els) => els.filter((e) => e.textContent === "edited").length);
+    record("shelf settings", "setting a match rule → edited tag + Reset all", editedTags >= 1 && t.includes("reset all overrides"), `edited tags: ${editedTags}`);
+    await page.click(`${shelfSel} button::-p-text(Reset all overrides)`);
+    await page.waitForFunction((sel) => !document.querySelector(sel).innerText.toLowerCase().includes("reset all overrides"), { timeout: 8000 }, shelfSel);
+    record("shelf settings", "Reset all → back to auto", true);
+    const inline = await page.evaluate(() => document.body.innerText.includes("expected (go-forward; history unchanged)"));
+    record("shelf settings", "no inline editor on the page", !inline);
+    if (errs.length) record("shelf settings", "page errors", false, errs[0]);
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -334,6 +369,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
+    ["shelf settings", shelfSettings],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

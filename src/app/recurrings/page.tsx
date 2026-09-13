@@ -102,7 +102,6 @@ export default function RecurringsPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(true);
-  const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [catFilter, setCatFilter] = useState(""); // "" = all, "none" = uncategorized, else id
   const toast = useToast();
@@ -152,24 +151,11 @@ export default function RecurringsPage() {
     // Category and vendor pickers are secondary: a failed read leaves them
     // empty rather than failing the page.
     getJson<Cat[]>("/api/categories").then(setCats).catch(() => {});
-    getJson<{ merchant: string }[]>("/api/merchants")
-      .then((rows) => setMerchantOptions(rows.map((r) => r.merchant)))
-      .catch(() => {});
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSuggestions();
     void boot();
   }, [boot, loadSuggestions]);
 
-  async function linkMerchants(alias: string, primary: string, unlink = false) {
-    try {
-      await postJson("/api/recurrings/link", unlink ? { alias, unlink: true } : { alias, primary });
-      toast(unlink ? "Separated" : "Vendors combined", "success");
-      load(month);
-      loadSuggestions();
-    } catch {
-      toast("Couldn't update — please try again", "error");
-    }
-  }
 
   // Add a suggested recurring: fold in any clustered aliases (so the vendor's
   // descriptor variants become one recurring), then force it.
@@ -398,8 +384,6 @@ export default function RecurringsPage() {
             onMute={markNotRecurring}
             onEnd={setEnded}
             onSaveSettings={saveSettings}
-            onLink={linkMerchants}
-            merchantOptions={merchantOptions}
             onOpen={(m) => openTx(m, { onChange: () => load(month) })}
           />
           <BillList
@@ -410,8 +394,6 @@ export default function RecurringsPage() {
             onMute={markNotRecurring}
             onEnd={setEnded}
             onSaveSettings={saveSettings}
-            onLink={linkMerchants}
-            merchantOptions={merchantOptions}
             onOpen={(m) => openTx(m, { onChange: () => load(month) })}
           />
 
@@ -543,8 +525,6 @@ function BillList({
   onMute,
   onEnd,
   onSaveSettings,
-  onLink,
-  merchantOptions,
   onOpen,
 }: {
   title: string;
@@ -555,11 +535,8 @@ function BillList({
   onMute?: (merchant: string) => void;
   onEnd?: (merchant: string, ended: boolean) => void;
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
-  onLink?: (alias: string, primary: string, unlink?: boolean) => void;
-  merchantOptions?: string[];
   onOpen?: (merchant: string) => void;
 }) {
-  const [matchEditId, setMatchEditId] = useState<number | null>(null);
   const [renameId, setRenameId] = useState<number | null>(null);
   const skipRenameSave = useRef(false); // set on Escape so the blur doesn't save
   const shelfActive = useShelfActive();
@@ -730,12 +707,12 @@ function BillList({
                   </button>
                 </Tooltip>
               )}
-              {editable && onSaveSettings && (
+              {editable && onOpen && (
                 <Tooltip
                   label={
                     r.settings
-                      ? "Has custom settings (rename, amount, cadence, or matching) — click to view or reset"
-                      : "Edit this recurring (rename, amount, cadence, matching)"
+                      ? "Has custom settings — edit or reset them in the shelf"
+                      : "Edit in the shelf: name, amount, cadence, next due, matching"
                   }
                   onlyIfTruncated={false}
                   className="inline-flex shrink-0"
@@ -743,7 +720,7 @@ function BillList({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setMatchEditId((id) => (id === r.id ? null : r.id));
+                      onOpen(r.merchant);
                     }}
                     className={`rounded border border-[var(--border)] px-2 py-0.5 text-xs ${
                       r.settings
@@ -796,18 +773,6 @@ function BillList({
                 {usd(amount)}
               </div>
             </div>
-            {editable && onSaveSettings && matchEditId === r.id && (
-              <SettingsEditor
-                rec={r}
-                merchantOptions={merchantOptions ?? []}
-                onSave={(patch) => {
-                  onSaveSettings(r.merchant, patch);
-                  setMatchEditId(null);
-                }}
-                onLink={onLink}
-                onClose={() => setMatchEditId(null)}
-              />
-            )}
             </div>
           );
             })}
@@ -822,202 +787,3 @@ function BillList({
 // expected amount, cadence, next-due, and the match rule. Empty / "Auto" means
 // "no override — use the detected value". Save sends a full patch so cleared
 // fields revert. Reset removes all overrides.
-const CAD_OPTS: { v: string; label: string }[] = [
-  { v: "", label: "Auto (detected)" },
-  { v: "weekly", label: "Weekly" },
-  { v: "biweekly", label: "Every 2 weeks" },
-  { v: "monthly", label: "Monthly" },
-  { v: "quarterly", label: "Quarterly" },
-  { v: "semiannual", label: "Every 6 months" },
-  { v: "yearly", label: "Yearly" },
-];
-function SettingsEditor({
-  rec,
-  merchantOptions,
-  onSave,
-  onLink,
-  onClose,
-}: {
-  rec: Rec;
-  merchantOptions: string[];
-  onSave: (patch: SettingsPatch | "clear") => void;
-  onLink?: (alias: string, primary: string, unlink?: boolean) => void;
-  onClose: () => void;
-}) {
-  const s = rec.settings;
-  const [alias, setAlias] = useState(s?.alias ?? "");
-  const [amount, setAmount] = useState(s?.expectedAmount != null ? String(s.expectedAmount) : "");
-  const [cad, setCad] = useState<string>(s?.cadence ?? "");
-  const [next, setNext] = useState(s?.nextDate ?? "");
-  const [linkPick, setLinkPick] = useState("");
-  const [mode, setMode] = useState<string>(s?.matchMode ?? "");
-  const [text, setText] = useState(s?.matchText ?? "");
-  const [tol, setTol] = useState<string>(
-    s?.amountTolerance != null ? String(s.amountTolerance) : "0.05"
-  );
-
-  function save() {
-    onSave({
-      alias: alias.trim() || null,
-      expectedAmount: amount.trim() === "" ? null : Math.abs(Number(amount)),
-      cadence: (cad || null) as Settings["cadence"],
-      nextDate: next || null,
-      matchMode: (mode || null) as Settings["matchMode"],
-      matchText: mode === "contains" ? text.trim() || null : null,
-      amountTolerance: mode ? (tol === "any" ? null : Number(tol)) : null,
-    });
-  }
-
-  const field = "rounded-lg border border-[var(--border)] bg-card px-2 py-1";
-  return (
-    <div
-      className="flex flex-col gap-2 border-t border-dashed border-[var(--border)] bg-[var(--background)] px-4 py-3 text-xs"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="w-20 text-[var(--muted)]">Name</span>
-        <input
-          value={alias}
-          onChange={(e) => setAlias(e.target.value)}
-          placeholder={rec.merchant}
-          className={`${field} w-56`}
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="w-20 text-[var(--muted)]">Amount</span>
-        <span className="text-[var(--muted)]">$</span>
-        <input
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          inputMode="decimal"
-          placeholder={String(rec.expectedAmount)}
-          className={`${field} w-24`}
-        />
-        <span className="text-[var(--muted)]">expected (go-forward; history unchanged)</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="w-20 text-[var(--muted)]">Cadence</span>
-        <select
-          value={cad}
-          onChange={(e) => setCad(e.target.value)}
-          className={`${field} select-caret cursor-pointer appearance-none pr-7`}
-        >
-          {CAD_OPTS.map((o) => (
-            <option key={o.v} value={o.v}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <span className="ml-2 text-[var(--muted)]">Next due</span>
-        <input
-          type="date"
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-          className={field}
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="w-20 text-[var(--muted)]">Match</span>
-        <select
-          value={mode}
-          onChange={(e) => setMode(e.target.value)}
-          className={`${field} select-caret cursor-pointer appearance-none pr-7`}
-        >
-          <option value="">Auto (default)</option>
-          <option value="exact">merchant exactly</option>
-          <option value="contains">merchant contains</option>
-        </select>
-        {mode === "contains" && (
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="text in description"
-            className={`${field} w-40`}
-          />
-        )}
-        {mode && (
-          <select
-            value={tol}
-            onChange={(e) => setTol(e.target.value)}
-            className={`${field} select-caret cursor-pointer appearance-none pr-7`}
-          >
-            <option value="0.05">±5%</option>
-            <option value="0.1">±10%</option>
-            <option value="0.25">±25%</option>
-            <option value="any">any amount</option>
-          </select>
-        )}
-      </div>
-      {onLink && (
-        <div className="flex flex-wrap items-start gap-2">
-          <span className="w-20 shrink-0 pt-1 text-[var(--muted)]">Combine</span>
-          <div className="flex flex-1 flex-col gap-1">
-            {rec.linkedMerchants.map((m) => (
-              <div key={m} className="flex items-center gap-1 text-[var(--muted)]">
-                <span className="truncate">↳ {m}</span>
-                <Tooltip label="Separate" onlyIfTruncated={false}>
-                  <button
-                    onClick={() => onLink(m, rec.merchant, true)}
-                    className="rounded px-1 hover:text-rose-500"
-                  >
-                    ✕
-                  </button>
-                </Tooltip>
-              </div>
-            ))}
-            <div className="flex items-center gap-2">
-              <input
-                list={`merchants-${rec.id}`}
-                value={linkPick}
-                onChange={(e) => setLinkPick(e.target.value)}
-                placeholder="Find a vendor to combine…"
-                className={`${field} w-56`}
-              />
-              <datalist id={`merchants-${rec.id}`}>
-                {merchantOptions
-                  .filter((m) => m !== rec.merchant && !rec.linkedMerchants.includes(m))
-                  .slice(0, 1000)
-                  .map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-              </datalist>
-              <button
-                onClick={() => {
-                  const v = linkPick.trim();
-                  if (v && v !== rec.merchant) {
-                    onLink(v, rec.merchant);
-                    setLinkPick("");
-                  }
-                }}
-                className="rounded-lg border border-[var(--border)] px-2 py-1 hover:bg-card"
-              >
-                Link
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="flex items-center gap-2 pt-1">
-        {rec.settings && (
-          <button
-            onClick={() => onSave("clear")}
-            className="rounded-lg px-2 py-1 text-[var(--muted)] hover:text-rose-500"
-          >
-            Reset all
-          </button>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={onClose} className="rounded-lg px-2 py-1 text-[var(--muted)]">
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            className="rounded-lg bg-[var(--accent)] px-3 py-1 font-medium text-white"
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
