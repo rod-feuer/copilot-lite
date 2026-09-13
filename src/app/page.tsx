@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
+import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import Shell from "@/components/Shell";
@@ -412,12 +413,7 @@ export default function DashboardPage() {
                           : "hover:bg-[var(--background)]"
                       }`}
                     >
-                      <span
-                        className="flex h-9 w-9 items-center justify-center rounded-full text-base"
-                        style={{ background: (u.categoryColor ?? "#94a3b8") + "22" }}
-                      >
-                        {u.categoryIcon ?? "↻"}
-                      </span>
+                      <CategoryBadge icon={u.categoryIcon} color={u.categoryColor} fallback={u.name} />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium">{u.name}</div>
                         <div className="text-xs text-[var(--muted)]">
@@ -463,12 +459,7 @@ export default function DashboardPage() {
                         : "hover:bg-[var(--background)]"
                     }`}
                   >
-                    <span
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-base"
-                      style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
-                    >
-                      {t.categoryIcon ?? "•"}
-                    </span>
+                    <CategoryBadge icon={t.categoryIcon} color={t.categoryColor} fallback={t.displayName} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-medium">{t.displayName}</span>

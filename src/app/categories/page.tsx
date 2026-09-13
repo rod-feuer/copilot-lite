@@ -2,6 +2,7 @@
 
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
+import { CategoryBadge, categoryTint } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
@@ -560,7 +561,7 @@ function Group({
               {...rowButtonProps(() => openCategory(c.id, month, { onChange }))}
               className={`group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)] ${ROW_FOCUS}`}
             >
-              <CategoryBadge
+              <EditableCategoryBadge
                 icon={c.icon}
                 color={c.color}
                 kind={c.kind}
@@ -880,7 +881,7 @@ function CategoryName({ name, onRename }: { name: string; onRename?: (name: stri
 // The category's round icon badge. When editable (onSave given), clicking it
 // opens a small popover to pick an emoji and a color — the only place to set a
 // category's appearance after creation. Read-only when onSave is absent.
-function CategoryBadge({
+function EditableCategoryBadge({
   icon,
   color,
   kind,
@@ -906,16 +907,11 @@ function CategoryBadge({
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  if (!onSave) return <CategoryBadge icon={icon} color={color} className="mt-0.5" />;
+
+  // The editable badge is the shared chip's shape and tint, as a button.
   const badgeClass =
     "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base";
-
-  if (!onSave) {
-    return (
-      <span className={badgeClass} style={{ background: color + "22" }}>
-        {icon}
-      </span>
-    );
-  }
 
   return (
     // stopPropagation so editing the badge never opens the category shelf (the
@@ -923,9 +919,10 @@ function CategoryBadge({
     <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
       <Tooltip label="Change icon & color" onlyIfTruncated={false}>
         <button
+          data-category-badge
           onClick={() => setOpen((o) => !o)}
           className={`${badgeClass} group/badge relative cursor-pointer ring-[var(--border)] transition hover:ring-2`}
-          style={{ background: color + "22" }}
+          style={{ background: categoryTint(color) }}
         >
         {icon}
         {/* Persistent (faint) corner cue so the badge reads as editable; darkens

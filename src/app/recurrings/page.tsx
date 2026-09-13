@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Shell from "@/components/Shell";
+import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
@@ -420,7 +421,6 @@ export default function RecurringsPage() {
               {showSuggestions && (
                 <div className="card divide-y divide-[var(--border)]">
                   {shownSuggestions.map((s) => {
-                    const color = s.category?.color ?? "#94a3b8";
                     return (
                       <div key={s.merchant}>
                       <div
@@ -437,12 +437,7 @@ export default function RecurringsPage() {
                             : "hover:bg-[var(--background)]"
                         }`}
                       >
-                        <span
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base"
-                          style={{ background: color + "22" }}
-                        >
-                          {s.category?.icon ?? "↻"}
-                        </span>
+                        <CategoryBadge icon={s.category?.icon} color={s.category?.color} fallback={s.displayName} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium">{s.displayName}</div>
                           <div className="text-xs text-[var(--muted)]">
@@ -593,12 +588,7 @@ function BillList({
               <div className="w-12 shrink-0 text-xs text-[var(--muted)]">
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
               </div>
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base"
-                style={{ background: color + "22" }}
-              >
-                {r.categoryIcon ?? "↻"}
-              </span>
+              <CategoryBadge icon={r.categoryIcon} color={r.categoryColor} fallback={r.displayName} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {renameId === r.id && onSaveSettings ? (

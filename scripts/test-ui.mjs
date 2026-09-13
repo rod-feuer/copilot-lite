@@ -396,6 +396,26 @@ async function moneyColour(browser) {
   });
 }
 
+async function categoryBadge(browser) {
+  // One chip, one shape: every badge on every list page is a full circle of the
+  // same size (recurrings used rounded-xl before), and none shows the recurring
+  // glyph as a stand-in for a missing icon.
+  await withPage(browser, async (page) => {
+    for (const route of ["/", "/transactions", "/recurrings", "/categories"]) {
+      await page.goto(BASE + route, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-category-badge]");
+      const r = await page.$$eval("[data-category-badge]", (els) => {
+        const radii = new Set(els.map((e) => getComputedStyle(e).borderRadius));
+        const sizes = new Set(els.map((e) => Math.round(e.getBoundingClientRect().width)));
+        const glyphFallback = els.filter((e) => e.textContent.trim() === "↻").length;
+        return { n: els.length, radii: [...radii], sizes: [...sizes], glyphFallback };
+      });
+      const round = r.radii.every((x) => parseFloat(x) >= 999);
+      record("category badge", `${route} · ${r.n} badges, one shape`, round && r.sizes.length <= 2 && r.glyphFallback === 0, `radii ${r.radii.join("/")}, widths ${r.sizes.join("/")}px, ↻ fallbacks ${r.glyphFallback}`);
+    }
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -406,7 +426,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

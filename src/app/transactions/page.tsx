@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { LoadError, LoadingRows } from "@/components/LoadState";
@@ -786,12 +787,7 @@ export default function TransactionsPage() {
           <>
             {modal && (
               <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
-                <span
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg"
-                  style={{ background: (modal.categoryColor ?? "#94a3b8") + "22" }}
-                >
-                  {modal.categoryIcon ?? "•"}
-                </span>
+                <CategoryBadge icon={modal.categoryIcon} color={modal.categoryColor} size="md" fallback={modal.displayName} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{modal.displayName}</div>
                   <div className="truncate text-xs text-[var(--muted)]">
@@ -1276,8 +1272,6 @@ const TxRow = memo(function TxRow({
   // "•" is the app's placeholder for a category with no real emoji (see core.ts),
   // so it's not null — treat it (and empty) as no icon and use the merchant's
   // initial instead, which reads intentional rather than like a broken image.
-  const trimmedIcon = t.categoryIcon?.trim();
-  const avatarIcon = trimmedIcon && trimmedIcon !== "•" ? trimmedIcon : null;
   return (
               <li
                 data-drawer-row
@@ -1294,18 +1288,7 @@ const TxRow = memo(function TxRow({
                 } ${t.excluded ? "opacity-55" : ""}`}
               >
                 {!modal && (
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-full text-base"
-                    style={{ background: (t.categoryColor ?? "#94a3b8") + "22" }}
-                  >
-                    {/* Emoji when the category has one; otherwise the merchant's
-                        initial — reads intentional, not like a broken image. */}
-                    {avatarIcon ?? (
-                      <span className="text-sm font-semibold text-[var(--muted)]">
-                        {t.displayName?.slice(0, 1).toUpperCase() || "?"}
-                      </span>
-                    )}
-                  </span>
+                  <CategoryBadge icon={t.categoryIcon} color={t.categoryColor} fallback={t.displayName} className="self-center" />
                 )}
                 <div className="min-w-0 flex-1">
                   {modal ? (
