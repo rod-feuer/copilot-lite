@@ -41,6 +41,7 @@ import {
   suggestedRecurrings,
   resetRecurringOverrides,
   getRecurringSettings,
+  merchantVariants,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -109,6 +110,36 @@ beforeEach(() => {
 after(() => {
   const p = process.env.COPILOT_DB_PATH!;
   for (const ext of ["", "-wal", "-shm"]) fs.rmSync(p + ext, { force: true });
+});
+
+test("vendor variants: a payment-rail prefix is not the vendor", () => {
+  // WHY: the variant key is the first two words after known prefixes. "Zelle
+  // Payment To <payee>" keyed every payee to "zelle payment", so the shelf,
+  // the vendor filter, recategorize, and "Not recurring" all treated 38 payees
+  // as one vendor — muting one muted them all (real data, 2026-09-13). The
+  // payee is what follows the rail; descriptor drift within a payee still rolls up.
+  for (const m of [
+    "Zelle Payment To Indy K-9 Llc",
+    "Zelle Payment To Indy K-9",
+    "Zelle Payment To Rosy's Cleaning",
+    "Zelle Payment To Aurelio Juarez Jpm99abh1tph",
+    "Zelle Payment To Aurelio Juarez Jpm99a9hjnaf",
+    "Plan Fee - Ticketmast",
+    "Plan Fee - Surroundings",
+  ])
+    tx(m, { amount: -50 });
+  const sorted = (a: string[]) => [...a].sort();
+  assert.deepEqual(
+    sorted(merchantVariants("Zelle Payment To Indy K-9 Llc")),
+    ["Zelle Payment To Indy K-9", "Zelle Payment To Indy K-9 Llc"],
+    "K-9's two descriptors, and no other Zelle payee"
+  );
+  assert.deepEqual(
+    sorted(merchantVariants("Zelle Payment To Aurelio Juarez Jpm99abh1tph")),
+    ["Zelle Payment To Aurelio Juarez Jpm99a9hjnaf", "Zelle Payment To Aurelio Juarez Jpm99abh1tph"],
+    "reference-suffix drift within one payee still rolls up"
+  );
+  assert.deepEqual(merchantVariants("Plan Fee - Ticketmast"), ["Plan Fee - Ticketmast"], "a fee is keyed by its merchant, not 'plan fee'");
 });
 
 test("merchantSummary lists descriptor names; only linked aliases are unlinkable", () => {
