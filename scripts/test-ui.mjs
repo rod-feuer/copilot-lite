@@ -228,8 +228,6 @@ async function restingActions(browser) {
     await measure("categories · exclude from totals", "button::-p-text(exclude from totals)");
     await measure("categories · delete", "button[aria-label^='Delete ']");
     await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
-    await measure("recurrings · mark ended", "button::-p-text(mark ended)");
-    await measure("recurrings · not recurring", "button::-p-text(not recurring)");
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
     await measure("shelf · row ⋯", `${shelfSel} button[aria-label='Edit transaction']`);
@@ -491,6 +489,41 @@ async function inlineEdit(browser) {
   });
 }
 
+async function recurringsRow(browser) {
+  // Controls sit in fixed columns (same x on every row), read as buttons (a
+  // border), use the §2 vocabulary, and the amount is full-weight foreground.
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row] button::-p-text(Edit)");
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("[data-drawer-row]")].filter((li) => li.querySelector("select"));
+      const x = (el) => Math.round(el.getBoundingClientRect().left);
+      const edits = rows.map((li) => x([...li.querySelectorAll("button")].find((b) => b.textContent.trim() === "Edit")));
+      const selects = rows.map((li) => x(li.querySelector("select")));
+      const amounts = rows.map((li) => { const els = [...li.querySelectorAll("div")]; return els.find((d) => /^\$[\d,]+\.\d\d$/.test(d.textContent.trim())); });
+      const fg = getComputedStyle(document.body).color;
+      const names = rows.map((li) => li.querySelector("span.truncate")).filter(Boolean);
+      const truncated = names.filter((n) => n.scrollWidth > n.clientWidth).length;
+      return {
+        rows: rows.length,
+        editXs: [...new Set(edits)], selectXs: [...new Set(selects)],
+        amountColours: [...new Set(amounts.map((a) => a && getComputedStyle(a).color))], foreground: fg,
+        truncated, names: names.length,
+      };
+    });
+    record("recurrings row", `${r.rows} rows · Edit buttons in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
+    record("recurrings row", "category selects in one column", r.selectXs.length === 1, `x=${r.selectXs.join("/")}`);
+    record("recurrings row", "amounts are full-weight foreground", r.amountColours.length === 1 && r.amountColours[0] === r.foreground, `${r.amountColours.join("/")} vs ${r.foreground}`);
+    record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
+    // the verbs live in the row's ⋯ menu, in §2 vocabulary
+    await page.click("[data-drawer-row] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
+    const menu = await page.evaluate(() => document.querySelector("[role='menu']").innerText);
+    record("recurrings row", "⋯ menu holds Mark ended + Not recurring", menu.includes("Mark ended") && menu.includes("Not recurring"), menu.replace(/\n/g, " · "));
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: "/tmp/copilot-recurrings-row.png" });
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -501,7 +534,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

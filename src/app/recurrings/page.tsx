@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import { RowMenu, RowMenuItem } from "@/components/RowMenu";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -473,6 +474,11 @@ export default function RecurringsPage() {
   );
 }
 
+// A row's quiet action button: bordered, muted text, foreground on hover —
+// the Edit button's existing look, applied to every row action.
+const ROW_ACTION =
+  "rounded-lg border border-[var(--border)] bg-card px-2 py-0.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)]";
+
 function BillList({
   title,
   recs,
@@ -515,7 +521,7 @@ function BillList({
   return (
     <div>
       {title && (
-        <h3 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
           {title}
         </h3>
       )}
@@ -549,6 +555,9 @@ function BillList({
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
               </div>
               <CategoryBadge icon={r.categoryIcon} color={r.categoryColor} fallback={r.displayName} />
+              {/* Name column: the click-to-edit name (with its ✎ cue) and the
+                  Ended badge only — cadence has its own column so the name
+                  reads as one phrase. */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {onSaveSettings ? (
@@ -559,9 +568,6 @@ function BillList({
                   ) : (
                     <span className="truncate text-sm font-medium">{r.displayName}</span>
                   )}
-                  <span className="shrink-0 text-xs text-[var(--muted)]">
-                    {CADENCE_LABEL[r.cadence]}
-                  </span>
                   {r.ended && (
                     <Tooltip
                       label="You marked this subscription ended — it no longer counts as upcoming or expected"
@@ -573,84 +579,57 @@ function BillList({
                   )}
                 </div>
               </div>
-              {/* End / reactivate a subscription. "mark ended" rides the active
-                  lists (not the dim/inactive one); "reactivate" shows wherever an
-                  ended recurring is listed. */}
-              {onEnd && !r.ended && !dim && (
-                <Tooltip
-                  label="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
-                  onlyIfTruncated={false}
-                  className="inline-flex shrink-0"
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEnd(r.merchant, true);
-                    }}
-                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 transition-opacity hover:text-[var(--foreground)]"
-                  >
-                    mark ended
-                  </button>
-                </Tooltip>
-              )}
-              {onEnd && r.ended && (
-                <Tooltip
-                  label="Reactivate this subscription"
-                  onlyIfTruncated={false}
-                  className="inline-flex shrink-0"
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEnd(r.merchant, false);
-                    }}
-                    className="rounded px-1.5 text-xs text-[var(--accent)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 transition-opacity hover:underline"
-                  >
-                    reactivate
-                  </button>
-                </Tooltip>
-              )}
-              {editable && onMute && !r.ended && (
-                <Tooltip
-                  label="Mark as not recurring"
-                  onlyIfTruncated={false}
-                  className="inline-flex shrink-0"
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMute(r.merchant);
-                    }}
-                    className="rounded px-1.5 text-xs text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 transition-opacity hover:text-rose-500"
-                  >
-                    not recurring
-                  </button>
-                </Tooltip>
-              )}
-              {editable && onOpen && (
-                <Tooltip
-                  label={
-                    r.settings
-                      ? "Has custom settings — edit or reset them in the shelf"
-                      : "Edit in the shelf: name, amount, cadence, next due, matching"
-                  }
-                  onlyIfTruncated={false}
-                  className="inline-flex shrink-0"
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpen(r.merchant);
-                    }}
-                    className={`rounded border border-[var(--border)] px-2 py-0.5 text-xs ${
-                      r.settings
-                        ? "text-[var(--accent)]"
-                        : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                    }`}
-                  >
-                    Edit{r.settings ? " •" : ""}
-                  </button>
-                </Tooltip>
+              <span className="hidden w-24 shrink-0 text-xs text-[var(--muted)] sm:block">
+                {CADENCE_LABEL[r.cadence]}
+              </span>
+              {/* Actions: fixed-width slots so every row's controls sit in the
+                  same columns, styled as quiet buttons (not bare text, which read
+                  as disabled). On a phone the row opens the shelf, which has the
+                  same actions — like the category select below. */}
+              {/* Actions: the secondary verbs live in the row's ⋯ menu (the
+                  app's one pattern for them); Edit stays visible. Fixed widths
+                  so every row's controls sit in the same columns. On a phone the
+                  row opens the shelf, which has the same actions. */}
+              {editable && (
+                <div className="hidden w-[7rem] shrink-0 items-center justify-end gap-1.5 sm:flex">
+                  <RowMenu>
+                      {onEnd && !r.ended && !dim && (
+                        <RowMenuItem label="Mark ended" onSelect={() => onEnd(r.merchant, true)} />
+                      )}
+                      {onEnd && r.ended && (
+                        <RowMenuItem label="Reactivate" onSelect={() => onEnd(r.merchant, false)} />
+                      )}
+                      {onMute && !r.ended && (
+                        <RowMenuItem label="Not recurring" onSelect={() => onMute(r.merchant)} className="hover:text-rose-500" />
+                      )}
+                  </RowMenu>
+                  {onOpen && (
+                    <Tooltip
+                      label="Edit in the shelf: name, amount, cadence, next due, matching"
+                      onlyIfTruncated={false}
+                      className="flex"
+                    >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpen(r.merchant);
+                        }}
+                        className={`${ROW_ACTION} w-12`}
+                      >
+                        Edit
+                      </button>
+                    </Tooltip>
+                  )}
+                  {/* Custom-settings marker in its own fixed slot, so the Edit
+                      button is the same width on every row. */}
+                  <span className="w-3 shrink-0 text-center text-xs text-[var(--accent)]">
+                    {r.settings ? (
+                      <Tooltip label="Has custom settings — edit or reset them in the shelf" onlyIfTruncated={false}>
+                        <span aria-label="Has custom settings">•</span>
+                      </Tooltip>
+                    ) : null}
+                  </span>
+                </div>
               )}
               {editable && cats && onRecategorize ? (
                 <select
@@ -659,7 +638,7 @@ function BillList({
                   onChange={(e) =>
                     onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
                   }
-                  className={`select-caret hidden max-w-36 shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
+                  className={`select-caret hidden w-40 shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
                     r.categoryId != null
                       ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
                       : "border border-dashed border-[var(--border)] text-[var(--muted)]"
@@ -678,18 +657,16 @@ function BillList({
               ) : (
                 r.categoryName && (
                   <span
-                    className="hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide sm:inline-block"
+                    className="hidden w-40 shrink-0 truncate rounded-full px-2 py-0.5 text-center text-[11px] font-semibold uppercase tracking-wide sm:inline-block"
                     style={{ background: color + "22", color }}
                   >
                     {r.categoryName}
                   </span>
                 )
               )}
-              <div
-                className={`ml-auto w-20 text-right text-sm font-semibold tabular-nums sm:ml-0 ${
-                  r.paid ? "" : "text-[var(--muted)]"
-                }`}
-              >
+              {/* The amount is why the row exists: full weight. The Overdue /
+                  Upcoming / Paid grouping already says whether it's been paid. */}
+              <div className="ml-auto w-24 text-right text-sm font-semibold tabular-nums text-[var(--foreground)] sm:ml-0">
                 {usd(amount)}
               </div>
             </div>
