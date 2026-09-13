@@ -19,82 +19,17 @@ import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson } from "@/lib/http";
 import { LoadError } from "@/components/LoadState";
 import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
+import type { MerchantSummary, CategorySummary, MatchRule } from "@/lib/queries";
+import type { Category } from "@/lib/types";
 
-type Cat = { id: number; name: string; color: string; icon: string };
-type Vendor = { merchant: string; displayName: string };
-type Recent = {
-  id: number;
-  date: string;
-  amount: number;
-  account: string;
-  excluded: 0 | 1;
-  categoryExcluded: 0 | 1;
-  categoryName: string | null;
-};
-type Summary = {
-  merchant: string;
-  displayName: string;
-  alias: string | null; // user-set name override (null = using the bank descriptor)
-  expectedAmount: number | null; // user-set go-forward amount (null = detected)
-  cadence: string | null; // user-set cadence override (null = using detected)
-  detectedCadence: string | null; // what detection found, for the "detected X" hint
-  nextDate: string | null; // user-set next-due override (null = derived)
-  matchRule: { matchMode: "exact" | "contains"; matchText: string | null; amountTolerance: number | null } | null;
-  hasSettings: boolean; // any override set → "Reset all" is offered
-  nameVariants: number;
-  count: number;
-  spent: number;
-  received: number;
-  monthlyAvg: number;
-  trailing12: number;
-  count12: number;
-  firstSeen: string | null;
-  recurring: boolean;
-  ended: boolean; // user marked the subscription ended/canceled (and nothing charged since)
-  endedDate: string | null;
-  recurringDetail: {
-    cadence: string;
-    perCharge: number;
-    annualized: number;
-    nextDate: string;
-  } | null;
-  byYear: { year: string; spent: number }[];
-  priceChange: { from: number; to: number; since: string } | null;
-  categoryId: number | null;
-  categoryName: string | null;
-  categoryColor: string | null;
-  names: { name: string; count: number; canUnlink: boolean }[];
-  recent: Recent[];
-};
-type CatSummary = {
-  id: number;
-  name: string;
-  icon: string;
-  color: string;
-  kind: "expense" | "income";
-  excludeFromTotals: 0 | 1;
-  month: string;
-  spent: number;
-  txCount: number;
-  prevSpent: number;
-  monthlyAvg: number;
-  budget: number | null;
-  upcoming: { merchant: string; displayName: string; dueDate: string; amount: number }[];
-  transactions: {
-    id: number;
-    date: string;
-    merchant: string;
-    displayName: string;
-    amount: number;
-    account: string;
-    recurringId: number | null;
-    excluded: 0 | 1;
-    recurringExcluded: 0 | 1;
-  }[];
-};
+// Shapes come from the library that produces them; the aliases keep the file's
+// existing names.
+type Cat = Category;
+type Vendor = { merchant: string; displayName: string }; // the Combine picker's projection of /api/vendors
+type Summary = MerchantSummary;
+type Recent = MerchantSummary["recent"][number];
+type CatSummary = CategorySummary;
 
-// amountHint lets the caller (e.g. a suggestion row) seed the expected-amount
-// placeholder with the exact figure it displays, so the two never disagree.
 type OpenOpts = { onChange?: () => void; amountHint?: number | null };
 type Target =
   | { kind: "merchant"; merchant: string }
@@ -1522,7 +1457,6 @@ function NextDueCorrection({
 // Match correction: how a charge is recognised as this bill. Auto = exact
 // vendor, or the vendor's category + amount. "contains" widens it to any
 // descriptor containing the text; the tolerance bounds the amount.
-type MatchRule = { matchMode: "exact" | "contains"; matchText: string | null; amountTolerance: number | null };
 // A "contains" rule is incomplete until it has text (the route drops one without),
 // so the mode is held locally and saved only once the rule is whole: Auto and
 // "exact" save at once; "contains" saves when its text is entered. The parent

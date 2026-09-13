@@ -16,6 +16,7 @@ export type Transaction = {
   amount: number;
   categoryId: number | null;
   account: string;
+  effectiveDate: string | null; // user overlay: the month this charge counts in (null = posted date)
   pending: 0 | 1;
   excluded: 0 | 1; // mirrors Copilot's "excluded" + internal transfers; omitted from totals
   recurringId: number | null;

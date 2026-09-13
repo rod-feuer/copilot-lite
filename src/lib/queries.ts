@@ -307,6 +307,14 @@ function buildTxFilter(opts: TxFilter): { whereSql: string; params: Record<strin
   return { whereSql: where.length ? "WHERE " + where.join(" AND ") : "", params };
 }
 
+// One list row as the UI receives it: the joined transaction plus the two
+// per-charge flags computed in the SELECT. The pages alias this rather than
+// re-declaring it, so a field added here reaches them at compile time.
+export type TransactionRow = TransactionWithCategory & {
+  recurringExcluded: 0 | 1; // this charge was excluded from its vendor's series
+  splitParts: number; // >0 when this charge is a split parent (its parts are child rows)
+};
+
 export function listTransactions(
   opts: TxFilter & {
     sort?: "date" | "amount" | "merchant";
@@ -314,9 +322,7 @@ export function listTransactions(
     limit?: number;
     offset?: number;
   }
-  // recurringExcluded (a per-charge one-off flag) is computed in the SELECT and
-  // returned, so expose it in the type rather than hiding it behind the cast.
-): (TransactionWithCategory & { recurringExcluded: number; splitParts: number })[] {
+): TransactionRow[] {
   const db = getDb();
   ensureRecurringTxExclusions(db);
   const { whereSql, params } = buildTxFilter(opts);
@@ -345,7 +351,7 @@ export function listTransactions(
     ORDER BY ${sortCol} ${dir}, t.id DESC
     ${pagination}`;
   const rows = db.prepare(sql).all(params) as (TransactionWithCategory & {
-    recurringExcluded: number;
+    recurringExcluded: 0 | 1;
     splitParts: number; // >0 when this charge is a split parent (its parts are child rows)
   })[];
   const settings = getRecurringSettings();
@@ -583,7 +589,15 @@ export function merchantSummary(merchant: string) {
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
        WHERE t.merchant IN (${ph}) ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
     )
-    .all(...variants);
+    .all(...variants) as {
+    id: number;
+    date: string;
+    amount: number;
+    account: string;
+    excluded: 0 | 1;
+    categoryExcluded: 0 | 1;
+    categoryName: string | null;
+  }[];
 
   // Trailing-12-months spend + count (the drawer's box row uses this window).
   const cutoff = new Date();
@@ -724,6 +738,10 @@ export function merchantSummary(merchant: string) {
     recent,
   };
 }
+
+// The shelf's vendor data, as merchantSummary returns it (inferred, so a field
+// added to the return reaches the shelf at compile time).
+export type MerchantSummary = ReturnType<typeof merchantSummary>;
 
 export function distinctAccounts(): string[] {
   return (
@@ -1110,7 +1128,7 @@ export function recurringMonthlyByCategory(): Record<number, number> {
   return out;
 }
 
-export function categoriesWithTotals(month?: string): (Category & {
+export type CategoryWithTotals = Category & {
   total: number;
   txCount: number;
   budget: number | null;
@@ -1119,7 +1137,9 @@ export function categoriesWithTotals(month?: string): (Category & {
   recurringBaseline: number;
   suggestedBudget: number;
   suggestedAnnualBudget: number;
-})[] {
+};
+
+export function categoriesWithTotals(month?: string): CategoryWithTotals[] {
   const db = getDb();
   const monthFilter = month ? "AND substr(COALESCE(t.effectiveDate, t.date),1,7) = @month" : "";
   const rows = db
@@ -1284,7 +1304,19 @@ const SUBSCRIPTION_HINT =
 //   - "new": only 1-2 charges so far but the name reads like a subscription/bill
 //     and it charged recently — too little history to detect a cadence.
 // Excludes anything already recurring, force-d, or previously dismissed (muted).
-export function suggestedRecurrings() {
+export type RecurringSuggestion = {
+  merchant: string; // the canonical descriptor — the key for settings / Add
+  displayName: string; // alias override if set, else merchant
+  reason: "variable" | "new";
+  cadence: string | null;
+  avgAmount: number; // expected-amount override if set, else stable current price / median if variable
+  count: number;
+  lastDate: string;
+  category: { name: string; color: string; icon: string } | null;
+  aliases: string[]; // other descriptors of the same vendor, folded in on Add
+};
+
+export function suggestedRecurrings(): RecurringSuggestion[] {
   const db = getDb();
   const overrides = getRecurringOverrides();
   const settings = getRecurringSettings(); // per-merchant alias / expected-amount overrides
@@ -1328,18 +1360,7 @@ export function suggestedRecurrings() {
       : null;
   const todayMs = new Date().getTime();
 
-  type Suggestion = {
-    merchant: string; // the canonical descriptor — the key for settings / Add
-    displayName: string; // alias override if set, else merchant
-    reason: "variable" | "new";
-    cadence: string | null;
-    avgAmount: number; // expected-amount override if set, else stable current price / median if variable
-    count: number;
-    lastDate: string;
-    category: { name: string; color: string; icon: string } | null;
-    aliases: string[]; // other descriptors of the same vendor, folded in on Add
-  };
-  const out: Omit<Suggestion, "aliases" | "displayName">[] = [];
+  const out: Omit<RecurringSuggestion, "aliases" | "displayName">[] = [];
 
   for (const [merchant, txs] of byMerchant) {
     if (overrides[merchant]) continue; // already forced or dismissed
@@ -1405,7 +1426,7 @@ export function suggestedRecurrings() {
   // (e.g. "2d Vectrenenergy Util Paymt" → "… Igc Ach Dr") before it ever became a
   // confirmed recurring — so they show as ONE suggestion whose Add folds in the
   // aliases. Greedy by name affinity; the first (highest-count) is the primary.
-  const clustered: Omit<Suggestion, "displayName">[] = [];
+  const clustered: Omit<RecurringSuggestion, "displayName">[] = [];
   for (const s of out) {
     const hit = clustered.find((c) => nameAffinity(c.merchant, s.merchant) >= LOW_MATCH);
     if (hit) {
@@ -1424,7 +1445,7 @@ export function suggestedRecurrings() {
 
   // Apply per-merchant overrides: a user-set name (alias) and/or expected amount,
   // editable from the suggestion row before it's even Added.
-  return clustered.map((s): Suggestion => {
+  return clustered.map((s): RecurringSuggestion => {
     const st = settings[s.merchant];
     return {
       ...s,
