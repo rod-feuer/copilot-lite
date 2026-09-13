@@ -4,6 +4,8 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { RowMenu, RowMenuItem } from "@/components/RowMenu";
+import { Popover } from "@/components/Popover";
+import { NewCategoryForm } from "@/components/NewCategoryForm";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -150,6 +152,13 @@ export default function RecurringsPage() {
   function changeMonth(m: string) {
     setMonth(m);
     load(m);
+  }
+
+  // A category created from a row's dropdown: add it to the pickers, then
+  // apply it to that row (which reloads the month).
+  async function addCategoryFromRow(cat: Cat, r: Rec) {
+    setCats((cs) => [...cs, cat]);
+    await recategorize(r, cat.id);
   }
 
   async function recategorize(r: Rec, categoryId: number | null) {
@@ -343,6 +352,7 @@ export default function RecurringsPage() {
             recs={shownBills}
             cats={cats}
             onRecategorize={recategorize}
+            onNewCategory={addCategoryFromRow}
             onMute={markNotRecurring}
             onEnd={setEnded}
             onSaveSettings={saveSettings}
@@ -353,6 +363,7 @@ export default function RecurringsPage() {
             recs={shownIncome}
             cats={cats}
             onRecategorize={recategorize}
+            onNewCategory={addCategoryFromRow}
             onMute={markNotRecurring}
             onEnd={setEnded}
             onSaveSettings={saveSettings}
@@ -478,6 +489,7 @@ function BillList({
   dim,
   cats,
   onRecategorize,
+  onNewCategory,
   onMute,
   onEnd,
   onSaveSettings,
@@ -488,12 +500,16 @@ function BillList({
   dim?: boolean;
   cats?: Cat[];
   onRecategorize?: (r: Rec, categoryId: number | null) => void;
+  onNewCategory?: (cat: Cat, r: Rec) => void; // created from the row's dropdown → apply to the row
   onMute?: (merchant: string) => void;
   onEnd?: (merchant: string, ended: boolean) => void;
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
   onOpen?: (merchant: string) => void;
 }) {
   const shelfActive = useShelfActive();
+  // "+ New category…" chosen in a row's dropdown: the create form opens under
+  // that dropdown and the new category is applied to that row on Add.
+  const [newCatFor, setNewCatFor] = useState<{ rec: Rec; anchor: DOMRect } | null>(null);
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize && onMute);
 
@@ -606,9 +622,13 @@ function BillList({
                     <select
                       value={r.categoryId ?? ""}
                       onClick={(e) => e.stopPropagation()}
-                      onChange={(e) =>
-                        onRecategorize(r, e.target.value ? Number(e.target.value) : null)
-                      }
+                      onChange={(e) => {
+                        if (e.target.value === "__new__") {
+                          setNewCatFor({ rec: r, anchor: e.currentTarget.getBoundingClientRect() });
+                          return;
+                        }
+                        onRecategorize(r, e.target.value ? Number(e.target.value) : null);
+                      }}
                       aria-label="Category"
                       className="absolute inset-0 w-full cursor-pointer opacity-0"
                     >
@@ -618,6 +638,7 @@ function BillList({
                           {c.icon} {c.name}
                         </option>
                       ))}
+                      <option value="__new__">+ New category…</option>
                     </select>
                   </span>
                 ) : (
@@ -655,6 +676,25 @@ function BillList({
           </Fragment>
         ))}
       </div>
+      {newCatFor && onNewCategory && (
+      <Popover
+        anchor={newCatFor.anchor}
+        label="New category"
+        onClose={() => setNewCatFor(null)}
+      >
+        <div className="mb-2 text-xs font-medium text-[var(--muted)]">
+          New category for {newCatFor.rec.displayName}
+        </div>
+        <NewCategoryForm
+          autoFocus
+          onCreated={(cat) => {
+            const rec = newCatFor.rec;
+            setNewCatFor(null);
+            onNewCategory(cat, rec);
+          }}
+        />
+      </Popover>
+      )}
     </div>
   );
 }
