@@ -1,13 +1,5 @@
-// Throwaway DB before anything opens a connection (see tests/db.test.ts).
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs";
-process.env.COPILOT_DB_PATH = path.join(
-  os.tmpdir(),
-  `copilot-inv-${process.pid}-${Date.now()}.db`
-);
-
-import { test, before, beforeEach, after } from "node:test";
+import { cleanDbBeforeEach, addCat, tx, daysAgo, daysFromNow } from "./helpers"; // first: points the DB at a throwaway file
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import {
   getDb,
@@ -60,58 +52,13 @@ import { importPlaidTransactions } from "../src/lib/plaid";
 
 let CAT: number, CAT_INC: number, CAT_EXC: number, CAT_X: number;
 
-function addCat(name: string, kind = "expense", excl = 0): number {
-  const info = getDb()
-    .prepare(
-      "INSERT INTO categories (name, color, icon, kind, excludeFromTotals) VALUES (?,?,?,?,?)"
-    )
-    .run(name, "#888", "•", kind, excl);
-  return Number(info.lastInsertRowid);
-}
-type TxOpts = {
-  amount: number;
-  date?: string;
-  effectiveDate?: string | null;
-  categoryId?: number | null;
-  excluded?: 0 | 1;
-  account?: string;
-  hash?: string;
-  recurringId?: number | null;
-};
-let hashSeq = 0;
-function tx(merchant: string, o: TxOpts) {
-  getDb()
-    .prepare(
-      `INSERT INTO transactions (date, effectiveDate, merchant, amount, categoryId, account, excluded, recurringId, source, hash)
-       VALUES (@date, @effectiveDate, @merchant, @amount, @categoryId, @account, @excluded, @recurringId, 'test', @hash)`
-    )
-    .run({
-      date: o.date ?? "2025-06-15",
-      effectiveDate: o.effectiveDate ?? null,
-      merchant,
-      amount: o.amount,
-      categoryId: o.categoryId ?? null,
-      account: o.account ?? "Checking",
-      excluded: o.excluded ?? 0,
-      recurringId: o.recurringId ?? null,
-      hash: o.hash ?? `h${hashSeq++}`,
-    });
-}
-
 before(() => {
   CAT = addCat("Groceries");
   CAT_INC = addCat("Income", "income");
   CAT_EXC = addCat("Transfers", "expense", 1); // excludeFromTotals
   CAT_X = addCat("Home");
 });
-beforeEach(() => {
-  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "merchant_cleanup_log", "recurring_tx_exclusions", "merchant_merge_dismissals", "budgets"])
-    getDb().exec(`DELETE FROM ${t}`);
-});
-after(() => {
-  const p = process.env.COPILOT_DB_PATH!;
-  for (const ext of ["", "-wal", "-shm"]) fs.rmSync(p + ext, { force: true });
-});
+cleanDbBeforeEach(["categories"]); // categories are created once in before()
 
 test("merchantSummary carries next-due and match-rule overrides, and whether any override exists", () => {
   // WHY: the recurrings page's inline editor was the only place next-due and
@@ -422,26 +369,21 @@ test("ending a subscription drops it from expected outflow immediately, and reac
   // Dates are relative to now, not pinned: the first assertion only means
   // something while the bill is still active, and pinned dates age past that
   // window and start failing on a date nobody chose.
-  const iso = (offsetDays: number) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - offsetDays);
-    return d.toISOString().slice(0, 10);
-  };
-  const lastCharge = iso(5);
-  for (const d of [iso(95), iso(65), iso(35), lastCharge])
+  const lastCharge = daysAgo(5);
+  for (const d of [daysAgo(95), daysAgo(65), daysAgo(35), lastCharge])
     tx(M, { amount: -16, date: d, categoryId: CAT });
   detectRecurrings();
   const active = recurringMonthlyByCategory()[CAT] ?? 0;
   assert.ok(active >= 16, `expected the bill to count while active, got ${active}`);
 
-  setRecurringSetting(M, { endedDate: iso(4) }); // after the last charge → ended
+  setRecurringSetting(M, { endedDate: daysAgo(4) }); // after the last charge → ended
   assert.equal(
     recurringMonthlyByCategory()[CAT] ?? 0,
     0,
     "an ended subscription stops counting toward expected outflow"
   );
 
-  setRecurringSetting(M, { endedDate: iso(6) }); // before the last charge → resubscribed
+  setRecurringSetting(M, { endedDate: daysAgo(6) }); // before the last charge → resubscribed
   assert.ok(
     (recurringMonthlyByCategory()[CAT] ?? 0) >= 16,
     "a charge after the end date reactivates the bill"
@@ -454,22 +396,17 @@ test("Reset all clears overrides but keeps a subscription ended", () => {
   // endedDate, so resetting a canceled subscription silently reactivated it and
   // its amount reappeared in expected outflow. Ended is a fact, not a tuning.
   const M = "Streamflix";
-  const iso = (offsetDays: number) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - offsetDays);
-    return d.toISOString().slice(0, 10);
-  };
-  for (const d of [iso(95), iso(65), iso(35), iso(5)])
+  for (const d of [daysAgo(95), daysAgo(65), daysAgo(35), daysAgo(5)])
     tx(M, { amount: -16, date: d, categoryId: CAT });
   detectRecurrings();
-  setRecurringSetting(M, { alias: "Stream Flix", expectedAmount: 18, endedDate: iso(4) });
+  setRecurringSetting(M, { alias: "Stream Flix", expectedAmount: 18, endedDate: daysAgo(4) });
   assert.equal(recurringMonthlyByCategory()[CAT] ?? 0, 0, "ended → not counted");
 
   resetRecurringOverrides(M);
   const s = getRecurringSettings()[M];
   assert.equal(s.alias, null, "rename cleared");
   assert.equal(s.expectedAmount, null, "expected amount cleared");
-  assert.equal(s.endedDate, iso(4), "ended date survives a reset");
+  assert.equal(s.endedDate, daysAgo(4), "ended date survives a reset");
   assert.equal(
     recurringMonthlyByCategory()[CAT] ?? 0,
     0,
@@ -483,10 +420,7 @@ test("an excluded charge is not evidence of a bill and never joins a series", ()
   // median down and a monthly bill read as biweekly — 2.17× its real monthly
   // share in the category baseline (Chubb, real data). Transfers and reimbursed
   // one-offs the user excluded are the same class: not spending, not a bill.
-  const iso = (offsetDays: number) => {
-    const d = new Date(); d.setUTCDate(d.getUTCDate() - offsetDays); return d.toISOString().slice(0, 10);
-  };
-  for (const d of [iso(95), iso(65), iso(35), iso(5)]) {
+  for (const d of [daysAgo(95), daysAgo(65), daysAgo(35), daysAgo(5)]) {
     tx("Gym", { amount: -50, date: d, categoryId: CAT });
     tx("Gym", { amount: -120, date: d, categoryId: CAT, excluded: 1 }); // same-day excluded twin
   }
@@ -520,17 +454,14 @@ test("a series that has gone quiet is not an upcoming bill, even with a next-due
   // projection it feeds) did not. A stale series normally falls out of the
   // window on its own, but a user-set next-due or cadence override could put
   // it back — so the projection counted a bill that had stopped.
-  const iso = (offsetDays: number) => {
-    const d = new Date(); d.setUTCDate(d.getUTCDate() + offsetDays); return d.toISOString().slice(0, 10);
-  };
   // Live: monthly, last charged 5 days ago. Quiet: monthly, last charged 200 days ago.
-  for (const d of [-95, -65, -35, -5]) tx("Power Co", { amount: -100, date: iso(d), categoryId: CAT });
-  for (const d of [-290, -260, -230, -200]) tx("Old Box", { amount: -30, date: iso(d), categoryId: CAT });
+  for (const d of [95, 65, 35, 5]) tx("Power Co", { amount: -100, date: daysAgo(d), categoryId: CAT });
+  for (const d of [290, 260, 230, 200]) tx("Old Box", { amount: -30, date: daysAgo(d), categoryId: CAT });
   detectRecurrings();
   // Both get a next-due override 10 days from now, inside the window.
-  setRecurringSetting("Power Co", { nextDate: iso(10) });
-  setRecurringSetting("Old Box", { nextDate: iso(10) });
-  const names = upcomingRecurringExpenses(iso(1), iso(30)).map((u) => u.merchant);
+  setRecurringSetting("Power Co", { nextDate: daysFromNow(10) });
+  setRecurringSetting("Old Box", { nextDate: daysFromNow(10) });
+  const names = upcomingRecurringExpenses(daysFromNow(1), daysFromNow(30)).map((u) => u.merchant);
   assert.ok(names.includes("Power Co"), "a live series with a due date in the window is upcoming");
   assert.ok(!names.includes("Old Box"), "a quiet series is not, whatever its override says");
 });
@@ -541,14 +472,9 @@ test("a quarterly bill counts one third per month toward the category baseline",
   // so a $300 quarterly bill was counted as $300 every month (3× too high)
   // and a semiannual one 6× too high. Every cadence the detector can emit must
   // have an explicit per-month factor.
-  const iso = (offsetDays: number) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - offsetDays);
-    return d.toISOString().slice(0, 10);
-  };
-  for (const d of [iso(275), iso(184), iso(93), iso(2)]) // 91-day gaps → quarterly
+  for (const d of [daysAgo(275), daysAgo(184), daysAgo(93), daysAgo(2)]) // 91-day gaps → quarterly
     tx("Water District", { amount: -300, date: d, categoryId: CAT });
-  for (const d of [iso(366), iso(184), iso(2)]) // 182-day gaps → semiannual
+  for (const d of [daysAgo(366), daysAgo(184), daysAgo(2)]) // 182-day gaps → semiannual
     tx("Car Insurance", { amount: -600, date: d, categoryId: CAT_X });
   detectRecurrings();
   const byCat = recurringMonthlyByCategory();
@@ -763,14 +689,12 @@ test("categorizeByHistory reuses a vendor's dominant past category across linked
 });
 
 test("a charge joining a categorized recurring inherits the recurring's modal category", () => {
-  const day = 86_400_000;
-  const iso = (off: number) => new Date(Date.now() - off * day).toISOString().slice(0, 10);
   // Three categorized monthly charges + a newest one that's uncategorized (e.g.
   // it posted under a new descriptor with no matching rule).
-  tx("Acme Utility", { amount: -50, date: iso(90), categoryId: CAT });
-  tx("Acme Utility", { amount: -50, date: iso(60), categoryId: CAT });
-  tx("Acme Utility", { amount: -50, date: iso(30), categoryId: CAT });
-  tx("Acme Utility", { amount: -50, date: iso(0), categoryId: null });
+  tx("Acme Utility", { amount: -50, date: daysAgo(90), categoryId: CAT });
+  tx("Acme Utility", { amount: -50, date: daysAgo(60), categoryId: CAT });
+  tx("Acme Utility", { amount: -50, date: daysAgo(30), categoryId: CAT });
+  tx("Acme Utility", { amount: -50, date: daysAgo(0), categoryId: null });
 
   const r = detectRecurrings().find((x) => x.merchant === "Acme Utility");
   assert.ok(r, "the series is detected");
@@ -787,18 +711,13 @@ test("a stale (renamed/stopped) recurring stops counting toward the category bas
   // series, or it double-counts with its successor — the Better Bodies / Better
   // Bodies Inc gym bug, where one $59 membership read as $145. This is the same
   // active filter the shelf's "upcoming this month" already applies.
-  const iso = (offsetDays: number) => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - offsetDays);
-    return d.toISOString().slice(0, 10);
-  };
   const ins = (merchant: string, amt: number, lastOffset: number) =>
     getDb()
       .prepare(
         `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
          VALUES (?, ?, ?, 'monthly', ?, ?, 6)`
       )
-      .run(merchant, CAT_X, amt, iso(lastOffset), iso(lastOffset));
+      .run(merchant, CAT_X, amt, daysAgo(lastOffset), daysAgo(lastOffset));
   ins("Gym Inc", -59, 5); // live: charged 5 days ago
   ins("Gym", -52, 200); // dead: renamed away, silent for 200 days
 
@@ -843,9 +762,7 @@ test("nameAffinity matches vendor renames but rejects distinct same-prefix vendo
 });
 
 test("recurring-match picks the renamed vendor by name, not a same-amount decoy", () => {
-  const day = 86_400_000;
-  const isoOff = (d: number) => new Date(Date.now() - d * day).toISOString().slice(0, 10);
-  const last = isoOff(28); // recurring's last charge 28 days ago → active monthly
+  const last = daysAgo(28); // recurring's last charge 28 days ago → active monthly
   const mkRec = (merchant: string) =>
     Number(
       getDb()
@@ -853,17 +770,17 @@ test("recurring-match picks the renamed vendor by name, not a same-amount decoy"
           `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
            VALUES (?,?,?,?,?,?,?)`
         )
-        .run(merchant, CAT, -100, "monthly", last, isoOff(-2), 3).lastInsertRowid
+        .run(merchant, CAT, -100, "monthly", last, daysAgo(-2), 3).lastInsertRowid
     );
   const rid = mkRec("Acme Power Bill");
-  tx("Acme Power Bill", { amount: -100, date: isoOff(88), categoryId: CAT, recurringId: rid });
-  tx("Acme Power Bill", { amount: -105, date: isoOff(58), categoryId: CAT, recurringId: rid });
+  tx("Acme Power Bill", { amount: -100, date: daysAgo(88), categoryId: CAT, recurringId: rid });
+  tx("Acme Power Bill", { amount: -105, date: daysAgo(58), categoryId: CAT, recurringId: rid });
   tx("Acme Power Bill", { amount: -100, date: last, categoryId: CAT, recurringId: rid });
   // A decoy bill: same amount and cadence, unrelated name.
   const did = mkRec("Zeta Water");
   tx("Zeta Water", { amount: -100, date: last, categoryId: CAT, recurringId: did });
   // The orphan: a new descriptor for Acme, uncategorized, posting ~1 month later.
-  tx("Acme Power", { amount: -102, date: isoOff(0), categoryId: null });
+  tx("Acme Power", { amount: -102, date: daysAgo(0), categoryId: null });
 
   const g = recurringMatchSuggestions(new Set()).find((x) =>
     x.variants.some((v) => v.merchant === "Acme Power")
@@ -874,22 +791,20 @@ test("recurring-match picks the renamed vendor by name, not a same-amount decoy"
 });
 
 test("a borderline name match surfaces as a low-confidence suggestion", () => {
-  const day = 86_400_000;
-  const iso = (off: number) => new Date(Date.now() - off * day).toISOString().slice(0, 10);
-  const last = iso(28);
+  const last = daysAgo(28);
   const rid = Number(
     getDb()
       .prepare(
         `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
          VALUES (?,?,?,?,?,?,?)`
       )
-      .run("Metro Fibernet L Metfibenet", CAT, -93, "monthly", last, iso(-2), 2).lastInsertRowid
+      .run("Metro Fibernet L Metfibenet", CAT, -93, "monthly", last, daysAgo(-2), 2).lastInsertRowid
   );
-  tx("Metro Fibernet L Metfibenet", { amount: -93, date: iso(58), categoryId: CAT, recurringId: rid });
+  tx("Metro Fibernet L Metfibenet", { amount: -93, date: daysAgo(58), categoryId: CAT, recurringId: rid });
   tx("Metro Fibernet L Metfibenet", { amount: -93, date: last, categoryId: CAT, recurringId: rid });
   // Orphan "Metronet" scores ~0.84 against "Metro Fibernet…" — same vendor to a
   // human, below the 0.9 auto-bar.
-  tx("Metronet", { amount: -93, date: iso(0), categoryId: null });
+  tx("Metronet", { amount: -93, date: daysAgo(0), categoryId: null });
 
   const g = recurringMatchSuggestions(new Set()).find((x) =>
     x.variants.some((v) => v.merchant === "Metronet")
@@ -899,22 +814,20 @@ test("a borderline name match surfaces as a low-confidence suggestion", () => {
 });
 
 test("multiple stray descriptors of one vendor collapse into a single suggestion", () => {
-  const day = 86_400_000;
-  const isoOff = (d: number) => new Date(Date.now() - d * day).toISOString().slice(0, 10);
-  const last = isoOff(28);
+  const last = daysAgo(28);
   const rid = Number(
     getDb()
       .prepare(
         `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
          VALUES (?,?,?,?,?,?,?)`
       )
-      .run("Upgrade, Inc. Payment", CAT, -100, "monthly", last, isoOff(-2), 3).lastInsertRowid
+      .run("Upgrade, Inc. Payment", CAT, -100, "monthly", last, daysAgo(-2), 3).lastInsertRowid
   );
-  tx("Upgrade, Inc. Payment", { amount: -100, date: isoOff(58), categoryId: CAT, recurringId: rid });
+  tx("Upgrade, Inc. Payment", { amount: -100, date: daysAgo(58), categoryId: CAT, recurringId: rid });
   tx("Upgrade, Inc. Payment", { amount: -100, date: last, categoryId: CAT, recurringId: rid });
   // Two different stray descriptors, both Upgrade, both posting this cycle.
-  tx("Upgrade", { amount: -100, date: isoOff(1), categoryId: null });
-  tx("Upgrade, Inc. Co Entry Descr", { amount: -100, date: isoOff(2), categoryId: null });
+  tx("Upgrade", { amount: -100, date: daysAgo(1), categoryId: null });
+  tx("Upgrade, Inc. Co Entry Descr", { amount: -100, date: daysAgo(2), categoryId: null });
 
   const s = recurringMatchSuggestions(new Set());
   const up = s.filter((g) => g.canonical === "Upgrade, Inc. Payment");

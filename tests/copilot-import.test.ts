@@ -1,22 +1,8 @@
-// Throwaway DB before anything opens a connection (this importer wipes the DB,
-// so it can't share the invariants suite's fixtures — own file, own DB).
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs";
-process.env.COPILOT_DB_PATH = path.join(
-  os.tmpdir(),
-  `copilot-import-${process.pid}-${Date.now()}.db`
-);
-
-import { test, after } from "node:test";
+import "./helpers"; // first: points the DB at a throwaway file (this importer wipes it itself)
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb } from "../src/lib/db";
 import { importCopilotCsv } from "../src/lib/copilot-import";
-
-after(() => {
-  const p = process.env.COPILOT_DB_PATH!;
-  for (const ext of ["", "-wal", "-shm"]) fs.rmSync(p + ext, { force: true });
-});
 
 test("copilot import skips pending rows so they can't double-count when posted", () => {
   // Pending charges are transient — the posted version arrives later under its
