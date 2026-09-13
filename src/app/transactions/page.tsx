@@ -9,12 +9,12 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { RowMenu, RowMenuItem, RowMenuDivider } from "@/components/RowMenu";
 import { CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
@@ -911,92 +911,15 @@ function RowActionsMenu({
   onSplit: () => void;
   onUndoSplit: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    const onDown = (e: globalThis.MouseEvent) => {
-      const node = e.target as Node;
-      if (btnRef.current?.contains(node) || menuRef.current?.contains(node)) return;
-      close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("scroll", close, true); // any ancestor scroll
-    window.addEventListener("resize", close);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  function toggle(e: ReactMouseEvent) {
-    e.stopPropagation();
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    const r = btnRef.current!.getBoundingClientRect();
-    setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
-    setOpen(true);
-  }
-
   // Vendor-level: if the vendor has any recurring relationship (in/out), offer to
   // make the whole vendor not-recurring; otherwise offer to mark it recurring.
   const isRecurring = recState !== "none";
 
-  const item = (label: string, fn: () => void) => (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setOpen(false);
-        fn();
-      }}
-      className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[var(--background)]"
-    >
-      {label}
-    </button>
-  );
-  const divider = <div className="my-1 border-t border-[var(--border)]" />;
+  const item = (label: string, fn: () => void) => <RowMenuItem label={label} onSelect={fn} />;
+  const divider = <RowMenuDivider />;
 
   return (
-    <>
-      {/* Fixed-width trailing column (mirrored by a w-7 spacer in the day
-          header so totals align); glyph biased right so its edge matches the
-          avatar's left gutter. */}
-      <Tooltip label="More actions" onlyIfTruncated={false} className="flex w-6 shrink-0 items-center justify-end">
-        <button
-          ref={btnRef}
-          onClick={toggle}
-          aria-label="More actions"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          className={`rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
-            open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
-          }`}
-        >
-          ⋯
-        </button>
-      </Tooltip>
-      {open &&
-        pos &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="menu"
-            onClick={(e) => e.stopPropagation()}
-            style={{ position: "fixed", top: pos.top, right: pos.right }}
-            className="z-50 w-48 rounded-xl border border-[var(--border)] bg-card p-1 shadow-lg"
-          >
+    <RowMenu>
             {item(hasDateOverride ? "Change date" : "Set date", onSetDate)}
             {item(hasNote ? "Edit note" : "Add note", onEditNote)}
             {splitParts > 0
@@ -1020,10 +943,7 @@ function RowActionsMenu({
                 )}
               </>
             )}
-          </div>,
-          document.body
-        )}
-    </>
+    </RowMenu>
   );
 }
 
