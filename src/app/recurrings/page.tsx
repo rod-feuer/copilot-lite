@@ -13,7 +13,7 @@ import { SearchBox } from "@/components/SearchBox";
 import { getJson, postJson } from "@/lib/http";
 import { CADENCE_DAYS } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
-import { usd, shortDate, defaultMonth } from "@/lib/format";
+import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
 
 type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
 
@@ -262,7 +262,7 @@ export default function RecurringsPage() {
     }
   }
 
-  const isCurrentMonth = month === new Date().toISOString().slice(0, 7);
+  const isCurrentMonth = isCurrentMonthOf(month);
   const byDue = (a: Rec, b: Rec) => a.dueDate.localeCompare(b.dueDate);
 
   // Upcoming only applies to the live month (a past month is already settled).
@@ -373,10 +373,11 @@ export default function RecurringsPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-semibold tracking-tight">
+                    {isCurrentMonth ? "≈ " : ""}
                     {usd(leftToPay, { cents: false })}
                   </div>
                   <div className="stat-label">
-                    {isCurrentMonth ? "left to pay" : "remaining"}
+                    {isCurrentMonth ? "left to pay (expected)" : "remaining"}
                   </div>
                 </div>
               </div>

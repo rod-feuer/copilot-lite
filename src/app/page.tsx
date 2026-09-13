@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { usd, shortDate, defaultMonth } from "@/lib/format";
+import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import Shell from "@/components/Shell";
@@ -240,7 +240,7 @@ export default function DashboardPage() {
               }
             />
             <Stat
-              label="Expenses"
+              label={data.projectedNet != null ? "Expenses so far" : "Expenses"}
               value={usd(data.expenses, { cents: false })}
               tone="neutral"
               href={`/transactions?month=${month}&type=expense`}
@@ -381,7 +381,11 @@ export default function DashboardPage() {
                 <SeeAll href="/categories" />
               </div>
               {data.budget && (
-                <BudgetSummary budget={data.budget} totalExpenses={data.expenses} />
+                <BudgetSummary
+                  budget={data.budget}
+                  totalExpenses={data.expenses}
+                  partial={isCurrentMonth(month)}
+                />
               )}
               <CategoryBars rows={data.byCategory} month={month} />
             </div>
@@ -1027,9 +1031,11 @@ function CategoryBars({
 function BudgetSummary({
   budget,
   totalExpenses,
+  partial,
 }: {
   budget: { total: number; spent: number; projected: number | null };
   totalExpenses: number;
+  partial: boolean; // the month on screen is still in progress
 }) {
   const pct = budget.total > 0 ? Math.round((budget.spent / budget.total) * 100) : 0;
   const overNow = budget.spent > budget.total;
@@ -1063,7 +1069,7 @@ function BudgetSummary({
         />
       </div>
       <div className="mt-1.5 text-xs text-[var(--muted)]">
-        {pct}% used
+        {pct}% used{partial ? " so far" : ""}
         {budget.projected != null && projDelta != null ? (
           <>
             {" · "}projected {usd(budget.projected, { cents: false })}{" "}

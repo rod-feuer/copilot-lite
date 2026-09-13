@@ -28,7 +28,7 @@ import { CategorizeQueue } from "@/components/CategorizeQueue";
 import { SearchBox } from "@/components/SearchBox";
 import { Tooltip } from "@/components/Tooltip";
 import { postJson, patchJson } from "@/lib/http";
-import { usd, longDate, shortDate, defaultMonth } from "@/lib/format";
+import { usd, longDate, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { createLatestGuard } from "@/lib/latestGuard";
 
 type Tx = {
@@ -576,7 +576,7 @@ export default function TransactionsPage() {
   return (
     <Shell
       title="Transactions"
-      subtitle={`${totalCount} shown · ${usd(netTotal, { sign: true })}`}
+      subtitle={`${totalCount} shown · net ${usd(netTotal, { sign: true })}${isCurrentMonth(month) ? " so far" : ""}`}
       actions={
         <>
           <MonthPicker months={months} value={month} onChange={setMonth} allowAll />

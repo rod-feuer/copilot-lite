@@ -7,7 +7,7 @@ import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
-import { usd, defaultMonth } from "@/lib/format";
+import { usd, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { getJson, patchJson } from "@/lib/http";
 import { CATEGORY_EMOJIS } from "@/lib/emoji";
 import { Tooltip } from "@/components/Tooltip";
@@ -237,6 +237,7 @@ export default function CategoriesPage() {
     >
       <BudgetSummary
         cats={cats}
+        month={month}
         filter={filter}
         onFilter={(f) => setFilter((cur) => (cur === f ? null : f))}
       />
@@ -364,13 +365,18 @@ export default function CategoriesPage() {
 // like-for-like; unbudgeted spend is surfaced separately rather than distorting it.
 function BudgetSummary({
   cats,
+  month,
   filter,
   onFilter,
 }: {
   cats: Cat[];
+  month: string;
   filter: "over" | "unbudgeted" | null;
   onFilter: (f: "over" | "unbudgeted") => void;
 }) {
+  // Mid-month, "spent" and "left" are month-to-date against a whole-month
+  // budget; say so rather than stating "$X left" as settled.
+  const partial = isCurrentMonth(month);
   const expense = cats.filter((c) => c.kind === "expense" && !c.excludeFromTotals);
   if (expense.length === 0) return null;
   const budgeted = expense.filter((c) => c.budget != null);
@@ -419,7 +425,7 @@ function BudgetSummary({
             {usd(spent, { cents: false })}
           </div>
           <div className="stat-label">
-            spent of {usd(budget, { cents: false })} budgeted
+            spent{partial ? " so far" : ""} of {usd(budget, { cents: false })} budgeted
           </div>
         </div>
         <div className="text-right">
@@ -430,7 +436,10 @@ function BudgetSummary({
           >
             {usd(Math.abs(remaining), { cents: false })}
           </div>
-          <div className="stat-label">{over ? "over budget" : "left"}</div>
+          <div className="stat-label">
+            {over ? "over budget" : "left"}
+            {partial ? " so far" : ""}
+          </div>
         </div>
       </div>
       <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]">
@@ -674,7 +683,7 @@ function Group({
                       {remaining >= 0
                         ? `${usd(remaining, { cents: false })} left`
                         : `${usd(-remaining, { cents: false })} over`}
-                      {annual ? " this year" : ""}
+                      {annual ? " this year" : isCurrentMonth(month) ? " so far" : ""}
                       {recur > 0 && (
                         <Tooltip
                           label={

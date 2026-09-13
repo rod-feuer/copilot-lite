@@ -16,6 +16,12 @@ export function usd(
 // so future-dated transactions don't make the app land on a month that hasn't
 // started yet. Falls back to the most recent month if all data is future-dated.
 // `months` is expected sorted descending, as /api/months returns it.
+// The viewed month is the calendar month in progress — its figures are partial
+// and every surface qualifies them ("so far", "≈") rather than stating them flat.
+export function isCurrentMonth(month: string): boolean {
+  return month === new Date().toISOString().slice(0, 7);
+}
+
 export function defaultMonth(months: string[]): string {
   const now = new Date();
   const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
