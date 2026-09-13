@@ -76,7 +76,7 @@ Why: The dashboard showed Expenses $19,421 vs a budget card $19,162 with no link
 **12. Surface buried edits as an inline hover affordance** · *Home: playbook*
 Trigger: A user can't find how to change something ("no way to change the name") even though the capability exists inside an Edit/settings panel.
 Move: Add a hover-revealed inline edit at the point of reading (✎ label→input, or click-to-edit value; Enter/blur saves, Esc cancels) while keeping the panel; extract a reusable field that `stopPropagation` so the row's own click still fires.
-Why: Renaming was "buried" in the Edit panel (commit 672ed7f); the inline field had to `stopPropagation` to coexist with whole-row click (fdac231). *Drift note (2026-09-13): the shared `InlineEditField` from fdac231 no longer exists — six independent click-to-edit implementations do (see the code-review report, Pass 1b). The move still stands; the "extract a reusable field" half is unfulfilled.*
+Why: Renaming was "buried" in the Edit panel (commit 672ed7f); the inline field had to `stopPropagation` to coexist with whole-row click (fdac231). *History: the shared field from fdac231 was later inlined into six independent copies that disagreed on Escape and flush; as of #78 (2026-09-13) the reusable field is back as `InlineEdit` / `CommitInput` over one `useCommitInput` hook (src/components), and every rename and edit-in-place input uses it.*
 
 ---
 
