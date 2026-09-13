@@ -38,7 +38,7 @@ must only ever run against a temp DB.
 - [x] merchant normalization + migration (reversible)
 - [x] paid-matching (exact + canonical/linked)
 - [x] merchant linking merges into one recurring
-- [x] exclude-by-row + excludeFromTotals category (categoriesWithTotals + dashboard)
+- [x] exclude-by-row + excludeFromTotals category (filtered by `dashboard` and `transactionsSummary`; `categoriesWithTotals` lists excluded categories on purpose — the Excluded group — and only sorts on the flag)
 - [x] auto-split: children sum to parent, parent excluded
 - [x] effective-date routes a charge to the right month (COALESCE)
 - [x] dashboard net == income − expenses, all figures finite
@@ -52,21 +52,32 @@ must only ever run against a temp DB.
 
 ### B. Display consistency (structural — Tier 3)
 - [x] one resolver `merchantDisplayName()` is the single source of truth; drawer,
-      transactions list, dashboard recent + upcoming all use it
+      transactions list, dashboard recent use it. Recurrings / upcoming / suggestions
+      use an equivalent inline form (`settings[merchant]?.alias ?? merchant`) — equivalent
+      because the recurrings table is keyed by canonical merchant, but not the resolver.
 - [ ] category icon/color + recurring ↻ status consistent across drawer / list / recurrings
 
 ### C. Robustness
-- [x] No silent write `fetch()` — `postJson`/`patchJson` helpers (tested) surface failures via error toast across Recurrings, Transactions, and the drawer (no more false-success toasts).
-- [~] Empty / loading / error states — dashboard `load` no longer hangs the spinner on a failed/empty read (try/finally). Remaining (visual empty/error state design per page) → Human-review.
+- [x] No silent write `fetch()` — `postJson`/`patchJson`/`deleteJson` helpers surface failures via error toast across Recurrings, Transactions, Categories, and the drawer (no more false-success toasts). Only `postJson` has a unit test; `getJson` (reads) throws on non-2xx too.
+- [x] Empty / loading / error states — every page and the shelf: loading skeleton, "Couldn't load — Retry" on a failed read, the empty state only when truly empty (#55). Guarded by `npm run test:ui`.
 - [x] No NaN/Infinity in computed figures (dashboard/categories guarded + tested; progress bar already gated on totalBills>0)
 
 ### D. UX / a11y / hygiene
-- [ ] Interactive rows keyboard-accessible (button semantics / aria)
+- [x] Interactive rows keyboard-accessible — `rowButtonProps` (role, tabIndex, Enter/Space) on transactions, categories, recurrings, and shelf rows (#57). Guarded by `npm run test:ui`. Nested controls keep their click guards.
 - [ ] Formatting consistent with conventions (decimals, signs, dark-mode tokens)
-- [ ] Gate clean (tsc / eslint / tests / smoke) — standing requirement
+- [ ] Gate clean (tsc / eslint / tests / test:clock / smoke / test:ui / build) — standing requirement
 - [ ] No dead code / unused exports introduced
 
-## Loop status (paused 2026-06-08)
+## Loop status
+
+**2026-09-13 update.** A three-pass code review (structural, DESIGN.md checklist,
+test-intent) landed #53–#65: cadence-factor and detector defects, honest load states,
+un-gated actions, keyboard rows, partial-month qualifiers, statement-mode overlays,
+undo split, test precision, and `npm run test:ui` (35 browser checks, in CI). Suite:
+94 tests + 115-clock sweep + 35 UI checks. The two human-review items below that were
+"eye-only" (error states, keyboard rows) are now machine-verified and struck.
+
+### Original status (paused 2026-06-08)
 The **gate-verifiable** rubric is essentially complete: 27 tests (`npm test`) cover the
 money math (detection, normalization, paid-matching, linking, exclude/split, effective-
 date, budgets, dedup, suggestions, overrides) + the http helper; display name is one
@@ -75,11 +86,8 @@ dashboard spinner can't hang. The remaining items below are **eye-verifiable** a
 human at the screen — the loop stopped here rather than autonomously pass them.
 
 ## Human-review list (loop can't self-verify — flag, don't pass)
-- **Visual empty / error states** per page (e.g. dashboard when a read fails → currently
-  shows skeleton; design a real "couldn't load" state). Loading states exist; error UI doesn't.
-- **a11y:** Recurrings rows AND Transactions rows are clickable `<div>`/`<li onClick>` (not
-  keyboard-focusable). Needs role/tabindex/keydown or a rethink (they contain nested controls,
-  so can't be a plain `<button>`).
+- ~~Visual empty / error states per page~~ — done (#55), verified by `test:ui`.
+- ~~a11y: rows not keyboard-focusable~~ — done (#57), verified by `test:ui`.
 - Drawer / panel visual layout + spacing; dark-mode appearance of new UI.
 - Formatting consistency (decimals/signs) — spot-check across pages.
 - That an alias/rename *looks* right in every surface (screenshot).

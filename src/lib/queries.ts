@@ -1035,7 +1035,8 @@ export function getBudgetsFull(): Record<number, { amount: number; period: Budge
 
 // Monthly-EQUIVALENT budget per category (an annual budget counts as amount/12),
 // so single-month consumers (dashboard, category shelf) put every budget on one
-// comparable basis. The categories page uses getBudgetsFull for period-aware UI.
+// comparable basis. categoriesWithTotals uses getBudgetsFull, so the categories page
+// gets period-aware budgets from it.
 export function getBudgets(): Record<number, number> {
   const out: Record<number, number> = {};
   for (const [id, b] of Object.entries(getBudgetsFull()))
