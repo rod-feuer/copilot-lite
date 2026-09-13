@@ -416,6 +416,40 @@ async function categoryBadge(browser) {
   });
 }
 
+async function recurringGlyph(browser) {
+  // Exclude one Netflix charge from its series via the row menu; the glyph must
+  // read "out" (struck) on the transactions row AND on the dashboard's recent
+  // list — before, only the transactions row knew that state. Then restore.
+  await withPage(browser, async (page, errs) => {
+    const glyphOn = (page, who) => page.evaluate((who) => {
+      const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes(who));
+      const g = li && li.querySelector("[data-recurring]"); return g ? g.getAttribute("data-recurring") : null;
+    }, who);
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    record("recurring glyph", "transactions · Netflix charge is in its series", (await glyphOn(page, "Netflix")) === "in");
+    await page.evaluate(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); li.setAttribute("data-ui-target", "1"); li.scrollIntoView({ block: "center" }); });
+    await sleep(300);
+    await page.click("[data-drawer-row][data-ui-target] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
+    await page.click("[role='menu'] button::-p-text(Exclude this charge)");
+    await page.waitForFunction(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); const g = li && li.querySelector("[data-recurring]"); return g && g.getAttribute("data-recurring") === "out"; }, { timeout: 10000 });
+    record("recurring glyph", "transactions · excluded charge reads out", true);
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    record("recurring glyph", "dashboard · same charge reads out", (await glyphOn(page, "Netflix")) === "out");
+    // restore
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    await page.evaluate(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); li.setAttribute("data-ui-target", "1"); li.scrollIntoView({ block: "center" }); });
+    await sleep(300);
+    await page.click("[data-drawer-row][data-ui-target] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
+    await page.click("[role='menu'] button::-p-text(Add charge to series)");
+    await page.waitForFunction(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); const g = li && li.querySelector("[data-recurring]"); return g && g.getAttribute("data-recurring") === "in"; }, { timeout: 10000 });
+    record("recurring glyph", "transactions · restored to in", true);
+    if (errs.length) record("recurring glyph", "page errors", false, errs[0]);
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -426,7 +460,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

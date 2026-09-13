@@ -1464,6 +1464,7 @@ export type CategorySummary = {
     account: string;
     recurringId: number | null;
     excluded: 0 | 1; // shown but not counted in `spent` — the shelf marks it
+    recurringExcluded: 0 | 1; // excluded from its vendor's series (the ↻ reads "out")
   }[];
 };
 
@@ -1513,7 +1514,8 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
   const links = getMerchantLinks();
   const txns = db
     .prepare(
-      `SELECT id, COALESCE(effectiveDate, date) AS date, merchant, amount, account, recurringId, excluded
+      `SELECT id, COALESCE(effectiveDate, date) AS date, merchant, amount, account, recurringId, excluded,
+              (hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
        FROM transactions
        WHERE categoryId = ? AND substr(COALESCE(effectiveDate, date),1,7) = ?
        ORDER BY COALESCE(effectiveDate, date) DESC, id DESC`
@@ -1526,6 +1528,7 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
     account: string;
     recurringId: number | null;
     excluded: 0 | 1;
+    recurringExcluded: 0 | 1;
   }[];
 
   // Recurrings tied to this category still expected this month (unpaid) — only

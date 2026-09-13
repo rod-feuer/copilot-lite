@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
+import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
 import { LoadError, LoadingRows } from "@/components/LoadState";
@@ -87,6 +88,7 @@ type Tx = {
   categoryColor: string | null;
   categoryIcon: string | null;
   recurringId: number | null;
+  recurringExcluded: 0 | 1; // this charge was excluded from its vendor's series
   // 1 when the category is excluded from totals (transfers, CC payments) — such a
   // positive amount is money moving, not income, so it shouldn't read as green.
   categoryExcluded: 0 | 1;
@@ -463,9 +465,9 @@ export default function DashboardPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-medium">{t.displayName}</span>
-                        {t.recurringId != null && (
-                          <HoverTip label="Recurring" onlyIfTruncated={false} className="shrink-0 text-xs text-[var(--accent)]">
-                            ↻
+                        {recurringState(t) !== "none" && (
+                          <HoverTip label={RECURRING_LABEL[recurringState(t)]} onlyIfTruncated={false} className="shrink-0 text-xs">
+                            <RecurringGlyph state={recurringState(t)} />
                           </HoverTip>
                         )}
                       </div>

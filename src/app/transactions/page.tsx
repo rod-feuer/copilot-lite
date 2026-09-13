@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -1265,7 +1266,7 @@ const TxRow = memo(function TxRow({
   const sameCat =
     modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
   const sameAcct = modal && t.account === modal.account;
-  const recState = t.recurringId != null ? "in" : t.recurringExcluded ? "out" : "none";
+  const recState = recurringState(t);
   const commitDate = onCommitDate;
   const saveNote = onSaveNote;
   const setCategory = onSetCategory;
@@ -1369,24 +1370,8 @@ const TxRow = memo(function TxRow({
                     {/* Passive recurring marker — glanceable state; the toggle
                         lives in the ⋯ menu (so the icon isn't a cryptic control). */}
                     {recState !== "none" && (
-                      <Tooltip
-                        label={
-                          recState === "in"
-                            ? "Part of a recurring series"
-                            : "Excluded from its recurring series"
-                        }
-                        onlyIfTruncated={false}
-                        className="shrink-0"
-                      >
-                        <span
-                          className={`text-xs ${
-                            recState === "in"
-                              ? "text-[var(--accent)]"
-                              : "text-[var(--muted)] line-through"
-                          }`}
-                        >
-                          ↻
-                        </span>
+                      <Tooltip label={RECURRING_LABEL[recState]} onlyIfTruncated={false} className="shrink-0">
+                        <RecurringGlyph state={recState} className="text-xs" />
                       </Tooltip>
                     )}
                     {t.splitParts > 0 ? (
