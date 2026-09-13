@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { SVGProps } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
+import SignOut from "@/components/SignOut";
 
 // Inline line-icons (Feather/Lucide style) — recognizable nav glyphs without a
 // dependency. `currentColor` stroke so each inherits the nav-link color, including
@@ -72,7 +73,8 @@ export const NAV = [
   { href: "/recurrings", label: "Recurrings", Icon: RecurringsIcon },
 ];
 
-export default function Sidebar() {
+// `signOut`: the layout passes whether the password gate is on (server-side check).
+export default function Sidebar({ signOut = false }: { signOut?: boolean }) {
   const pathname = usePathname();
   return (
     <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] bg-card px-3 py-5 sm:flex">
@@ -99,6 +101,7 @@ export default function Sidebar() {
       </nav>
       <div className="mt-auto flex flex-col gap-1 pt-4">
         <ThemeToggle />
+        {signOut && <SignOut variant="sidebar" />}
         <div className="px-3 pt-1 text-[11px] leading-relaxed text-[var(--muted)]">
           Local prototype · data stays on your Mac
         </div>
