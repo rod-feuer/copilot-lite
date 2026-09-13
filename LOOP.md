@@ -55,7 +55,7 @@ must only ever run against a temp DB.
       transactions list, dashboard recent use it. Recurrings / upcoming / suggestions
       use an equivalent inline form (`settings[merchant]?.alias ?? merchant`) — equivalent
       because the recurrings table is keyed by canonical merchant, but not the resolver.
-- [ ] category icon/color + recurring ↻ status consistent across drawer / list / recurrings
+- [x] category icon/color + recurring ↻ status consistent across drawer / list / recurrings — one `<CategoryBadge>` (#72) and one `<RecurringGlyph>` with a shared "out" state (#73); guarded by `npm run test:ui`
 
 ### C. Robustness
 - [x] No silent write `fetch()` — `postJson`/`patchJson`/`deleteJson` helpers surface failures via error toast across Recurrings, Transactions, Categories, and the drawer (no more false-success toasts). Only `postJson` has a unit test; `getJson` (reads) throws on non-2xx too.
