@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { createSplitRule, applySplitRules, type SplitPart } from "@/lib/splits";
+import { createSplitRule, applySplitRules, undoSplit, type SplitPart } from "@/lib/splits";
 import { detectRecurrings } from "@/lib/core";
 
 export const runtime = "nodejs";
@@ -18,9 +18,14 @@ export async function POST(
   const body = await req.json();
 
   const tx = getDb()
-    .prepare("SELECT merchant, amount FROM transactions WHERE id = ?")
-    .get(Number(id)) as { merchant: string; amount: number } | undefined;
+    .prepare("SELECT merchant, amount, pending FROM transactions WHERE id = ?")
+    .get(Number(id)) as { merchant: string; amount: number; pending: number } | undefined;
   if (!tx) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // A pending row is replaced by the next sync, which would undo the parent's
+  // exclusion but not its children. Split it once it posts.
+  if (tx.pending) {
+    return NextResponse.json({ error: "wait until this charge posts, then split it" }, { status: 400 });
+  }
 
   // Splitting is defined for expenses (the engine inserts negative child rows).
   if (tx.amount >= 0) {
@@ -52,4 +57,17 @@ export async function POST(
   const split = applySplitRules();
   detectRecurrings(); // the parent left its series; rebuild so stats reflect it
   return NextResponse.json({ ok: true, split });
+}
+
+// Undo the split this charge is a parent of: the rule, its child rows, and the
+// parent's exclusion all go — here and for every other charge the rule split.
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const restored = undoSplit(Number(id));
+  if (restored === 0) return NextResponse.json({ error: "no split to undo" }, { status: 404 });
+  detectRecurrings(); // the parent rejoins its series; rebuild so stats reflect it
+  return NextResponse.json({ ok: true, restored });
 }
