@@ -16,6 +16,7 @@ import {
   setTransactionRecurringExcluded,
   clearRecurringTxExclusionsForMerchant,
   recurringsForMonth,
+  setSeriesCategory,
   recurringMonthlyByCategory,
   isRecurringActive,
   setBudget,
@@ -1238,4 +1239,93 @@ test("recurrings dedupe folds only clones of the same vendor, not same-price nei
   const paid = recurringsForMonth("2026-09").find((r) => r.merchant === "D J*wsj")!;
   assert.equal(paid.paid, true, "the clone's charge counts as the face's payment");
   assert.equal(paid.paidAmount, 38.99);
+});
+
+// One bank descriptor, two monthly bills. Netflix charges $26.99 on the 23rd
+// and on the 26th (one account per home); grouped by descriptor the detector
+// read that as one bill, so the page showed one Netflix and counted the second
+// charge as an overpayment. Sofi is the same shape with different amounts (the
+// mortgage on the 1st, a loan on the 21st) and came out as a "$2,902 biweekly"
+// that is neither payment. Two monthly plans keep their days of the month;
+// that is what separates them from one true biweekly bill, which drifts.
+test("detector splits a descriptor that carries two monthly bills into one series per day", () => {
+  const subs = addCat("Streaming");
+  const home = addCat("Lake House");
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 8; m++) {
+    tx("Netflix", { amount: -26.99, date: `${ym(m)}-23`, categoryId: subs });
+    tx("Netflix", { amount: -26.99, date: `${ym(m)}-26`, categoryId: home });
+  }
+  for (let m = 1; m <= 8; m++) {
+    tx("Sofi", { amount: -4453.91, date: `${ym(m)}-01`, categoryId: home });
+    if (m >= 4) tx("Sofi", { amount: -1350.95, date: `${ym(m)}-21`, categoryId: subs });
+  }
+  // A true biweekly plan: 14-day steps drift through the month — one series.
+  const start = Date.UTC(2026, 0, 3);
+  for (let i = 0; i < 12; i++)
+    tx("Gym", { amount: -25, date: new Date(start + i * 14 * 86_400_000).toISOString().slice(0, 10), categoryId: subs });
+  // A bill whose day moved (8th, then 22nd) never overlaps itself — one series.
+  for (let m = 1; m <= 4; m++) tx("Water", { amount: -40, date: `${ym(m)}-08`, categoryId: home });
+  for (let m = 5; m <= 8; m++) tx("Water", { amount: -40, date: `${ym(m)}-22`, categoryId: home });
+  // Two policies billed the same day are one bill (one event, summed); the
+  // 17th policy is another. A weekend slip (1st → 3rd) stays in its cluster.
+  for (let m = 1; m <= 6; m++) {
+    const d = m === 3 ? "03" : "01";
+    tx("Chubb", { amount: -494.75, date: `${ym(m)}-${d}`, categoryId: home });
+    tx("Chubb", { amount: -494.75, date: `${ym(m)}-${d}`, categoryId: home, account: "Savings" });
+    tx("Chubb", { amount: -544.94, date: `${ym(m)}-17`, categoryId: home });
+  }
+
+  // A grocery store visited every few days lands in every day-bucket month
+  // after month; that is one variable vendor, not a stack of monthly bills.
+  const g0 = Date.UTC(2026, 0, 2);
+  for (let i = 0; i < 60; i++)
+    tx("Market District", { amount: -(40 + ((i * 37) % 90)), date: new Date(g0 + i * 4 * 86_400_000).toISOString().slice(0, 10), categoryId: home });
+
+  const recs = detectRecurrings();
+  const by = (m: string) => recs.find((r) => r.merchant === m);
+  assert.ok(!recs.some((r) => r.merchant.startsWith("Market District · ")), "a weekly store never splits into monthly bills");
+  assert.deepEqual(
+    recs.map((r) => r.merchant).filter((m) => !m.startsWith("Market District")).sort(),
+    ["Chubb · 17th", "Chubb · 1st", "Gym", "Netflix · 23rd", "Netflix · 26th", "Sofi · 1st", "Sofi · 21st", "Water"],
+    "two bills per descriptor become two series; a drifting biweekly and a bill that changed its day stay one"
+  );
+  assert.equal(by("Chubb · 1st")!.avgAmount, -989.5, "same-day charges are one event, summed");
+  assert.equal(by("Chubb · 1st")!.count, 6, "count is events (months), not charges");
+  assert.equal(by("Chubb · 17th")!.avgAmount, -544.94);
+  assert.equal(by("Gym")!.cadence, "biweekly");
+  assert.equal(by("Water")!.cadence, "monthly");
+  assert.equal(by("Netflix · 23rd")!.count, 8);
+  assert.equal(by("Netflix · 26th")!.categoryId, home, "each series carries its own charges' category");
+  assert.equal(by("Sofi · 1st")!.avgAmount, -4453.91, "each series has its own amount, not the blend");
+  assert.equal(by("Sofi · 21st")!.avgAmount, -1350.95);
+  assert.equal(by("Sofi · 21st")!.count, 5);
+
+  // Charges link to the series they belong to (by row, not by descriptor).
+  const linked = getDb()
+    .prepare("SELECT date, recurringId FROM transactions WHERE merchant = 'Netflix' ORDER BY date")
+    .all() as { date: string; recurringId: number }[];
+  for (const t of linked)
+    assert.equal(
+      t.recurringId,
+      t.date.endsWith("-23") ? by("Netflix · 23rd")!.id : by("Netflix · 26th")!.id,
+      `${t.date} links to its own series`
+    );
+
+  // The month view: each series is paid by its own charge, once.
+  const aug = recurringsForMonth("2026-08").filter((r) => r.vendor === "Netflix");
+  assert.equal(aug.length, 2);
+  for (const r of aug) {
+    assert.equal(r.paid, true, `${r.merchant} paid`);
+    assert.equal(r.paidAmount, 26.99, `${r.merchant} paid once, not both charges`);
+    assert.equal(r.vendor, "Netflix", "the shelf opens on the descriptor, not the series key");
+  }
+  // Recategorizing one series moves only its charges.
+  const boat = addCat("Boat (split)");
+  setSeriesCategory(by("Netflix · 26th")!.id, boat);
+  const cats = getDb()
+    .prepare("SELECT date, categoryId FROM transactions WHERE merchant = 'Netflix' ORDER BY date")
+    .all() as { date: string; categoryId: number }[];
+  assert.ok(cats.filter((t) => t.date.endsWith("-26")).every((t) => t.categoryId === boat), "the 26th moved");
+  assert.ok(cats.filter((t) => t.date.endsWith("-23")).every((t) => t.categoryId === subs), "the 23rd stayed");
 });

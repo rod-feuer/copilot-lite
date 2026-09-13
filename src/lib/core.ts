@@ -1,3 +1,4 @@
+import { seriesKey } from "./series";
 import crypto from "node:crypto";
 import { getDb } from "./db";
 import {
@@ -175,6 +176,70 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
   return best;
 }
 
+// Two bills behind one descriptor. Netflix charges on the 23rd and the 26th
+// (one account per home); Benjamin Franklin on the 8th and the 22nd; Sofi on
+// the 1st ($4,453 mortgage) and the 21st ($1,350 loan). Grouped by descriptor
+// they read as ONE bill — "biweekly Netflix", a "$2,902 Sofi" that is neither
+// payment. Timing alone can't separate the plumbing pair from a true biweekly
+// plan, except for one thing: two monthly plans keep their days of the month,
+// while a biweekly drifts through the calendar (14-day steps against 30/31-day
+// months). So: cluster charges by day of the month (a cluster spans ≤2 days,
+// so a weekend slip stays together and 23 vs 26 stays apart; days 28–31 are
+// one "end of month"); charges in the same month of one cluster are ONE event
+// (two policies both billed on the 1st sum to one bill); a cluster is a bill
+// when it has ≥3 events that recur monthly. Split only when ≥2 such clusters
+// overlap in time (a bill whose day moved is still one bill) and together hold
+// most of the vendor's charges (a weekly grocery run is not four bills).
+// Charges that fit no cluster are left unlinked, so a second plan with one or
+// two charges so far joins automatically once it reaches three.
+const MONTH_DAYS = 30.44;
+type DayPart<T> = { day: number; txs: T[]; events: { date: string; amount: number }[] };
+function splitByDayOfMonth<T extends { date: string; amount: number }>(txs: T[]): DayPart<T>[] | null {
+  if (txs.length < 6) return null;
+  const dayOf = (t: T) => Number(t.date.slice(8, 10));
+  const bucket = (t: T) => Math.min(dayOf(t), 28); // 28th–31st = end of month
+  const sorted = [...txs].sort((a, b) => bucket(a) - bucket(b) || a.date.localeCompare(b.date));
+  const clusters: T[][] = [];
+  for (const t of sorted) {
+    const cur = clusters[clusters.length - 1];
+    if (cur && bucket(t) - bucket(cur[0]) <= 2) cur.push(t);
+    else clusters.push([t]);
+  }
+  const parts: DayPart<T>[] = [];
+  for (const c of clusters) {
+    const byMonth = new Map<string, { date: string; amount: number }>();
+    for (const t of [...c].sort((a, b) => a.date.localeCompare(b.date))) {
+      const m = t.date.slice(0, 7);
+      const e = byMonth.get(m);
+      if (e) {
+        e.amount += t.amount;
+        e.date = t.date; // the event closes on its last charge
+      } else byMonth.set(m, { date: t.date, amount: t.amount });
+    }
+    const events = [...byMonth.values()];
+    if (events.length < 3) continue;
+    const gaps: number[] = [];
+    for (let i = 1; i < events.length; i++)
+      gaps.push((Date.parse(events[i].date) - Date.parse(events[i - 1].date)) / DAY);
+    if (classifyCadence(medianGap(gaps)) !== "monthly" || onGridFraction(gaps, MONTH_DAYS) < 0.6) continue;
+    const n = new Map<number, number>();
+    for (const t of c) n.set(dayOf(t), (n.get(dayOf(t)) ?? 0) + 1);
+    const day = [...n.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
+    parts.push({ day, txs: c, events });
+  }
+  if (parts.length < 2) return null;
+  // Concurrent, not sequential: each part shares ≥2 months with the longest
+  // one (a bill whose day moved shares none). And the parts must BE the
+  // vendor — ≥80% of its charges — or this is a store visited every week,
+  // whose trips also land in every day-bucket month after month.
+  const monthsOf = (p: DayPart<T>) => new Set(p.events.map((e) => e.date.slice(0, 7)));
+  const anchor = monthsOf(parts.reduce((a, b) => (b.events.length > a.events.length ? b : a)));
+  const overlapping = parts.filter((p) => [...monthsOf(p)].filter((m) => anchor.has(m)).length >= 2);
+  if (overlapping.length < 2) return null;
+  const covered = overlapping.reduce((n, p) => n + p.txs.length, 0);
+  return covered >= 0.8 * txs.length ? overlapping : null;
+}
+
 export function detectRecurrings(): Recurring[] {
   const db = getDb();
   // Same calendar and same rows as every reader of the result: a charge lives in
@@ -240,6 +305,9 @@ export function detectRecurrings(): Recurring[] {
   const link = db.prepare(
     "UPDATE transactions SET recurringId = ? WHERE merchant = ? AND excluded = 0" // members = the rows that shaped the series
   );
+  // A split series owns specific charges of a shared descriptor, so it links
+  // by row (hash), never by merchant string.
+  const linkByHash = db.prepare("UPDATE transactions SET recurringId = ? WHERE hash = ?");
   // Backfill a recurring's category onto its still-uncategorized members (e.g. a
   // charge that posted under a new descriptor with no matching rule). Never
   // overwrites an existing category.
@@ -247,10 +315,50 @@ export function detectRecurrings(): Recurring[] {
     "UPDATE transactions SET categoryId = ? WHERE recurringId = ? AND categoryId IS NULL"
   );
 
+  // Amount consistency — coefficient of variation (stdev / |mean|), see the
+  // comment at its use below. Shared by the whole-descriptor path and the
+  // per-day split.
+  const amountsConsistent = (amounts: number[]) => {
+    const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    if (mean === 0) return false;
+    const sd = Math.sqrt(amounts.reduce((s, a) => s + (a - mean) ** 2, 0) / amounts.length);
+    return sd / Math.abs(mean) <= 0.6;
+  };
+
   for (const [merchant, all] of byMerchant) {
     if (overrides[merchant] === "mute") continue; // user said: not recurring
     const txs = all.filter((t) => !excluded.has(t.hash)); // drop flagged one-offs
     if (txs.length < 3) continue;
+
+    // Two (or more) monthly bills behind one descriptor: one series per day of
+    // the month, keyed "<vendor> · <day>". A part the user marked not recurring
+    // (mute on its key) or whose amounts don't hold together is skipped — its
+    // charges stay unlinked. Falls through to the whole-descriptor path unless
+    // at least two parts stand on their own.
+    const parts = splitByDayOfMonth(txs)?.filter(
+      (p) => rawOverrides[seriesKey(merchant, p.day)] !== "mute" && amountsConsistent(p.events.map((e) => e.amount))
+    );
+    if (parts && parts.length >= 2) {
+      for (const p of parts) {
+        const lastDate = p.events[p.events.length - 1].date;
+        const categoryId = modalCategory(p.txs);
+        const rec = {
+          merchant: seriesKey(merchant, p.day),
+          categoryId,
+          avgAmount: Number(currentAmount(p.events.map((e) => e.amount)).toFixed(2)),
+          cadence: "monthly" as const,
+          lastDate,
+          nextDate: addCadence(lastDate, "monthly"),
+          count: p.events.length,
+        };
+        const info = insert.run(rec);
+        for (const t of p.txs) linkByHash.run(info.lastInsertRowid, t.hash);
+        if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
+        out.push({ id: Number(info.lastInsertRowid), ...rec });
+      }
+      created.add(merchant);
+      continue;
+    }
 
     // Amounts must be roughly consistent — measured by coefficient of variation
     // (stdev / |mean|), not "every charge within 15% of the mean". The strict
@@ -259,12 +367,7 @@ export function detectRecurrings(): Recurring[] {
     // usage-based bills (utilities). CV is robust to a few outliers yet still
     // rejects wildly-variable spend (e.g. a plumber, CV ~2.4).
     const amounts = txs.map((t) => t.amount);
-    const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
-    if (mean === 0) continue;
-    const sd = Math.sqrt(
-      amounts.reduce((s, a) => s + (a - mean) ** 2, 0) / amounts.length
-    );
-    if (sd / Math.abs(mean) > 0.6) continue;
+    if (!amountsConsistent(amounts)) continue;
 
     // Gaps between consecutive dates must be regular.
     const dates = txs.map((t) => new Date(t.date + "T00:00:00Z").getTime());

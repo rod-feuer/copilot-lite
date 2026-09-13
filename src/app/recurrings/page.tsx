@@ -152,9 +152,12 @@ export default function RecurringsPage() {
     load(m);
   }
 
-  async function recategorize(merchant: string, categoryId: number | null) {
+  async function recategorize(r: Rec, categoryId: number | null) {
+    const merchant = r.vendor;
+    // A split series ("Netflix · 26th") recategorizes only its own charges.
+    const recurringId = r.vendor !== r.merchant ? r.id : undefined;
     await mutate(
-      () => postJson("/api/recurrings/recategorize", { merchant, categoryId }),
+      () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId }),
       {
         success: `Recategorized "${merchant}"`,
         error: "Couldn't recategorize — please try again",
@@ -484,7 +487,7 @@ function BillList({
   recs: Rec[];
   dim?: boolean;
   cats?: Cat[];
-  onRecategorize?: (merchant: string, categoryId: number | null) => void;
+  onRecategorize?: (r: Rec, categoryId: number | null) => void;
   onMute?: (merchant: string) => void;
   onEnd?: (merchant: string, ended: boolean) => void;
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
@@ -536,12 +539,12 @@ function BillList({
             <div key={r.id}>
             <div
               data-drawer-row
-              {...(onOpen ? rowButtonProps(() => onOpen(r.merchant)) : {})}
+              {...(onOpen ? rowButtonProps(() => onOpen(r.vendor)) : {})}
               className={`group flex items-center gap-3 py-2 text-[13px] ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
-                  ? shelfActive.isMerchant(r.merchant)
+                  ? shelfActive.isMerchant(r.vendor)
                     ? "cursor-pointer bg-[var(--accent)]/10"
                     : "cursor-pointer hover:bg-[var(--background)]"
                   : ""
@@ -604,7 +607,7 @@ function BillList({
                       value={r.categoryId ?? ""}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) =>
-                        onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
+                        onRecategorize(r, e.target.value ? Number(e.target.value) : null)
                       }
                       aria-label="Category"
                       className="absolute inset-0 w-full cursor-pointer opacity-0"
