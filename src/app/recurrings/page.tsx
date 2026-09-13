@@ -31,7 +31,7 @@ type Suggestion = RecurringSuggestion;
 
 const CADENCE_LABEL: Record<Rec["cadence"], string> = {
   weekly: "Weekly",
-  biweekly: "Every 2 weeks",
+  biweekly: "Biweekly",
   monthly: "Monthly",
   quarterly: "Quarterly",
   semiannual: "Every 6 months",
