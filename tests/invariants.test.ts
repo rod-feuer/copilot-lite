@@ -1193,3 +1193,33 @@ test("empty month produces finite figures, not NaN, and never throws", () => {
   for (const c of categoriesWithTotals("2030-01"))
     assert.ok(Number.isFinite(c.total) && Number.isFinite(c.recurringBaseline));
 });
+
+// The month view folds descriptor-drift clones of ONE bill into a single row.
+// It must never fold two different vendors that merely share a category and a
+// price band: on real data Hulu ($19.99) swallowed 27 other $15–$20
+// subscriptions, and X Corp ($40) swallowed the $38.99 WSJ the moment it was
+// categorized Subscriptions — the bill vanished from the page and its charge
+// then "paid" X Corp. A fold requires the same vendor: a shared coarse vendor
+// key, or a user Combine (merchant link).
+test("recurrings dedupe folds only clones of the same vendor, not same-price neighbours", () => {
+  const subs = addCat("Subscriptions");
+  const ins = getDb().prepare(
+    `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+     VALUES (?, ?, ?, 'monthly', '2026-08-18', '2026-09-18', ?)`
+  );
+  ins.run("X Corp. Paid Featurebastrop", subs, -40, 20);
+  ins.run("D J*wsj", subs, -38.99, 19); // WSJ, the bank's old descriptor
+  ins.run("D J", subs, -38.99, 3); // WSJ since the bank changed the descriptor
+  ins.run("Michaeljburry.substasaratoga", subs, -39, 10);
+  ins.run("Willywoo.substack.cocentral Hk", subs, -39, 7);
+  ins.run("Chase Mortgage", subs, -40, 6); // distinct name, Combined by the user below
+  ins.run("Chase Home Lending", subs, -40, 4);
+  linkMerchant("Chase Home Lending", "Chase Mortgage");
+
+  const shown = recurringsForMonth("2026-09").map((r) => r.merchant).sort();
+  assert.deepEqual(
+    shown,
+    ["Chase Mortgage", "D J*wsj", "Michaeljburry.substasaratoga", "Willywoo.substack.cocentral Hk", "X Corp. Paid Featurebastrop"],
+    "same-vendor clones fold (D J → D J*wsj by key, Chase by link); different vendors in the same price band all stay"
+  );
+});

@@ -851,7 +851,17 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   // the most history.
   // Greedy grouping: same category + cadence + amount within ~2% (or $5) are
   // treated as one bill; keep the variant with the most history as the face.
+  // The two rows must also be the same VENDOR — Combined by the user, or sharing
+  // the coarse vendor key ("D J*wsj" / "D J", "Better Bodies Inc" / "Better
+  // Bodies"). Without that test the price band alone folded distinct bills:
+  // on real data Hulu ($19.99) swallowed 27 other $15–$20 subscriptions and
+  // X Corp ($40) swallowed the $38.99 WSJ once it was categorized alike — 57
+  // of 60 folds were different vendors, and their charges then "paid" the face.
   const recs: RecurringForMonth[] = [];
+  const dedupeLinks = getMerchantLinks();
+  const sameVendor = (a: string, b: string) =>
+    canonicalMerchant(a, dedupeLinks) === canonicalMerchant(b, dedupeLinks) ||
+    (merchantKey(a) !== "" && merchantKey(a) === merchantKey(b));
   const sorted = (listRecurrings() as RecurringForMonth[])
     .slice()
     .sort((a, b) => b.count - a.count);
@@ -861,7 +871,8 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
         p.categoryId === r.categoryId &&
         p.cadence === r.cadence &&
         Math.abs(Math.abs(p.avgAmount) - Math.abs(r.avgAmount)) <=
-          Math.max(5, Math.abs(p.avgAmount) * 0.02)
+          Math.max(5, Math.abs(p.avgAmount) * 0.02) &&
+        sameVendor(p.merchant, r.merchant)
     );
     if (!dup) recs.push(r);
   }
