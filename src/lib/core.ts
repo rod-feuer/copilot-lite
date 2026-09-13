@@ -177,10 +177,16 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
 
 export function detectRecurrings(): Recurring[] {
   const db = getDb();
+  // Same calendar and same rows as every reader of the result: a charge lives in
+  // its effective month (the user's overlay), and an excluded charge — a
+  // transfer, a reimbursed one-off, a split parent whose parts count instead —
+  // is not evidence of a bill. Excluded rows used to join series and corrupt
+  // their cadence (a split parent on the same day as its child made a monthly
+  // bill read biweekly).
   const rows = db
     .prepare(
-      `SELECT merchant, date, amount, categoryId, hash
-       FROM transactions ORDER BY merchant, date`
+      `SELECT merchant, COALESCE(effectiveDate, date) AS date, amount, categoryId, hash
+       FROM transactions WHERE excluded = 0 ORDER BY merchant, date`
     )
     .all() as {
     merchant: string;
@@ -232,7 +238,7 @@ export function detectRecurrings(): Recurring[] {
      VALUES (@merchant, @categoryId, @avgAmount, @cadence, @lastDate, @nextDate, @count)`
   );
   const link = db.prepare(
-    "UPDATE transactions SET recurringId = ? WHERE merchant = ?"
+    "UPDATE transactions SET recurringId = ? WHERE merchant = ? AND excluded = 0" // members = the rows that shaped the series
   );
   // Backfill a recurring's category onto its still-uncategorized members (e.g. a
   // charge that posted under a new descriptor with no matching rule). Never
