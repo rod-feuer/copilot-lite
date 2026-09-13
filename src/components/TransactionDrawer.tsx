@@ -27,7 +27,6 @@ import type { Category } from "@/lib/types";
 type Cat = Category;
 type Vendor = { merchant: string; displayName: string }; // the Combine picker's projection of /api/vendors
 type Summary = MerchantSummary;
-type Recent = MerchantSummary["recent"][number];
 type CatSummary = CategorySummary;
 
 type OpenOpts = { onChange?: () => void; amountHint?: number | null };
