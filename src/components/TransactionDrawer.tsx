@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { RecurringGlyph, RECURRING_LABEL, recurringState, type RecurringState } from "@/components/RecurringGlyph";
 import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
@@ -88,6 +89,7 @@ type CatSummary = {
     account: string;
     recurringId: number | null;
     excluded: 0 | 1;
+    recurringExcluded: 0 | 1;
   }[];
 };
 
@@ -1062,7 +1064,7 @@ function CategoryBody({
                 name={u.displayName}
                 amount={-u.amount}
                 muted
-                recurring
+                recurring="in"
               />
             ))}
             {/* Total — a column-foot total: the label sits under the name column,
@@ -1097,7 +1099,7 @@ function CategoryBody({
                 sign
                 muted={t.excluded === 1}
                 excluded={isExcluded}
-                recurring={t.recurringId != null}
+                recurring={recurringState(t)}
                 onClick={() => onOpenMerchant(t.merchant)}
                 editable={{
                   cats,
@@ -1139,7 +1141,7 @@ function ShelfRow({
   sign,
   muted,
   excluded,
-  recurring,
+  recurring = "none",
   onClick,
   editable,
 }: {
@@ -1149,7 +1151,7 @@ function ShelfRow({
   sign?: boolean;
   muted?: boolean;
   excluded?: boolean; // doesn't count toward totals → an inflow is not green
-  recurring?: boolean;
+  recurring?: RecurringState;
   onClick?: () => void;
   editable?: RowEdit;
 }) {
@@ -1164,47 +1166,20 @@ function ShelfRow({
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
           {editable ? (
-            // The ↻ gutter doubles as the recurring toggle: solid when the
-            // charge is part of a recurring series, a faint hover affordance
-            // when it isn't. Operates on the whole vendor (force/mute).
+            // The ↻ gutter doubles as the recurring toggle (whole vendor: force/mute).
             <Tooltip
-              label={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
+              label={recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring"}
               onlyIfTruncated={false}
               className="w-3.5 shrink-0"
             >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  editable.onToggleRecurring();
-                }}
-                aria-label={recurring ? "Mark vendor not recurring" : "Mark vendor recurring"}
-                className={`w-full text-center transition-opacity hover:text-[var(--accent)] ${
-                  recurring
-                    ? "text-[var(--accent)] opacity-100"
-                    : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100"
-                }`}
-              >
-                ↻
-              </button>
+              <RecurringGlyph state={recurring} onToggle={editable.onToggleRecurring} muted={muted} className="w-full" />
+            </Tooltip>
+          ) : recurring !== "none" ? (
+            <Tooltip label={RECURRING_LABEL[recurring]} onlyIfTruncated={false} className="w-3.5 shrink-0">
+              <RecurringGlyph state={recurring} muted={muted} className="block w-full text-center" />
             </Tooltip>
           ) : (
-            recurring ? (
-            <Tooltip label="Recurring" onlyIfTruncated={false} className="w-3.5 shrink-0">
-              <span
-                className={`w-full text-center ${muted ? "text-[var(--muted)]" : "text-[var(--accent)]"}`}
-                aria-hidden={false}
-              >
-                ↻
-              </span>
-            </Tooltip>
-            ) : (
-            <span
-              className={`w-3.5 shrink-0 text-center ${
-                muted ? "text-[var(--muted)]" : "text-[var(--accent)]"
-              }`}
-              aria-hidden={true}
-            />
-            )
+            <span className="w-3.5 shrink-0" aria-hidden />
           )}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
           <Tooltip
