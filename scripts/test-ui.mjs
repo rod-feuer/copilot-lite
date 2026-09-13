@@ -536,6 +536,29 @@ async function recurringsRow(browser) {
     const menu = await page.evaluate(() => document.querySelector("[role='menu']").innerText);
     record("recurrings row", "⋯ menu holds Mark ended + Not recurring", menu.includes("Mark ended") && menu.includes("Not recurring"), menu.replace(/\n/g, " · "));
     await page.keyboard.press("Escape");
+
+    // "+ New category…" in a row's dropdown creates the category in place and
+    // applies it to that row (DESIGN: correct on the object, not in a panel).
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row] select[aria-label='Category']");
+    await page.select("[data-drawer-row] select[aria-label='Category']", "__new__");
+    const popover = await page.waitForSelector("[role='dialog'][aria-label='New category'] [data-new-category-form]", { timeout: 5000 }).catch(() => null);
+    record("recurrings row", "+ New category… opens the create form under the dropdown", !!popover, popover ? "form shown" : "no form");
+    if (popover) {
+      await page.type("[data-new-category-form] input[aria-label='New category name']", "Lake Utilities");
+      await page.click("[data-new-category-form] button.btn-primary");
+      const applied = await page
+        .waitForFunction(
+          () => document.querySelector("[data-drawer-row] [data-category-caret]")?.previousElementSibling?.textContent?.includes("Lake Utilities"),
+          { timeout: 8000 }
+        )
+        .then(() => true)
+        .catch(() => false);
+      const gone = await page.$("[role='dialog'][aria-label='New category']");
+      record("recurrings row", "created category is applied to that row and the form closes", applied && !gone, `applied=${applied} form open=${!!gone}`);
+      const inFilter = await page.$$eval("select[aria-label='Filter by category'] option, select option", (os) => os.some((o) => o.textContent.includes("Lake Utilities")));
+      record("recurrings row", "new category appears in the pickers without a reload", inFilter, inFilter ? "listed" : "missing");
+    }
     await page.screenshot({ path: "/tmp/copilot-recurrings-row.png" });
   });
 }

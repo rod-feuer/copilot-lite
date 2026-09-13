@@ -13,7 +13,8 @@ import { useMutation } from "@/components/useMutation";
 import { usd, defaultMonth, isCurrentMonth } from "@/lib/format";
 import type { CategoryWithTotals } from "@/lib/queries";
 import { getJson, patchJson } from "@/lib/http";
-import { CATEGORY_EMOJIS } from "@/lib/emoji";
+import { EmojiPicker } from "@/components/EmojiPicker";
+import { NewCategoryForm, PALETTE } from "@/components/NewCategoryForm";
 import { Tooltip } from "@/components/Tooltip";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 
@@ -22,20 +23,10 @@ type Cat = CategoryWithTotals;
 const budgetSpent = (c: Cat) => (c.budgetPeriod === "annual" ? c.ytdSpent : c.total);
 const isOver = (c: Cat) => c.budget != null && budgetSpent(c) > c.budget;
 
-const PALETTE = [
-  "#6366f1", "#22c55e", "#f97316", "#0ea5e9", "#a855f7",
-  "#eab308", "#ec4899", "#ef4444", "#14b8a6", "#64748b",
-];
-
 export default function CategoriesPage() {
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState("");
   const [cats, setCats] = useState<Cat[]>([]);
-  const [name, setName] = useState("");
-  const [icon, setIcon] = useState("🏷️");
-  const [color, setColor] = useState(PALETTE[0]);
-  const [kind, setKind] = useState<"expense" | "income">("expense");
-  const [adding, setAdding] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   // Default to budget pressure so the categories nearest/over their budget rise
   // to the top — the thing a budget exists to surface. "spent" is the old order.
@@ -83,27 +74,6 @@ export default function CategoriesPage() {
   function changeMonth(m: string) {
     setMonth(m);
     load(m);
-  }
-
-  async function create() {
-    if (!name.trim()) return;
-    setAdding(true);
-    try {
-      const res = await fetch("/api/categories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), icon, color, kind }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        toast(d.error ?? "Could not create category.", "error");
-        return;
-      }
-      setName("");
-      load(month);
-    } finally {
-      setAdding(false);
-    }
   }
 
   // Two-step delete (no native confirm): first click arms it for 3s, second
@@ -239,40 +209,7 @@ export default function CategoriesPage() {
             ✕
           </button>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <EmojiButton value={icon} onPick={setIcon} />
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && create()}
-            placeholder="New category name"
-            className="btn-ghost min-w-44 flex-1 font-normal focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-          />
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as "expense" | "income")}
-            className="btn-ghost select-caret cursor-pointer appearance-none pr-8"
-          >
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-          </select>
-          <div className="flex items-center gap-1">
-            {PALETTE.map((p) => (
-              <button
-                key={p}
-                onClick={() => setColor(p)}
-                className={`h-6 w-6 rounded-full ${
-                  color === p ? "ring-2 ring-offset-2 ring-[var(--foreground)]" : ""
-                }`}
-                style={{ background: p }}
-                aria-label={`color ${p}`}
-              />
-            ))}
-          </div>
-          <button className="btn-primary" disabled={adding} onClick={create}>
-            Add
-          </button>
-        </div>
+        <NewCategoryForm autoFocus onCreated={() => load(month)} />
       </div>
       )}
 
@@ -722,90 +659,6 @@ function Group({
 // A searchable grid of curated category emojis. Picking one calls onPick. The
 // search box also accepts a pasted emoji that isn't in the curated set — it's
 // offered as a "use this" tile, so the escape hatch for any emoji survives.
-function EmojiPicker({ value, onPick }: { value?: string; onPick: (emoji: string) => void }) {
-  const [q, setQ] = useState("");
-  const raw = q.trim();
-  const ql = raw.toLowerCase();
-  const shown = ql
-    ? CATEGORY_EMOJIS.filter((e) => e.keywords.includes(ql) || e.char === raw)
-    : CATEGORY_EMOJIS;
-  // A non-empty query that's clearly an emoji (not plain ascii words) and isn't
-  // in the curated list → let the user pick exactly what they pasted.
-  const pasted =
-    raw && !/^[\w\s]+$/.test(raw) && !CATEGORY_EMOJIS.some((e) => e.char === raw) ? raw : null;
-  const tile = (char: string, key: string) => (
-    <button
-      key={key}
-      onClick={() => onPick(char)}
-      className={`flex h-7 w-7 items-center justify-center rounded text-lg hover:bg-[var(--background)] ${
-        value === char ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/40" : ""
-      }`}
-    >
-      {char}
-    </button>
-  );
-  return (
-    <div className="w-full" onClick={(e) => e.stopPropagation()}>
-      <input
-        autoFocus
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search or paste an emoji…"
-        className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-      />
-      <div className="grid max-h-40 grid-cols-8 gap-0.5 overflow-y-auto">
-        {pasted && tile(pasted, "pasted")}
-        {shown.map((e) => tile(e.char, e.char))}
-        {!pasted && shown.length === 0 && (
-          <span className="col-span-8 px-1 py-3 text-center text-[11px] text-[var(--muted)]">
-            No matches — paste any emoji to use it.
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// A button showing the current emoji that opens the EmojiPicker in a popover —
-// used by the New-category form (where there's no badge to click).
-function EmojiButton({ value, onPick }: { value: string; onPick: (emoji: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: globalThis.MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
-  return (
-    <div ref={ref} className="relative">
-      <Tooltip label="Choose icon" onlyIfTruncated={false}>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="btn-ghost w-14 text-center text-lg"
-          aria-label="Choose icon"
-        >
-          {value}
-        </button>
-      </Tooltip>
-      {open && (
-        <div className="absolute left-0 top-12 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
-          <EmojiPicker
-            value={value}
-            onPick={(e) => {
-              onPick(e);
-              setOpen(false);
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
 // Inline-editable category name: click to rename in place (Enter/blur saves,
 // Esc cancels), with a persistent faint ✎ cue — the same rename pattern as the
 // shelf header and recurrings rows. Plain text when not renamable (no onRename,
