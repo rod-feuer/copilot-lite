@@ -1,13 +1,5 @@
-// Throwaway DB before any connection opens (see tests/db.test.ts).
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs";
-process.env.COPILOT_DB_PATH = path.join(
-  os.tmpdir(),
-  `copilot-cov-${process.pid}-${Date.now()}.db`
-);
-
-import { test, beforeEach, after } from "node:test";
+import { cleanDbBeforeEach, seed, months, addCat } from "./helpers"; // first: points the DB at a throwaway file
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb } from "../src/lib/db";
 import { detectRecurrings } from "../src/lib/core";
@@ -21,35 +13,7 @@ import {
   categorySummary,
 } from "../src/lib/queries";
 
-let seq = 0;
-function seed(merchant: string, rows: { date: string; amount: number }[], categoryId: number | null = null) {
-  const ins = getDb().prepare(
-    "INSERT INTO transactions (date, merchant, amount, account, categoryId, source, hash) VALUES (?,?,?,?,?,?,?)"
-  );
-  for (const r of rows) ins.run(r.date, merchant, r.amount, "Checking", categoryId, "test", `h${seq++}`);
-}
-function months(startMonth: number, n: number, amounts: number | number[]) {
-  return Array.from({ length: n }, (_, i) => ({
-    date: `2025-${String(startMonth + i).padStart(2, "0")}-15`,
-    amount: Array.isArray(amounts) ? amounts[i] : amounts,
-  }));
-}
-function addCat(name: string): number {
-  return Number(
-    getDb()
-      .prepare("INSERT INTO categories (name, color, icon, kind) VALUES (?,?,?,'expense')")
-      .run(name, "#888", "•").lastInsertRowid
-  );
-}
-
-beforeEach(() => {
-  for (const t of ["transactions", "recurrings", "merchant_links", "recurring_settings", "recurring_overrides", "split_rules", "budgets", "categories"])
-    getDb().exec(`DELETE FROM ${t}`);
-});
-after(() => {
-  const p = process.env.COPILOT_DB_PATH!;
-  for (const ext of ["", "-wal", "-shm"]) fs.rmSync(p + ext, { force: true });
-});
+cleanDbBeforeEach();
 
 test("match rule (contains) claims a differently-named charge as paid", () => {
   seed("Acme", months(1, 5, -10)); // Jan–May → detected monthly
@@ -130,8 +94,8 @@ test("match rule amount tolerance admits a near-miss charge and rejects a far on
 test("categorySummary reports month spend, prior month, trailing-12 avg, budget, txns", () => {
   const cat = addCat("Dining");
   setBudget(cat, 300);
-  seed("Restaurant A", [{ date: "2025-05-10", amount: -100 }], cat); // prior month
-  seed("Restaurant B", months(6, 1, -120).concat(months(6, 1, -80)), cat); // this month, 2 txns
+  seed("Restaurant A", [{ date: "2025-05-10", amount: -100 }], { categoryId: cat }); // prior month
+  seed("Restaurant B", months(6, 1, -120).concat(months(6, 1, -80)), { categoryId: cat }); // this month, 2 txns
   const s = categorySummary(cat, "2025-06")!;
   assert.equal(s.spent, 200);
   assert.equal(s.txCount, 2);
@@ -148,8 +112,8 @@ test("categorySummary lists an excluded charge flagged, and the unflagged rows s
   // but marked, so the rows visibly reconcile to the figure above them. Before,
   // the list neither filtered nor returned the flag: rows didn't sum, no cue why.
   const cat = addCat("Dining");
-  seed("Restaurant A", [{ date: "2025-06-10", amount: -100 }], cat);
-  seed("Restaurant B", [{ date: "2025-06-12", amount: -40 }], cat);
+  seed("Restaurant A", [{ date: "2025-06-10", amount: -100 }], { categoryId: cat });
+  seed("Restaurant B", [{ date: "2025-06-12", amount: -40 }], { categoryId: cat });
   getDb().prepare("UPDATE transactions SET excluded = 1 WHERE merchant = 'Restaurant B'").run();
   const s = categorySummary(cat, "2025-06")!;
   assert.equal(s.spent, 100);
@@ -170,9 +134,9 @@ test("categorySummary upcoming shows ACTIVE recurrings only (not stale/inactive)
     new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 15)).toISOString().slice(0, 10);
   const cat = addCat("Utilities");
   // Active: monthly charges over the last 5 months (last ~1 month ago).
-  seed("Power Co", [-5, -4, -3, -2, -1].map((o) => ({ date: day15(o), amount: -100 })), cat);
+  seed("Power Co", [-5, -4, -3, -2, -1].map((o) => ({ date: day15(o), amount: -100 })), { categoryId: cat });
   // Inactive: monthly charges that stopped over a year ago.
-  seed("Old Gym", [-18, -17, -16, -15, -14].map((o) => ({ date: day15(o), amount: -50 })), cat);
+  seed("Old Gym", [-18, -17, -16, -15, -14].map((o) => ({ date: day15(o), amount: -50 })), { categoryId: cat });
   detectRecurrings();
   const names = categorySummary(cat, thisMonth)!.upcoming.map((u) => u.merchant);
   assert.ok(names.includes("Power Co"), "active recurring should be upcoming");
@@ -182,7 +146,7 @@ test("categorySummary upcoming shows ACTIVE recurrings only (not stale/inactive)
 test("budget surfaces on the category total", () => {
   const cat = addCat("Groceries");
   setBudget(cat, 200);
-  seed("Kroger", [{ date: "2025-06-15", amount: -120 }], cat);
+  seed("Kroger", [{ date: "2025-06-15", amount: -120 }], { categoryId: cat });
   const c = categoriesWithTotals("2025-06").find((x) => x.id === cat)!;
   assert.equal(c.budget, 200);
   assert.equal(c.total, 120);
