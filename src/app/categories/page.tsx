@@ -9,30 +9,14 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { usd, defaultMonth, isCurrentMonth } from "@/lib/format";
+import type { CategoryWithTotals } from "@/lib/queries";
 import { getJson, patchJson } from "@/lib/http";
 import { CATEGORY_EMOJIS } from "@/lib/emoji";
 import { Tooltip } from "@/components/Tooltip";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 
-type Cat = {
-  id: number;
-  name: string;
-  color: string;
-  icon: string;
-  kind: "expense" | "income";
-  total: number;
-  txCount: number;
-  budget: number | null;
-  budgetPeriod: "monthly" | "annual";
-  ytdSpent: number;
-  recurringBaseline: number;
-  suggestedBudget: number;
-  suggestedAnnualBudget: number;
-  excludeFromTotals: 0 | 1;
-};
+type Cat = CategoryWithTotals;
 
-// Spend to compare a category against its own budget: an annual budget tracks
-// calendar year-to-date; a monthly budget tracks the viewed month.
 const budgetSpent = (c: Cat) => (c.budgetPeriod === "annual" ? c.ytdSpent : c.total);
 const isOver = (c: Cat) => c.budget != null && budgetSpent(c) > c.budget;
 

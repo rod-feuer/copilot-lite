@@ -32,31 +32,12 @@ import { SearchBox } from "@/components/SearchBox";
 import { Tooltip } from "@/components/Tooltip";
 import { postJson, patchJson, deleteJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
+import type { TransactionRow } from "@/lib/queries";
+import type { Category } from "@/lib/types";
 import { createLatestGuard } from "@/lib/latestGuard";
 
-type Tx = {
-  id: number;
-  date: string;
-  merchant: string;
-  displayName: string;
-  amount: number;
-  account: string;
-  source: string;
-  excluded: 0 | 1;
-  pending: 0 | 1; // still settling — a sync replaces the row, so it can't be split yet
-  effectiveDate: string | null;
-  recurringId: number | null;
-  recurringExcluded: 0 | 1; // user flagged this charge as a one-off
-  splitParts: number; // >0 when this charge is a split parent (its parts are child rows)
-  categoryId: number | null;
-  categoryName: string | null;
-  categoryColor: string | null;
-  categoryIcon: string | null;
-  categoryExcluded: number;
-  note: string | null;
-};
-
-type Cat = { id: number; name: string; color: string; icon: string; kind: string };
+type Tx = TransactionRow;
+type Cat = Category;
 
 type Filters = {
   month: string;

@@ -11,6 +11,8 @@ import {
   YAxis,
 } from "recharts";
 import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
+import type { DashboardData } from "@/lib/core";
+import type { TransactionRow } from "@/lib/queries";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
@@ -25,74 +27,10 @@ import { useToast } from "@/components/Toast";
 import { Tooltip as HoverTip } from "@/components/Tooltip";
 import { getJson, patchJson } from "@/lib/http";
 
-type Dash = {
-  monthLabel: string;
-  income: number;
-  expenses: number;
-  net: number;
-  projectedIncome: number | null;
-  projectedNet: number | null;
-  byCategory: {
-    name: string;
-    categoryId: number | null;
-    color: string;
-    icon: string;
-    total: number;
-    budget: number | null;
-    recurringBaseline: number;
-  }[];
-  budget: { total: number; spent: number; projected: number | null } | null;
-  pace: {
-    series: {
-      date: string;
-      actual: number | null;
-      projected: number | null;
-      prev: number | null;
-    }[];
-    projectedMonthEnd: number | null;
-    daysElapsed: number;
-    daysInMonth: number;
-  };
-  recentCount: number;
-  needsReview: number;
-  prev: {
-    month: string;
-    income: number;
-    expenses: number;
-    net: number;
-    throughDay: number | null;
-  } | null;
-  upcoming: {
-    windowDays: number;
-    total: number;
-    count: number;
-    items: {
-      merchant: string;
-      name: string;
-      nextDate: string;
-      amount: number;
-      categoryName: string | null;
-      categoryColor: string | null;
-      categoryIcon: string | null;
-    }[];
-  };
-};
-
-type Tx = {
-  id: number;
-  date: string;
-  merchant: string;
-  displayName: string;
-  amount: number;
-  categoryName: string | null;
-  categoryColor: string | null;
-  categoryIcon: string | null;
-  recurringId: number | null;
-  recurringExcluded: 0 | 1; // this charge was excluded from its vendor's series
-  // 1 when the category is excluded from totals (transfers, CC payments) — such a
-  // positive amount is money moving, not income, so it shouldn't read as green.
-  categoryExcluded: 0 | 1;
-};
+// Shapes come from the library that produces them; the aliases keep the file's
+// existing names.
+type Dash = DashboardData;
+type Tx = TransactionRow;
 
 export default function DashboardPage() {
   const [months, setMonths] = useState<string[]>([]);

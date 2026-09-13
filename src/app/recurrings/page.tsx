@@ -15,66 +15,16 @@ import { getJson, postJson } from "@/lib/http";
 import { CADENCE_DAYS } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
+import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
+import type { Category } from "@/lib/types";
 
-type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
-
-type MatchRule = {
-  matchMode: "exact" | "contains";
-  matchText: string | null;
-  amountTolerance: number | null;
-};
-
-type Settings = {
-  matchMode: "exact" | "contains" | null;
-  matchText: string | null;
-  amountTolerance: number | null;
-  alias: string | null;
-  expectedAmount: number | null;
-  cadence: Cadence | null;
-  nextDate: string | null;
-};
-
-// Patch sent to /api/recurrings/settings (only included keys change).
+// Shapes come from the library that produces them; the aliases keep the file's
+// existing names. `Settings` used to omit endedDate — the page wrote it anyway.
+type Settings = RecurringSettings;
 type SettingsPatch = Partial<Settings>;
-
-type Rec = {
-  id: number;
-  merchant: string;
-  avgAmount: number;
-  cadence: Cadence;
-  lastDate: string;
-  nextDate: string;
-  count: number;
-  categoryId: number | null;
-  categoryName: string | null;
-  categoryColor: string | null;
-  categoryIcon: string | null;
-  expectedThisMonth: boolean;
-  paid: boolean;
-  paidAmount: number | null;
-  dueDate: string;
-  matchRule: MatchRule | null;
-  linkedMerchants: string[];
-  displayName: string;
-  expectedAmount: number;
-  ended: boolean;
-  endedDate: string | null;
-  settings: Settings | null;
-};
-
-type Cat = { id: number; name: string; color: string; icon: string };
-
-type Suggestion = {
-  merchant: string;
-  displayName: string;
-  reason: "variable" | "new";
-  cadence: string | null;
-  avgAmount: number;
-  count: number;
-  lastDate: string;
-  category: { name: string; color: string; icon: string } | null;
-  aliases: string[]; // other descriptors of the same vendor, folded in on Add
-};
+type Rec = RecurringForMonth;
+type Cat = Category;
+type Suggestion = RecurringSuggestion;
 
 const CADENCE_LABEL: Record<Rec["cadence"], string> = {
   weekly: "Weekly",
