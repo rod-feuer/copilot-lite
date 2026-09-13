@@ -10,9 +10,13 @@ Run **every iteration** (fast):
 3. `npm test` — green (`node --import tsx --test`; uses a temp DB via `COPILOT_DB_PATH`)
 4. `npm run smoke` — pages load in a real browser with **no console errors**, APIs 200
    (needs the dev server up on :3000; catches client-side crashes tests can't)
+5. `npm run test:ui` — behaviour checks in a real browser (honest load states, keyboard
+   rows, un-gated actions, partial-month qualifiers, statement-mode overlays, split → undo).
+   Self-contained: starts its own server on :3100 against a throwaway DB. Stop `next dev`
+   first — both write to `.next`.
 
 Run **before declaring the rubric done** (heavier / disruptive):
-5. `npm run build` (`next build`) — **stop `next dev` first** (they share `.next`).
+6. `npm run build` (`next build`) — **stop `next dev` first** (they share `.next`).
    Catches RSC / server-client boundary errors `tsc` misses.
 
 **Real data is sacred:** never run destructive ops on `data/copilot.db`. Tests point at

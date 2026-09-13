@@ -240,7 +240,7 @@ export default function DashboardPage() {
               }
             />
             <Stat
-              label={data.projectedNet != null ? "Expenses so far" : "Expenses"}
+              label={isCurrentMonth(month) ? "Expenses so far" : "Expenses"}
               value={usd(data.expenses, { cents: false })}
               tone="neutral"
               href={`/transactions?month=${month}&type=expense`}

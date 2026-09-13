@@ -25,3 +25,9 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run test:clock
+      # Browser checks of shipped UI behaviour (honest load states, keyboard rows,
+      # un-gated actions, partial-month qualifiers, split → undo). Starts its own
+      # server on a throwaway DB; needs a Chrome binary.
+      - run: npm run test:ui
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome

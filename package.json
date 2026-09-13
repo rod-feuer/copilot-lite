@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "smoke": "node --env-file-if-exists=.env.local scripts/smoke.mjs",
-    "test:clock": "node scripts/test-clock.mjs"
+    "test:clock": "node scripts/test-clock.mjs",
+    "test:ui": "node scripts/test-ui.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
