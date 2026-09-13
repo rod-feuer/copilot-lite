@@ -264,13 +264,26 @@ test("excluded rows and excluded categories never count toward totals", () => {
   assert.equal(d.expenses, 100, "dashboard expenses excludes both row + category exclusions");
 });
 
-test("dashboard net equals income minus expenses and is finite", () => {
+test("dashboard income, expenses, net, prior net and category totals are the fixture's figures", () => {
+  // WHY: `net === income − expenses` recomputed from the same object only proves
+  // the net formula. A fault on the income side (say `> 0` instead of `>= 0`), a
+  // sign flip in prev.net, or a category keyed wrong would all survive it. Pin
+  // every figure to the fixture so each has exactly one way to be right.
   tx("Paycheck", { amount: 5000, categoryId: CAT_INC });
   tx("Kroger", { amount: -120, categoryId: CAT });
   tx("Home Depot", { amount: -80, categoryId: CAT_X });
+  tx("May Pay", { amount: 1000, date: "2025-05-10", categoryId: CAT_INC });
+  tx("May Spend", { amount: -300, date: "2025-05-12", categoryId: CAT });
   const d = dashboard("2025-06");
-  for (const n of [d.income, d.expenses, d.net]) assert.ok(Number.isFinite(n), "finite");
-  assert.equal(d.net, Number((d.income - d.expenses).toFixed(2)));
+  assert.equal(d.income, 5000);
+  assert.equal(d.expenses, 200);
+  assert.equal(d.net, 4800);
+  assert.equal(d.prev!.income, 1000);
+  assert.equal(d.prev!.expenses, 300);
+  assert.equal(d.prev!.net, 700, "prior month net keeps its sign");
+  const cat = (id: number) => d.byCategory.find((c) => c.categoryId === id)!.total;
+  assert.equal(cat(CAT), 120, "groceries total keyed by category id");
+  assert.equal(cat(CAT_X), 80);
 });
 
 test("in-progress month compares like-for-like against the prior month's same days", () => {
@@ -607,12 +620,19 @@ test("upcoming bills appear on the current month only, never on a past one", () 
 });
 
 test("isRecurringActive: live within ~1.5 cycles of its last charge, dead beyond", () => {
+  // WHY: the window is `period × 1.5 + 5` days. Fixtures far from the edge
+  // (9d, 130d) let the constants drift — 1.0×, 2.0×, +0 all passed. Bracket
+  // each edge by one day so a changed multiplier or grace fails here.
   const now = Date.UTC(2026, 5, 10); // 2026-06-10
-  // Monthly window ≈ 30*1.5+5 = 50 days.
+  // Monthly window = 30*1.5+5 = 50 days.
   assert.equal(isRecurringActive("2026-06-02", "monthly", now), true, "9 days → active");
+  assert.equal(isRecurringActive("2026-04-22", "monthly", now), true, "49 days → still active");
+  assert.equal(isRecurringActive("2026-04-20", "monthly", now), false, "51 days → inactive");
   assert.equal(isRecurringActive("2026-02-01", "monthly", now), false, "130 days → inactive");
-  // Weekly window ≈ 7*1.5+5 = 15.5 days.
+  // Weekly window = 7*1.5+5 = 15.5 days.
   assert.equal(isRecurringActive("2026-06-05", "weekly", now), true, "5 days → active");
+  assert.equal(isRecurringActive("2026-05-26", "weekly", now), true, "15 days → still active");
+  assert.equal(isRecurringActive("2026-05-25", "weekly", now), false, "16 days → inactive");
   assert.equal(isRecurringActive("2026-05-20", "weekly", now), false, "21 days → inactive");
 });
 
@@ -1051,7 +1071,11 @@ test("a charge can be excluded from its recurring without muting the whole vendo
   assert.ok(restored.recurringId != null, "re-included charge is recurring again");
 });
 
-test("auto-split children sum to the parent and the parent is excluded", () => {
+test("auto-split children carry the rule's exact signed amounts and categories; the parent is excluded", () => {
+  // WHY: summing |amount| would pass even if the children came out as inflows
+  // (a dropped minus at the insert), and a wrong categoryId would move money
+  // to the wrong bar with the total still reconciling. Assert each child
+  // exactly: sign, amount, category, in rule order.
   createSplitRule("chubb", 1115.55, [
     { categoryId: CAT_X, amount: 847.75, label: "Home" },
     { categoryId: CAT, amount: 267.8, label: "Other" },
@@ -1059,11 +1083,15 @@ test("auto-split children sum to the parent and the parent is excluded", () => {
   tx("Chubb Insurance", { amount: -1115.55, categoryId: CAT_X });
   applySplitRules();
   const children = getDb()
-    .prepare("SELECT amount FROM transactions WHERE hash LIKE '%:s%'")
-    .all() as { amount: number }[];
-  assert.equal(children.length, 2);
-  const sum = children.reduce((a, c) => a + Math.abs(c.amount), 0);
-  assert.equal(Number(sum.toFixed(2)), 1115.55);
+    .prepare("SELECT amount, categoryId, merchant FROM transactions WHERE hash LIKE '%:s%' ORDER BY hash")
+    .all() as { amount: number; categoryId: number; merchant: string }[];
+  assert.deepEqual(
+    children.map((c) => [c.amount, c.categoryId, c.merchant]),
+    [
+      [-847.75, CAT_X, "Chubb Insurance — Home"],
+      [-267.8, CAT, "Chubb Insurance — Other"],
+    ]
+  );
   const parent = getDb()
     .prepare("SELECT excluded FROM transactions WHERE merchant = 'Chubb Insurance' AND hash NOT LIKE '%:s%'")
     .get() as { excluded: number };

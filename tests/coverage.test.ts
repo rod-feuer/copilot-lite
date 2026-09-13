@@ -112,6 +112,21 @@ test("suggestedRecurrings uses the shared median, so a boundary gap set still su
   assert.equal(s!.reason, "variable");
 });
 
+test("match rule amount tolerance admits a near-miss charge and rejects a far one", () => {
+  // WHY: LOOP.md's rubric names "contains + amount tolerance", but only the
+  // contains arm had a test — a tolerance applied as an absolute instead of a
+  // fraction, or ignored entirely, would pass. ±5% of a $10 bill is 50¢:
+  // $10.40 is inside, $12.00 is not.
+  seed("Acme", months(1, 5, -10)); // Jan–May → detected monthly at $10
+  detectRecurrings();
+  setRecurringSetting("Acme", { matchMode: "contains", matchText: "acme", amountTolerance: 0.05 });
+  seed("ACME PAYMENT 12", [{ date: "2025-06-15", amount: -10.4 }]);
+  assert.equal(recurringsForMonth("2025-06").find((r) => r.merchant === "Acme")!.paid, true, "4% over: paid");
+  getDb().prepare("DELETE FROM transactions WHERE merchant = 'ACME PAYMENT 12'").run();
+  seed("ACME PAYMENT 12", [{ date: "2025-06-15", amount: -12 }]);
+  assert.equal(recurringsForMonth("2025-06").find((r) => r.merchant === "Acme")!.paid, false, "20% over: not paid");
+});
+
 test("categorySummary reports month spend, prior month, trailing-12 avg, budget, txns", () => {
   const cat = addCat("Dining");
   setBudget(cat, 300);
