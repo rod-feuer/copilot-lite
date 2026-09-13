@@ -862,6 +862,13 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   const sameVendor = (a: string, b: string) =>
     canonicalMerchant(a, dedupeLinks) === canonicalMerchant(b, dedupeLinks) ||
     (merchantKey(a) !== "" && merchantKey(a) === merchantKey(b));
+  // A fold MERGES the clone into the face: the face keeps its key (settings,
+  // alias, links live there) but takes the newest clone's last/next charge and
+  // the combined count. The bank only ever sends the newest descriptor again,
+  // so a face frozen on its own old lastDate reads as "stopped" the moment the
+  // descriptor changes (WSJ: 19 charges as "D J*wsj" through May, then "D J").
+  // Paid-matching below treats a charge on any folded key as the face's.
+  const clonesOf = new Map<string, Set<string>>();
   const sorted = (listRecurrings() as RecurringForMonth[])
     .slice()
     .sort((a, b) => b.count - a.count);
@@ -874,7 +881,17 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
           Math.max(5, Math.abs(p.avgAmount) * 0.02) &&
         sameVendor(p.merchant, r.merchant)
     );
-    if (!dup) recs.push(r);
+    if (!dup) {
+      recs.push(r);
+      clonesOf.set(r.merchant, new Set([r.merchant]));
+      continue;
+    }
+    clonesOf.get(dup.merchant)!.add(r.merchant);
+    dup.count += r.count;
+    if (r.lastDate > dup.lastDate) {
+      dup.lastDate = r.lastDate;
+      dup.nextDate = r.nextDate;
+    }
   }
 
   // 2. This month's transactions, matched to recurrings: exact merchant first,
@@ -941,7 +958,9 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
     const expense = r.avgAmount < 0;
     txns.forEach((t, i) => {
       if (consumed.has(i)) return;
-      if (canon(t.merchant) === r.merchant && (expense ? t.amount < 0 : t.amount > 0)) {
+      const key = canon(t.merchant);
+      const ours = key === r.merchant || clonesOf.get(r.merchant)?.has(key);
+      if (ours && (expense ? t.amount < 0 : t.amount > 0)) {
         consumed.add(i);
         actual[ri] += Math.abs(t.amount);
         matched[ri] = true;
