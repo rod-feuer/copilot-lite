@@ -334,12 +334,12 @@ async function splitUndo(browser) {
 async function shelfSettings(browser) {
   await withPage(browser, async (page, errs) => {
     await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
-    // the inline editor is gone; Edit opens the shelf
-    const edit = await page.waitForSelector("[data-drawer-row] button::-p-text(Edit)", { timeout: 8000 });
-    await edit.click(); await shelfIs(page, true); await shelfSettled(page);
+    // the inline editor is gone; the row itself opens the shelf
+    await page.waitForSelector("[data-drawer-row]");
+    await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
     const shelf = () => page.evaluate((sel) => document.querySelector(sel).innerText.toLowerCase(), shelfSel);
     let t = await shelf();
-    record("shelf settings", "Edit opens the shelf with Next due + Match", t.includes("next due") && t.includes("match"));
+    record("shelf settings", "row opens the shelf with Next due + Match", t.includes("next due") && t.includes("match"));
     record("shelf settings", "no Reset all before any override", !t.includes("reset all overrides"));
     const posts = [];
     page.on("response", async (r) => { if (r.url().includes("/api/recurrings/settings")) posts.push({ status: r.status(), body: await r.text().catch(() => "?") }); });
@@ -494,11 +494,11 @@ async function recurringsRow(browser) {
   // border), use the §2 vocabulary, and the amount is full-weight foreground.
   await withPage(browser, async (page) => {
     await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
-    await page.waitForSelector("[data-drawer-row] button::-p-text(Edit)");
+    await page.waitForSelector("[data-drawer-row] button[aria-haspopup]");
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("[data-drawer-row]")].filter((li) => li.querySelector("select"));
       const x = (el) => Math.round(el.getBoundingClientRect().left);
-      const edits = rows.map((li) => x([...li.querySelectorAll("button")].find((b) => b.textContent.trim() === "Edit")));
+      const edits = rows.map((li) => x(li.querySelector("button[aria-haspopup]")));
       const selects = rows.map((li) => x(li.querySelector("select")));
       const amounts = rows.map((li) => { const els = [...li.querySelectorAll("div")]; return els.find((d) => /^\$[\d,]+\.\d\d$/.test(d.textContent.trim())); });
       const fg = getComputedStyle(document.body).color;
@@ -511,7 +511,7 @@ async function recurringsRow(browser) {
         truncated, names: names.length,
       };
     });
-    record("recurrings row", `${r.rows} rows · Edit buttons in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
+    record("recurrings row", `${r.rows} rows · ⋯ menus in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
     record("recurrings row", "category selects in one column", r.selectXs.length === 1, `x=${r.selectXs.join("/")}`);
     record("recurrings row", "amounts are full-weight foreground", r.amountColours.length === 1 && r.amountColours[0] === r.foreground, `${r.amountColours.join("/")} vs ${r.foreground}`);
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
