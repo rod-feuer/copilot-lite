@@ -328,7 +328,7 @@ export function listTransactions(
   }
   // recurringExcluded (a per-charge one-off flag) is computed in the SELECT and
   // returned, so expose it in the type rather than hiding it behind the cast.
-): (TransactionWithCategory & { recurringExcluded: number })[] {
+): (TransactionWithCategory & { recurringExcluded: number; splitParts: number })[] {
   const db = getDb();
   ensureRecurringTxExclusions(db);
   const { whereSql, params } = buildTxFilter(opts);
@@ -350,13 +350,15 @@ export function listTransactions(
   const sql = `
     SELECT t.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon,
            COALESCE(c.excludeFromTotals, 0) AS categoryExcluded,
-           (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
+           (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded,
+           (SELECT COUNT(*) FROM transactions s WHERE s.hash LIKE t.hash || ':s%') AS splitParts
     FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
     ${whereSql}
     ORDER BY ${sortCol} ${dir}, t.id DESC
     ${pagination}`;
   const rows = db.prepare(sql).all(params) as (TransactionWithCategory & {
     recurringExcluded: number;
+    splitParts: number; // >0 when this charge is a split parent (its parts are child rows)
   })[];
   const settings = getRecurringSettings();
   const links = getMerchantLinks();

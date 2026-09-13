@@ -27,7 +27,7 @@ import { NameCleanupQueue } from "@/components/NameCleanupQueue";
 import { CategorizeQueue } from "@/components/CategorizeQueue";
 import { SearchBox } from "@/components/SearchBox";
 import { Tooltip } from "@/components/Tooltip";
-import { postJson, patchJson } from "@/lib/http";
+import { postJson, patchJson, deleteJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { createLatestGuard } from "@/lib/latestGuard";
 
@@ -40,9 +40,11 @@ type Tx = {
   account: string;
   source: string;
   excluded: 0 | 1;
+  pending: 0 | 1; // still settling — a sync replaces the row, so it can't be split yet
   effectiveDate: string | null;
   recurringId: number | null;
   recurringExcluded: 0 | 1; // user flagged this charge as a one-off
+  splitParts: number; // >0 when this charge is a split parent (its parts are child rows)
   categoryId: number | null;
   categoryName: string | null;
   categoryColor: string | null;
@@ -480,6 +482,17 @@ export default function TransactionsPage() {
 
   // The charge being split (drives the split dialog). null = closed.
   const [splitTx, setSplitTx] = useState<Tx | null>(null);
+  // Undo a split from its parent row: the rule, its child rows, and the
+  // parent's exclusion all go (see DELETE …/split).
+  async function undoSplitTx(t: Tx) {
+    try {
+      await deleteJson(`/api/transactions/${t.id}/split`);
+      toast("Split undone", "success");
+      setRefreshKey((k) => k + 1);
+    } catch {
+      toast("Couldn't undo split — please try again", "error");
+    }
+  }
 
   const onOpenRow = useCallback(
     (merchant: string) => openTx(merchant, { onChange: () => setRefreshKey((k) => k + 1) }),
@@ -841,6 +854,7 @@ export default function TransactionsPage() {
                     onSetChargeRecurring={setChargeRecurring}
                     onToggleExcluded={setExcluded}
                     onSplit={setSplitTx}
+                    onUndoSplit={undoSplitTx}
                     onSetCategory={setCategory}
                   />
                 ))}
@@ -896,24 +910,28 @@ function RowActionsMenu({
   hasDateOverride,
   excluded,
   canSplit,
+  splitParts,
   onSetDate,
   onEditNote,
   onSetRecurring,
   onSetChargeRecurring,
   onToggleExcluded,
   onSplit,
+  onUndoSplit,
 }: {
   recState: "in" | "out" | "none";
   hasNote: boolean;
   hasDateOverride: boolean;
   excluded: boolean;
   canSplit: boolean;
+  splitParts: number;
   onSetDate: () => void;
   onEditNote: () => void;
   onSetRecurring: (recurring: boolean) => void;
   onSetChargeRecurring: (excluded: boolean) => void;
   onToggleExcluded: (excluded: boolean) => void;
   onSplit: () => void;
+  onUndoSplit: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
@@ -1003,7 +1021,9 @@ function RowActionsMenu({
           >
             {item(hasDateOverride ? "Change date" : "Set date", onSetDate)}
             {item(hasNote ? "Edit note" : "Add note", onEditNote)}
-            {canSplit && item("Split…", onSplit)}
+            {splitParts > 0
+              ? item(`Undo split (${splitParts} parts)`, onUndoSplit)
+              : canSplit && item("Split…", onSplit)}
             {divider}
             {item(isRecurring ? "Not recurring" : "Mark recurring", () =>
               onSetRecurring(!isRecurring)
@@ -1012,9 +1032,15 @@ function RowActionsMenu({
                 it can't strand a ghost marker on a non-recurring vendor. */}
             {recState === "in" && item("Exclude this charge", () => onSetChargeRecurring(true))}
             {recState === "out" && item("Add charge to series", () => onSetChargeRecurring(false))}
-            {divider}
-            {item(excluded ? "Include in totals" : "Exclude from totals", () =>
-              onToggleExcluded(!excluded)
+            {/* A split parent is excluded because its parts count instead;
+                including it again would double-count, so the toggle is hidden. */}
+            {splitParts === 0 && (
+              <>
+                {divider}
+                {item(excluded ? "Include in totals" : "Exclude from totals", () =>
+                  onToggleExcluded(!excluded)
+                )}
+              </>
             )}
           </div>,
           document.body
@@ -1215,6 +1241,7 @@ const TxRow = memo(function TxRow({
   onSetChargeRecurring,
   onToggleExcluded,
   onSplit,
+  onUndoSplit,
   onSetCategory,
 }: {
   t: Tx;
@@ -1235,6 +1262,7 @@ const TxRow = memo(function TxRow({
   onSetChargeRecurring: (t: Tx, excluded: boolean) => void;
   onToggleExcluded: (t: Tx, excluded: boolean) => void;
   onSplit: (t: Tx) => void;
+  onUndoSplit: (t: Tx) => void;
   onSetCategory: (id: number, categoryId: number | null) => void;
 }) {
   const sameCat =
@@ -1308,7 +1336,11 @@ const TxRow = memo(function TxRow({
                             </button>
                           </Tooltip>
                         )}
-                        {t.excluded ? (
+                        {t.splitParts > 0 ? (
+                          <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                            split · {t.splitParts} parts
+                          </span>
+                        ) : t.excluded ? (
                           <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
                             excluded
                           </span>
@@ -1373,7 +1405,11 @@ const TxRow = memo(function TxRow({
                         </span>
                       </Tooltip>
                     )}
-                    {t.excluded ? (
+                    {t.splitParts > 0 ? (
+                      <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                        split · {t.splitParts} parts
+                      </span>
+                    ) : t.excluded ? (
                       <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
                         excluded
                       </span>
@@ -1547,13 +1583,15 @@ const TxRow = memo(function TxRow({
                   hasNote={!!t.note}
                   hasDateOverride={!!(t.effectiveDate && t.effectiveDate !== t.date)}
                   excluded={!!t.excluded}
-                  canSplit={t.amount < 0}
+                  canSplit={t.amount < 0 && !t.pending}
                   onSetDate={() => setEditingDateId(t.id)}
                   onEditNote={() => setEditingNoteId(t.id)}
                   onSetRecurring={(recurring) => onSetRecurring(t, recurring)}
                   onSetChargeRecurring={(excluded) => onSetChargeRecurring(t, excluded)}
                   onToggleExcluded={(excluded) => onToggleExcluded(t, excluded)}
+                  splitParts={t.splitParts}
                   onSplit={() => onSplit(t)}
+                  onUndoSplit={() => onUndoSplit(t)}
                 />
               </li>
   );
@@ -1646,6 +1684,13 @@ function SplitDialog({
                 placeholder="$"
                 inputMode="decimal"
                 className="w-20 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+              />
+              <input
+                value={p.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder={cats.find((c) => c.id === Number(p.categoryId))?.name ?? "Label"}
+                aria-label="Part label"
+                className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               />
               {parts.length > 2 ? (
                 <button

@@ -20,3 +20,4 @@ export async function getJson<T>(url: string): Promise<T> {
 
 export const postJson = (url: string, body: unknown) => sendJson("POST", url, body);
 export const patchJson = (url: string, body: unknown) => sendJson("PATCH", url, body);
+export const deleteJson = (url: string) => sendJson("DELETE", url, undefined);

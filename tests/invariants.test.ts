@@ -53,7 +53,7 @@ import {
   approveMerge,
   dismissMerge,
 } from "../src/lib/merges";
-import { createSplitRule, applySplitRules } from "../src/lib/splits";
+import { createSplitRule, applySplitRules, undoSplit } from "../src/lib/splits";
 import { importPlaidTransactions } from "../src/lib/plaid";
 
 let CAT: number, CAT_INC: number, CAT_EXC: number, CAT_X: number;
@@ -1068,6 +1068,54 @@ test("auto-split children sum to the parent and the parent is excluded", () => {
     .prepare("SELECT excluded FROM transactions WHERE merchant = 'Chubb Insurance' AND hash NOT LIKE '%:s%'")
     .get() as { excluded: number };
   assert.equal(parent.excluded, 1);
+});
+
+test("a pending charge is not split until it posts", () => {
+  // WHY: a sync replaces a pending row (remove + add). If the pending row had
+  // been split, it comes back un-excluded while its child rows survive, and
+  // the charge counts twice. Found by splitting the newest row in a real DB
+  // copy and letting the launch sync run. Rules wait for the posted row.
+  createSplitRule("chubb", 1115.55, [
+    { categoryId: CAT_X, amount: 847.75, label: "Home" },
+    { categoryId: CAT, amount: 267.8, label: "Other" },
+  ]);
+  tx("Chubb Insurance", { amount: -1115.55, categoryId: CAT_X });
+  getDb().prepare("UPDATE transactions SET pending = 1 WHERE merchant = 'Chubb Insurance'").run();
+  assert.equal(applySplitRules(), 0, "pending: left alone");
+  getDb().prepare("UPDATE transactions SET pending = 0 WHERE merchant = 'Chubb Insurance'").run();
+  assert.equal(applySplitRules(), 1, "posted: split");
+});
+
+test("undo split removes the children, restores the parent, and deletes the rule", () => {
+  // WHY: a split persists a rule that re-splits every future matching charge.
+  // Without an inverse, one mistaken split is permanent. Undo must reverse all
+  // three effects — otherwise the parent double-counts (excluded + children
+  // gone), or the next sync silently re-splits it from the surviving rule.
+  createSplitRule("chubb", 1115.55, [
+    { categoryId: CAT_X, amount: 847.75, label: "Home" },
+    { categoryId: CAT, amount: 267.8, label: "Other" },
+  ]);
+  tx("Chubb Insurance", { amount: -1115.55, categoryId: CAT_X });
+  const before = dashboard("2025-06").expenses;
+  applySplitRules();
+  assert.equal(dashboard("2025-06").expenses, before, "a split moves money between categories, not the total");
+  const parent = listTransactions({ month: "2025-06" }).find((r) => r.merchant === "Chubb Insurance")!;
+  assert.equal(parent.splitParts, 2, "the list knows the parent is split");
+  assert.equal(parent.excluded, 1);
+  const children = () =>
+    getDb().prepare("SELECT amount FROM transactions WHERE hash LIKE '%:s%'").all() as { amount: number }[];
+  assert.ok(children().every((c) => c.amount < 0), "children are outflows like their parent");
+
+  assert.equal(undoSplit(parent.id), 1, "one parent restored");
+  assert.equal(children().length, 0, "child rows gone");
+  const after = listTransactions({ month: "2025-06" }).find((r) => r.id === parent.id)!;
+  assert.equal(after.excluded, 0, "parent counts again");
+  assert.equal(after.splitParts, 0);
+  const rules = getDb().prepare("SELECT COUNT(*) AS n FROM split_rules").get() as { n: number };
+  assert.equal(rules.n, 0, "rule gone");
+  assert.equal(dashboard("2025-06").expenses, before, "total unchanged through split and undo");
+  assert.equal(applySplitRules(), 0, "nothing re-splits on the next sync");
+  assert.equal(undoSplit(parent.id), 0, "nothing left to undo");
 });
 
 test("effectiveDate overrides the accounting month (COALESCE everywhere)", () => {
