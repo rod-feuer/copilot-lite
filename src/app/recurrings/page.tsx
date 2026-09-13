@@ -4,8 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { RowMenu, RowMenuItem } from "@/components/RowMenu";
-import { Popover } from "@/components/Popover";
-import { NewCategoryForm } from "@/components/NewCategoryForm";
+import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -509,7 +508,7 @@ function BillList({
   const shelfActive = useShelfActive();
   // "+ New category…" chosen in a row's dropdown: the create form opens under
   // that dropdown and the new category is applied to that row on Add.
-  const [newCatFor, setNewCatFor] = useState<{ rec: Rec; anchor: DOMRect } | null>(null);
+  const newCat = useNewCategory<Rec>((cat, rec) => onNewCategory?.(cat, rec));
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize && onMute);
 
@@ -623,8 +622,8 @@ function BillList({
                       value={r.categoryId ?? ""}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => {
-                        if (e.target.value === "__new__") {
-                          setNewCatFor({ rec: r, anchor: e.currentTarget.getBoundingClientRect() });
+                        if (e.target.value === NEW_CATEGORY) {
+                          newCat.open(e.currentTarget, r, `New category for ${r.displayName}`);
                           return;
                         }
                         onRecategorize(r, e.target.value ? Number(e.target.value) : null);
@@ -638,7 +637,7 @@ function BillList({
                           {c.icon} {c.name}
                         </option>
                       ))}
-                      <option value="__new__">+ New category…</option>
+                      <NewCategoryOption />
                     </select>
                   </span>
                 ) : (
@@ -676,25 +675,7 @@ function BillList({
           </Fragment>
         ))}
       </div>
-      {newCatFor && onNewCategory && (
-      <Popover
-        anchor={newCatFor.anchor}
-        label="New category"
-        onClose={() => setNewCatFor(null)}
-      >
-        <div className="mb-2 text-xs font-medium text-[var(--muted)]">
-          New category for {newCatFor.rec.displayName}
-        </div>
-        <NewCategoryForm
-          autoFocus
-          onCreated={(cat) => {
-            const rec = newCatFor.rec;
-            setNewCatFor(null);
-            onNewCategory(cat, rec);
-          }}
-        />
-      </Popover>
-      )}
+      {newCat.popover}
     </div>
   );
 }
