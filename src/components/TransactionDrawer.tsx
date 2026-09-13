@@ -16,7 +16,7 @@ import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson } from "@/lib/http";
 import { LoadError } from "@/components/LoadState";
-import { usd, shortDate, shortDatePad, monthDayYear } from "@/lib/format";
+import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
 
 type Cat = { id: number; name: string; color: string; icon: string };
 type Vendor = { merchant: string; displayName: string };
@@ -721,11 +721,11 @@ function MerchantBody({
       ]
     : [
         { label: "last 12 mo", value: usd(data.trailing12, { cents: false }) },
-        { label: "per month", value: usd(data.trailing12 / monthsActive, { cents: false }) },
+        { label: "per active mo", value: usd(data.trailing12 / monthsActive, { cents: false }) },
         { label: "txns / 12mo", value: String(data.count12) },
       ];
   if (data.received > 0)
-    boxes.push({ label: "received", value: usd(data.received, { cents: false }) });
+    boxes.push({ label: "received, all time", value: usd(data.received, { cents: false }) });
 
   return (
     <div className="flex flex-col gap-4">
@@ -940,8 +940,10 @@ function CategoryBody({
   const budgeted = data.budget != null && !isIncome && !isExcluded;
 
   // Card 1 — how much.
+  // Mid-month, "spent" and the trend compare a partial month with full ones.
+  const partial = isCurrentMonth(data.month);
   const card1 = {
-    label: isIncome ? "received" : isExcluded ? "total" : "spent",
+    label: `${isIncome ? "received" : isExcluded ? "total" : "spent"}${partial ? " so far" : ""}`,
     value: usd(data.spent, { cents: false }),
   };
   // Card 2 — the trailing-12 "typical month" benchmark, always (the budget bar
@@ -957,7 +959,7 @@ function CategoryBody({
   const better = isIncome ? delta > 0 : delta < 0;
   const hasTrend = data.prevSpent > 0 && pct !== 0;
   const card3 = {
-    label: "vs last mo",
+    label: partial ? "so far vs last mo" : "vs last mo",
     value:
       data.prevSpent === 0
         ? data.spent === 0
