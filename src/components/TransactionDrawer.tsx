@@ -22,6 +22,7 @@ import { LoadError } from "@/components/LoadState";
 import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
 import type { MerchantSummary, CategorySummary, MatchRule } from "@/lib/queries";
 import type { Category } from "@/lib/types";
+import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
 
 // Shapes come from the library that produces them; the aliases keep the file's
 // existing names.
@@ -67,6 +68,8 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [back, setBack] = useState<Target | null>(null);
   const [amountHint, setAmountHint] = useState<number | null>(null);
   const [cats, setCats] = useState<Cat[]>([]);
+  // A category created from a shelf dropdown joins the pickers at once.
+  const addCat = useCallback((c: Cat) => setCats((cs) => [...cs, c]), []);
   // Vendors (one per canonical merchant, with display name) for the Combine picker.
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const onChange = useRef<(() => void) | undefined>(undefined);
@@ -188,6 +191,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       if (!el.isConnected) return;
       if (asideRef.current?.contains(el)) return;
       if (el.closest("[data-drawer-row]")) return;
+      // A popover opened from a shelf control (the New-category form) is
+      // portaled to <body>, outside the panel — clicking into it is not leaving.
+      if (el.closest("[role='dialog']")) return;
       close();
     };
     window.addEventListener("mousedown", onDown);
@@ -418,6 +424,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               <MerchantBody
                 data={mData}
                 cats={cats}
+                onAddCategory={addCat}
                 onRecategorize={recategorize}
                 onToggleRecurring={toggleRecurring}
                 onSaveSettings={saveMerchantSettings}
@@ -429,6 +436,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               <CategoryBody
                 data={cData}
                 cats={cats}
+                onAddCategory={addCat}
                 onOpenMerchant={drillToMerchant}
                 onTxRecategorize={txRecategorize}
                 onTxToggleRecurring={txToggleRecurring}
@@ -595,6 +603,7 @@ function CategoryHeader({ data, month }: { data: CatSummary | null; month: strin
 function MerchantBody({
   data,
   cats,
+  onAddCategory,
   onRecategorize,
   onToggleRecurring,
   onSaveSettings,
@@ -604,6 +613,7 @@ function MerchantBody({
 }: {
   data: Summary;
   cats: Cat[];
+  onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
   onToggleRecurring: () => void;
   onSaveSettings: (
@@ -624,6 +634,11 @@ function MerchantBody({
   vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
 }) {
+  // "+ New category…" in the Category field: create it here and apply it.
+  const newCat = useNewCategory<null>((cat) => {
+    onAddCategory(cat);
+    onRecategorize(cat.id);
+  });
   const [combining, setCombining] = useState(false);
   const d = data.recurringDetail;
   const monthsActive = monthsSince(data.firstSeen);
@@ -714,7 +729,14 @@ function MerchantBody({
               <label className="stat-label">Category</label>
               <select
                 value={data.categoryId ?? ""}
-                onChange={(e) => onRecategorize(e.target.value ? Number(e.target.value) : null)}
+                aria-label="Category"
+                onChange={(e) => {
+                  if (e.target.value === NEW_CATEGORY) {
+                    newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
+                    return;
+                  }
+                  onRecategorize(e.target.value ? Number(e.target.value) : null);
+                }}
                 className="btn-ghost select-caret w-full cursor-pointer appearance-none pr-8 text-sm"
               >
                 <option value="">Uncategorized</option>
@@ -723,7 +745,9 @@ function MerchantBody({
                     {c.icon} {c.name}
                   </option>
                 ))}
+                <NewCategoryOption />
               </select>
+              {newCat.popover}
             </div>
           </div>
         </div>
@@ -877,12 +901,14 @@ function MerchantBody({
 function CategoryBody({
   data,
   cats,
+  onAddCategory,
   onOpenMerchant,
   onTxRecategorize,
   onTxToggleRecurring,
 }: {
   data: CatSummary;
   cats: Cat[];
+  onAddCategory: (c: Cat) => void;
   onOpenMerchant: (merchant: string) => void;
   onTxRecategorize: (txId: number, categoryId: number | null) => void;
   onTxToggleRecurring: (merchant: string, makeIt: boolean) => void;
@@ -1007,6 +1033,7 @@ function CategoryBody({
                 onClick={() => onOpenMerchant(t.merchant)}
                 editable={{
                   cats,
+                  onAddCategory,
                   onRecategorize: (cid) => onTxRecategorize(t.id, cid),
                   onToggleRecurring: () => onTxToggleRecurring(t.merchant, t.recurringId == null),
                 }}
@@ -1035,6 +1062,7 @@ function monthsSince(firstSeen: string | null): number {
 // Used by both the Upcoming and Transactions lists so they line up.
 type RowEdit = {
   cats: Cat[];
+  onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
   onToggleRecurring: () => void;
 };
@@ -1060,6 +1088,12 @@ function ShelfRow({
   editable?: RowEdit;
 }) {
   const [editing, setEditing] = useState(false);
+  // "+ New category…" in the row's Recategorize picker.
+  const newCat = useNewCategory<null>((cat) => {
+    editable?.onAddCategory(cat);
+    editable?.onRecategorize(cat.id);
+    setEditing(false);
+  });
   return (
     <li>
       <div
@@ -1122,8 +1156,13 @@ function ShelfRow({
         >
           <select
             defaultValue="__p"
+            aria-label="Recategorize"
             onChange={(e) => {
               const v = e.target.value;
+              if (v === NEW_CATEGORY) {
+                newCat.open(e.currentTarget, null, `New category for ${name}`);
+                return;
+              }
               editable.onRecategorize(v === "none" ? null : Number(v));
               setEditing(false);
             }}
@@ -1138,7 +1177,9 @@ function ShelfRow({
                 {c.icon} {c.name}
               </option>
             ))}
+            <NewCategoryOption />
           </select>
+          {newCat.popover}
           <span className="text-[var(--muted)]">
             Recurring? Use the ↻ at the start of the row.
           </span>

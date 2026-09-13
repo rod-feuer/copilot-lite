@@ -559,6 +559,30 @@ async function recurringsRow(browser) {
       const inFilter = await page.$$eval("select[aria-label='Filter by category'] option, select option", (os) => os.some((o) => o.textContent.includes("Lake Utilities")));
       record("recurrings row", "new category appears in the pickers without a reload", inFilter, inFilter ? "listed" : "missing");
     }
+
+    // The same option in the shelf's Category field: the popover is portaled
+    // outside the shelf panel, so clicking into it must not close the shelf.
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    await page.click("[data-drawer-row]");
+    await page.waitForSelector("aside.fixed select[aria-label='Category']", { timeout: 8000 });
+    await page.select("aside.fixed select[aria-label='Category']", "__new__");
+    const shelfForm = await page.waitForSelector("[role='dialog'][aria-label='New category'] input[aria-label='New category name']", { timeout: 5000 }).catch(() => null);
+    record("shelf", "+ New category… in the shelf's Category field opens the form", !!shelfForm, shelfForm ? "form shown" : "no form");
+    if (shelfForm) {
+      await shelfForm.click();
+      await page.type("[data-new-category-form] input[aria-label='New category name']", "Lake Taxes");
+      await page.click("[data-new-category-form] button.btn-primary");
+      const applied = await page
+        .waitForFunction(() => {
+          const sel = document.querySelector("aside.fixed select[aria-label='Category']");
+          return !!sel && sel.options[sel.selectedIndex]?.textContent.includes("Lake Taxes");
+        }, { timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+      const shelfOpen = !!(await page.$("aside.fixed"));
+      record("shelf", "created category is applied to the vendor and the shelf stays open", applied && shelfOpen, `applied=${applied} shelf open=${shelfOpen}`);
+    }
     await page.screenshot({ path: "/tmp/copilot-recurrings-row.png" });
   });
 }
