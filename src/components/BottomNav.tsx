@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV } from "@/components/Sidebar";
+import SignOut from "@/components/SignOut";
 
 // Mobile navigation: a fixed bottom tab bar (the desktop sidebar is hidden below
 // `sm`). Reuses the sidebar's NAV items/icons so the two never drift. Hidden at
 // `sm`+. The layout pads `main` so content clears this bar.
-export default function BottomNav() {
+// `signOut`: the layout passes whether the password gate is on; the tab bar is
+// the one always-visible chrome on a phone, so that is where Sign out lives.
+export default function BottomNav({ signOut = false }: { signOut?: boolean }) {
   const pathname = usePathname();
   return (
     <nav
@@ -30,6 +33,7 @@ export default function BottomNav() {
           </Link>
         );
       })}
+      {signOut && <SignOut variant="tab" />}
     </nav>
   );
 }

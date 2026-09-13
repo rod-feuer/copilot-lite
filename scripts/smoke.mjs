@@ -103,6 +103,21 @@ try {
     for (const e of errs) failures.push(`PAGE ${route} console: ${e}`);
     await page.close();
   }
+  // Sign out is only rendered when the gate is on. Click it, land on /login,
+  // and confirm the API now refuses the session.
+  if (gated) {
+    const page = await browser.newPage();
+    await page.goto(BASE + "/", { waitUntil: "networkidle2", timeout: 20000 });
+    const btn = await page.$("form[action='/api/logout'] button");
+    if (!btn) failures.push("SIGN OUT: button not rendered while the gate is on");
+    else {
+      await Promise.all([page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }), btn.click()]);
+      if (!page.url().includes("/login")) failures.push(`SIGN OUT: landed on ${page.url()}, expected /login`);
+      const status = await page.evaluate(() => fetch("/api/months").then((r) => r.status));
+      if (status !== 401) failures.push(`SIGN OUT: /api/months still answers ${status} after sign-out`);
+    }
+    await page.close();
+  }
 } finally {
   await browser.close();
 }
@@ -114,5 +129,5 @@ if (failures.length) {
 }
 console.log(
   `✔ smoke passed — ${PAGES.length} pages, ${APIS.length} APIs, no console errors` +
-    (gated ? " (logged in)" : "")
+    (gated ? " (logged in; sign-out works)" : "")
 );

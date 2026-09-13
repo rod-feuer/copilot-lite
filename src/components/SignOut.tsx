@@ -1,0 +1,34 @@
+// Sign out: a native form POST to /api/logout, which clears the session cookie
+// and 303-redirects to /login — the same no-JS flow the login page uses, so it
+// works the same on a phone. Rendered only when the password gate is on; the
+// layout decides that server-side, this component never sees the password.
+// Two placements, one action: the desktop sidebar footer and the mobile tab bar.
+export default function SignOut({ variant }: { variant: "sidebar" | "tab" }) {
+  const icon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  );
+  if (variant === "tab")
+    return (
+      <form method="post" action="/api/logout" className="flex flex-1">
+        <button
+          type="submit"
+          className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium text-[var(--muted)] transition-colors"
+        >
+          {icon}
+          <span>Sign out</span>
+        </button>
+      </form>
+    );
+  return (
+    <form method="post" action="/api/logout">
+      <button type="submit" className="nav-link w-full">
+        {icon}
+        Sign out
+      </button>
+    </form>
+  );
+}

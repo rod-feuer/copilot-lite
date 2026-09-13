@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import BottomNav from "@/components/BottomNav";
+import { authEnabled } from "@/lib/auth";
 import { ToastProvider } from "@/components/Toast";
 import { TxDrawerProvider } from "@/components/TransactionDrawer";
 import { SyncOnLaunch } from "@/components/SyncOnLaunch";
@@ -68,7 +69,7 @@ export default function RootLayout({
             {/* Fixed-height shell: the sidebar stays put and `main` is the only
                 scroll area, so the sidebar nav and each page header can stick. */}
             <div className="flex h-screen overflow-hidden">
-              <Sidebar />
+              <Sidebar signOut={authEnabled()} />
               {/* Bottom padding (mobile only) so content clears the fixed
                   BottomNav + the iPhone home-indicator safe area. */}
               <main className="flex-1 overflow-y-auto overflow-x-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-0">
@@ -77,7 +78,7 @@ export default function RootLayout({
             </div>
             {/* Mobile tab bar (fixed; hidden at sm+). Outside the overflow-hidden
                 row so its fixed position isn't affected. */}
-            <BottomNav />
+            <BottomNav signOut={authEnabled()} />
           </TxDrawerProvider>
         </ToastProvider>
       </body>
