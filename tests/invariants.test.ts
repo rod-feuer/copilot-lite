@@ -42,6 +42,7 @@ import {
   resetRecurringOverrides,
   getRecurringSettings,
   merchantVariants,
+  upcomingRecurringExpenses,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -491,6 +492,27 @@ test("a series' last and next due follow the effective date, like every reader o
   assert.equal(rec.cadence, "monthly");
   assert.equal(rec.lastDate, "2025-06-01", "last charge on the effective calendar");
   assert.equal(rec.nextDate, "2025-07-01", "next due one period on from it");
+});
+
+test("a series that has gone quiet is not an upcoming bill, even with a next-due override", () => {
+  // WHY: the category baseline, the shelf, and the recurrings page all apply
+  // isRecurringActive; the dashboard's upcoming list (and the month-end spend
+  // projection it feeds) did not. A stale series normally falls out of the
+  // window on its own, but a user-set next-due or cadence override could put
+  // it back — so the projection counted a bill that had stopped.
+  const iso = (offsetDays: number) => {
+    const d = new Date(); d.setUTCDate(d.getUTCDate() + offsetDays); return d.toISOString().slice(0, 10);
+  };
+  // Live: monthly, last charged 5 days ago. Quiet: monthly, last charged 200 days ago.
+  for (const d of [-95, -65, -35, -5]) tx("Power Co", { amount: -100, date: iso(d), categoryId: CAT });
+  for (const d of [-290, -260, -230, -200]) tx("Old Box", { amount: -30, date: iso(d), categoryId: CAT });
+  detectRecurrings();
+  // Both get a next-due override 10 days from now, inside the window.
+  setRecurringSetting("Power Co", { nextDate: iso(10) });
+  setRecurringSetting("Old Box", { nextDate: iso(10) });
+  const names = upcomingRecurringExpenses(iso(1), iso(30)).map((u) => u.merchant);
+  assert.ok(names.includes("Power Co"), "a live series with a due date in the window is upcoming");
+  assert.ok(!names.includes("Old Box"), "a quiet series is not, whatever its override says");
 });
 
 test("a quarterly bill counts one third per month toward the category baseline", () => {
