@@ -197,18 +197,6 @@ export function resetRecurringOverrides(merchant: string) {
   });
 }
 
-// Back-compat helpers for the match-rule API route.
-export function setMatchRule(merchant: string, rule: MatchRule) {
-  setRecurringSetting(merchant, {
-    matchMode: rule.matchMode,
-    matchText: rule.matchText,
-    amountTolerance: rule.amountTolerance,
-  });
-}
-export function clearMatchRule(merchant: string) {
-  setRecurringSetting(merchant, { matchMode: null, matchText: null, amountTolerance: null });
-}
-
 // Merchant strings to match for a text search: every descriptor of any vendor
 // whose own name, original bank descriptor (rawMerchant), canonical name, or
 // user alias contains the query — then expanded across linked variants so a

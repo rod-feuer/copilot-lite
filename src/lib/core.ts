@@ -10,7 +10,7 @@ import {
   canonicalMerchant,
   linkedAliases,
 } from "./queries";
-import type { Category, Recurring } from "./types";
+import type { Recurring } from "./types";
 import { CADENCE_DAYS, medianGap } from "./cadence";
 
 // ---- Dedupe key -----------------------------------------------------------
@@ -744,8 +744,3 @@ export function dashboard(month?: string): DashboardData {
   };
 }
 
-export function allCategories(): Category[] {
-  return getDb()
-    .prepare("SELECT * FROM categories ORDER BY kind DESC, name")
-    .all() as Category[];
-}
