@@ -74,6 +74,7 @@ async function loadFixture() {
     [day(0, 2), "Whole Foods Market", "-54.20", "Credit"],
     [day(0, 3), "Chipotle", "-18.75", "Credit"],
     [day(0, 4), "Shell Gas Station", "-48.10", "Credit"],
+    [day(0, 6), "Card Payment Received", "500", "Credit"], // goes into an excluded category below
     [day(-2, 3), "Netflix", "-15.49", "Credit"],
     [day(-1, 3), "Netflix", "-15.49", "Credit"],
     [day(0, 3), "Netflix", "-15.49", "Credit"],
@@ -89,6 +90,14 @@ async function loadFixture() {
     body: JSON.stringify({ budget: 500, period: "monthly" }),
   });
   if (!b.ok) throw new Error("could not set a budget");
+  // An excluded category (a transfer bucket) holding an inflow: must never read as income.
+  await fetch(BASE + "/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Transfers", icon: "↔", color: "#888888", kind: "expense" }) });
+  const transfers = (await (await fetch(BASE + "/api/categories")).json()).find((c) => c.name === "Transfers");
+  if (!transfers) throw new Error("could not create the Transfers category");
+  await fetch(`${BASE}/api/categories/${transfers.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ excludeFromTotals: true }) });
+  const cp = (await (await fetch(BASE + "/api/transactions?q=Card%20Payment&limit=5")).json()).rows?.[0];
+  if (!cp) throw new Error("fixture row 'Card Payment Received' not found");
+  await fetch(`${BASE}/api/transactions/${cp.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: transfers.id }) });
 }
 
 // ---------- helpers ----------
@@ -359,6 +368,34 @@ async function shelfSettings(browser) {
   });
 }
 
+async function moneyColour(browser) {
+  // The colour of the amount in the row that names `who`, on the current page.
+  const colourOf = (page, who) => page.evaluate((who) => {
+    const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes(who));
+    if (!li) return null;
+    const amt = [...li.querySelectorAll("span, div")].find((el) => /^[+−]\$[\d,]+/.test(el.textContent.trim()) && el.children.length === 0);
+    return amt ? getComputedStyle(amt).color : null;
+  }, who);
+  await withPage(browser, async (page) => {
+    for (const route of ["/transactions", "/"]) {
+      await page.goto(BASE + route, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      const income = await colourOf(page, "Acme Corp Paycheck");
+      const transfer = await colourOf(page, "Card Payment Received");
+      // Tailwind v4 emits emerald as lab(); older builds as rgb(). Green = negative a* (lab) or g-dominant (rgb).
+      const green = (c) => {
+        if (!c) return false;
+        const n = c.match(/-?\d+(\.\d+)?/g).map(Number);
+        if (c.startsWith("lab(")) return n[1] < -10;
+        if (c.startsWith("rgb(")) return n[1] > n[0] && n[1] > n[2];
+        return false;
+      };
+      record("money colour", `${route} · income is green`, green(income), income);
+      record("money colour", `${route} · excluded-category inflow is not`, transfer !== null && !green(transfer), transfer);
+    }
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -369,7 +406,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

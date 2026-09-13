@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { MonthPicker, ImportButton } from "@/components/Actions";
@@ -1571,13 +1572,11 @@ const TxRow = memo(function TxRow({
                     onChange={(id) => setCategory(t.id, id)}
                   />
                 )}
-                <div
-                  className={`w-24 text-right text-[15px] font-semibold tabular-nums ${
-                    t.amount >= 0 ? "text-emerald-600" : "text-[var(--foreground)]"
-                  }`}
-                >
-                  {usd(t.amount, { sign: true })}
-                </div>
+                <Money
+                  value={t.amount}
+                  excluded={!!t.excluded || !!t.categoryExcluded}
+                  className="block w-24 text-right text-[15px] font-semibold"
+                />
                 <RowActionsMenu
                   recState={recState}
                   hasNote={!!t.note}

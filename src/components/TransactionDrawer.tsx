@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson } from "@/lib/http";
@@ -26,6 +27,7 @@ type Recent = {
   amount: number;
   account: string;
   excluded: 0 | 1;
+  categoryExcluded: 0 | 1;
   categoryName: string | null;
 };
 type Summary = {
@@ -957,9 +959,7 @@ function MerchantBody({
               }`}
             >
               <span className="text-xs text-[var(--muted)]">{monthDayYear(r.date)}</span>
-              <span className={`tabular-nums ${r.amount >= 0 ? "text-emerald-600" : ""}`}>
-                {usd(r.amount, { sign: true })}
-              </span>
+              <Money value={r.amount} excluded={!!r.excluded || !!r.categoryExcluded} />
             </li>
           ))}
         </ul>
@@ -1096,6 +1096,7 @@ function CategoryBody({
                 amount={t.amount}
                 sign
                 muted={t.excluded === 1}
+                excluded={isExcluded}
                 recurring={t.recurringId != null}
                 onClick={() => onOpenMerchant(t.merchant)}
                 editable={{
@@ -1137,6 +1138,7 @@ function ShelfRow({
   amount,
   sign,
   muted,
+  excluded,
   recurring,
   onClick,
   editable,
@@ -1146,6 +1148,7 @@ function ShelfRow({
   amount: number;
   sign?: boolean;
   muted?: boolean;
+  excluded?: boolean; // doesn't count toward totals → an inflow is not green
   recurring?: boolean;
   onClick?: () => void;
   editable?: RowEdit;
@@ -1211,13 +1214,11 @@ function ShelfRow({
             {name}
           </Tooltip>
         </span>
-        <span
-          className={`shrink-0 tabular-nums ${
-            muted ? "text-[var(--muted)]" : amount >= 0 ? "text-emerald-600" : ""
-          }`}
-        >
-          {usd(amount, { sign: !!sign })}
-        </span>
+        {muted ? (
+          <span className="shrink-0 tabular-nums text-[var(--muted)]">{usd(amount, { sign: !!sign })}</span>
+        ) : (
+          <Money value={amount} sign={!!sign} excluded={excluded} className="shrink-0" />
+        )}
         {editable ? (
           <button
             onClick={(e) => {

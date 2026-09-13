@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
+import { Money } from "@/components/Money";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
@@ -481,15 +482,11 @@ export default function DashboardPage() {
                         {shortDate(t.date)} · {t.categoryName ?? "Uncategorized"}
                       </div>
                     </div>
-                    <div
-                      className={`text-sm font-semibold ${
-                        t.amount >= 0 && !t.categoryExcluded
-                          ? "text-emerald-600"
-                          : "text-[var(--foreground)]"
-                      }`}
-                    >
-                      {usd(t.amount, { sign: true })}
-                    </div>
+                    <Money
+                      value={t.amount}
+                      excluded={!!t.categoryExcluded}
+                      className="text-sm font-semibold"
+                    />
                     <DrillChevron />
                   </button>
                 </li>

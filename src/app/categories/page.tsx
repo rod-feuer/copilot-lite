@@ -1071,8 +1071,8 @@ function BudgetInput({
             <Tooltip
               label={
                 period === "annual"
-                  ? `Set an annual budget of your ~$${sug.toLocaleString("en-US")}/yr spend`
-                  : `Set this month's budget to your ~$${sug.toLocaleString("en-US")}/mo average`
+                  ? `Set an annual budget of your ~${usd(sug, { cents: false })}/yr spend`
+                  : `Set this month's budget to your ~${usd(sug, { cents: false })}/mo average`
               }
               onlyIfTruncated={false}
             >
@@ -1083,7 +1083,7 @@ function BudgetInput({
                 }}
                 className="whitespace-nowrap rounded-md bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
               >
-                Use ${sug.toLocaleString("en-US")}
+                Use {usd(sug, { cents: false })}
               </button>
             </Tooltip>
           )}
