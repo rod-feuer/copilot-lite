@@ -1383,7 +1383,7 @@ function StateTag({ edited }: { edited?: boolean }) {
 
 const CADENCE_LABELS: Record<string, string> = {
   weekly: "Weekly",
-  biweekly: "Every 2 weeks",
+  biweekly: "Biweekly",
   monthly: "Monthly",
   quarterly: "Quarterly",
   semiannual: "Every 6 months",
