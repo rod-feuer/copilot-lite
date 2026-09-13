@@ -557,8 +557,12 @@ function BillList({
               >
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
               </div>
-              <div className="w-16 shrink-0 truncate text-xs text-[var(--muted)]">{CADENCE_LABEL[r.cadence]}</div>
-              <CategoryBadge icon={r.categoryIcon} color={r.categoryColor} fallback={r.displayName} size="xs" plain />
+              {/* Cadence shows only when it isn't monthly: the exception is the
+                  information; a column of "Monthly" trains the eye to skip it.
+                  The shelf always states the cadence in full. */}
+              <div className="w-16 shrink-0 truncate text-xs text-[var(--muted)]">
+                {r.cadence !== "monthly" ? CADENCE_LABEL[r.cadence] : ""}
+              </div>
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 {onSaveSettings ? (
                   <InlineEdit
@@ -583,28 +587,36 @@ function BillList({
               {/* Category as a quiet property: icon + name, no tint; still a
                   native select with its caret (a visible affordance), editing
                   in place. Hidden on a phone, where the row opens the shelf. */}
-              {/* The category column is right-aligned so the chevrons share one
-                  edge; each select hugs its own text so the chevron sits beside it. */}
+              {/* The category property: a visible label with its chevron right
+                  beside it (a native select sizes to its widest option, which
+                  stranded the chevron), and the real <select> laid transparently
+                  over the label — still native, still keyboard, caret visible. */}
               <div className="hidden w-44 shrink-0 justify-end sm:flex">
                 {editable && cats && onRecategorize ? (
-                  <select
-                    value={r.categoryId ?? ""}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) =>
-                      onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
-                    }
-                    aria-label="Category"
-                    className={`select-caret max-w-full cursor-pointer appearance-none truncate rounded-md bg-transparent py-1 pl-1.5 pr-6 text-xs transition-colors hover:bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${
-                      r.categoryId != null ? "text-[var(--muted)] hover:text-[var(--foreground)]" : "italic text-[var(--muted)]"
-                    }`}
-                  >
-                    <option value="">Uncategorized</option>
-                    {cats.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.icon} {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="group/cat relative inline-flex max-w-full items-center gap-1 rounded-md py-1 pl-1.5 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40">
+                    <span className={`truncate ${r.categoryId == null ? "italic" : ""}`}>
+                      {r.categoryId != null ? `${r.categoryIcon ?? ""} ${r.categoryName ?? ""}`.trim() : "Uncategorized"}
+                    </span>
+                    <svg data-category-caret width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                    <select
+                      value={r.categoryId ?? ""}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
+                      }
+                      aria-label="Category"
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    >
+                      <option value="">Uncategorized</option>
+                      {cats.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.icon} {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
                 ) : (
                   r.categoryName && (
                     <span className="truncate text-xs text-[var(--muted)]">
@@ -616,7 +628,7 @@ function BillList({
               {/* The only visible control: the row's ⋯ (the row itself opens the
                   shelf, which is where editing lives). */}
               {editable ? (
-                <RowMenu marked={!!r.settings} markedLabel="has custom settings — edit or reset them in the shelf">
+                <RowMenu>
                   {onEnd && !r.ended && !dim && (
                     <RowMenuItem label="Mark ended" onSelect={() => onEnd(r.merchant, true)} />
                   )}
