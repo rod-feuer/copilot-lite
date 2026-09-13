@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import { HeaderMenu } from "@/components/HeaderMenu";
 import { RowMenu, RowMenuItem } from "@/components/RowMenu";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
@@ -271,33 +272,35 @@ export default function RecurringsPage() {
       title="Recurrings"
       subtitle="Bills & subscriptions by month"
       actions={
+        // One toolbar for every view control; the rare action (Re-scan) is in
+        // the header's ⋯, not a peer of the month picker.
         <>
+          <SearchBox value={q} onChange={setQ} placeholder="Search…" className="w-full sm:w-48" />
+          <select
+            value={catFilter}
+            onChange={(e) => setCatFilter(e.target.value)}
+            aria-label="Filter by category"
+            className={`btn-ghost select-caret max-w-44 cursor-pointer appearance-none pr-8 ${
+              catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
+            }`}
+          >
+            <option value="">All categories</option>
+            <option value="none">Uncategorized</option>
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.icon} {c.name}
+              </option>
+            ))}
+          </select>
           <MonthPicker months={months} value={month} onChange={changeMonth} />
-          <button className="btn-ghost" disabled={busy} onClick={recompute}>
-            {busy ? "Scanning…" : "Re-scan"}
-          </button>
+          <HeaderMenu>
+            <button className="btn-ghost" disabled={busy} onClick={recompute}>
+              {busy ? "Scanning…" : "Re-scan"}
+            </button>
+          </HeaderMenu>
         </>
       }
     >
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={setQ} placeholder="Search recurrings…" className="w-full sm:w-60" />
-        <select
-          value={catFilter}
-          onChange={(e) => setCatFilter(e.target.value)}
-          aria-label="Filter by category"
-          className={`btn-ghost select-caret max-w-44 cursor-pointer appearance-none pr-8 sm:ml-auto ${
-            catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
-          }`}
-        >
-          <option value="">All categories</option>
-          <option value="none">Uncategorized</option>
-          {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.icon} {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
       {status === "loading" ? (
         <LoadingRows />
       ) : status === "error" ? (
@@ -313,25 +316,16 @@ export default function RecurringsPage() {
       ) : (
         <div className="flex flex-col gap-5">
           {totalBills > 0 && (
-            <div className="card p-5">
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {usd(paidSoFar, { cents: false })}
-                  </div>
-                  <div className="stat-label">paid so far</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {isCurrentMonth ? "≈ " : ""}
-                    {usd(leftToPay, { cents: false })}
-                  </div>
-                  <div className="stat-label">
-                    {isCurrentMonth ? "left to pay (expected)" : "remaining"}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <span className="font-semibold tabular-nums">{usd(paidSoFar, { cents: false })}</span>
+              <span className="text-[var(--muted)]">paid so far</span>
+              <span className="text-[var(--muted)]">·</span>
+              <span className="font-semibold tabular-nums">
+                {isCurrentMonth ? "≈ " : ""}
+                {usd(leftToPay, { cents: false })}
+              </span>
+              <span className="text-[var(--muted)]">{isCurrentMonth ? "left to pay (expected)" : "remaining"}</span>
+              <div className="ml-auto h-1 w-40 overflow-hidden rounded-full bg-[var(--border)]">
                 <div
                   className="h-full rounded-full bg-[var(--accent)]"
                   style={{ width: `${Math.round((paidSoFar / totalBills) * 100)}%` }}
@@ -341,7 +335,7 @@ export default function RecurringsPage() {
           )}
 
           <BillList
-            title="Recurring expenses"
+            title=""
             recs={shownBills}
             cats={cats}
             onRecategorize={recategorize}
@@ -382,7 +376,7 @@ export default function RecurringsPage() {
                 {showSuggestions ? "▾" : "▸"} Suggested ({shownSuggestions.length})
               </button>
               {showSuggestions && (
-                <div className="card divide-y divide-[var(--border)]">
+                <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
                   {shownSuggestions.map((s) => {
                     return (
                       <div key={s.merchant}>
@@ -400,7 +394,7 @@ export default function RecurringsPage() {
                             : "hover:bg-[var(--background)]"
                         }`}
                       >
-                        <CategoryBadge icon={s.category?.icon} color={s.category?.color} fallback={s.displayName} />
+                        <CategoryBadge icon={s.category?.icon} color={s.category?.color} fallback={s.displayName} size="xs" plain />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium">{s.displayName}</div>
                           <div className="text-xs text-[var(--muted)]">
@@ -474,11 +468,6 @@ export default function RecurringsPage() {
   );
 }
 
-// A row's quiet action button: bordered, muted text, foreground on hover —
-// the Edit button's existing look, applied to every row action.
-const ROW_ACTION =
-  "rounded-lg border border-[var(--border)] bg-card px-2 py-0.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)]";
-
 function BillList({
   title,
   recs,
@@ -525,23 +514,29 @@ function BillList({
           {title}
         </h3>
       )}
-      <div className="card divide-y divide-[var(--border)]">
+      <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
         {sections.map((section) => (
           <Fragment key={section.key}>
             {section.label && (
-              <div className="bg-[var(--background)] px-4 py-1.5 text-xs font-semibold text-[var(--muted)]">
+              <div className="sticky top-0 z-10 flex items-center gap-2 bg-[var(--background)] px-2 py-1.5 text-xs font-medium text-[var(--muted)]">
                 {section.label}
+                <span
+                  className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                    section.key === "od" ? "bg-amber-500/15 text-amber-600" : "bg-[var(--border)] text-[var(--muted)]"
+                  }`}
+                >
+                  {section.recs.length}
+                </span>
               </div>
             )}
             {section.recs.map((r) => {
           const amount = r.paid ? r.paidAmount ?? 0 : r.expectedAmount;
-          const color = r.categoryColor ?? "#94a3b8";
           return (
             <div key={r.id}>
             <div
               data-drawer-row
               {...(onOpen ? rowButtonProps(() => onOpen(r.merchant)) : {})}
-              className={`group flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:flex-nowrap ${ROW_FOCUS} ${
+              className={`group flex items-center gap-3 px-2 py-2 text-[13px] ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
@@ -551,86 +546,40 @@ function BillList({
                   : ""
               }`}
             >
-              <div className="w-12 shrink-0 text-xs text-[var(--muted)]">
-                {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
+              {/* Secondary facts in one muted string; the glyph alone, untinted. */}
+              <div className="w-36 shrink-0 truncate text-xs text-[var(--muted)]">
+                {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)} · {CADENCE_LABEL[r.cadence]}
               </div>
-              <CategoryBadge icon={r.categoryIcon} color={r.categoryColor} fallback={r.displayName} />
-              {/* Name column: the click-to-edit name (with its ✎ cue) and the
-                  Ended badge only — cadence has its own column so the name
-                  reads as one phrase. */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  {onSaveSettings ? (
-                    <InlineEdit
-                      value={r.displayName}
-                      onCommit={(raw) => onSaveSettings(r.merchant, { alias: raw.trim() || null })}
-                    />
-                  ) : (
-                    <span className="truncate text-sm font-medium">{r.displayName}</span>
-                  )}
-                  {r.ended && (
-                    <Tooltip
-                      label="You marked this subscription ended — it no longer counts as upcoming or expected"
-                      onlyIfTruncated={false}
-                      className="inline-flex shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
-                    >
-                      Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
-                    </Tooltip>
-                  )}
-                </div>
+              <CategoryBadge icon={r.categoryIcon} color={r.categoryColor} fallback={r.displayName} size="xs" plain />
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {onSaveSettings ? (
+                  <InlineEdit
+                    value={r.displayName}
+                    textClassName="text-[13px] font-medium"
+                    cueOnHover
+                    onCommit={(raw) => onSaveSettings(r.merchant, { alias: raw.trim() || null })}
+                  />
+                ) : (
+                  <span className="truncate font-medium">{r.displayName}</span>
+                )}
+                {r.settings && (
+                  <Tooltip label="Has custom settings — edit or reset them in the shelf" onlyIfTruncated={false} className="shrink-0">
+                    <span aria-label="Has custom settings" className="text-[var(--accent)]">•</span>
+                  </Tooltip>
+                )}
+                {r.ended && (
+                  <Tooltip
+                    label="You marked this subscription ended — it no longer counts as upcoming or expected"
+                    onlyIfTruncated={false}
+                    className="inline-flex shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+                  >
+                    Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
+                  </Tooltip>
+                )}
               </div>
-              <span className="hidden w-24 shrink-0 text-xs text-[var(--muted)] sm:block">
-                {CADENCE_LABEL[r.cadence]}
-              </span>
-              {/* Actions: fixed-width slots so every row's controls sit in the
-                  same columns, styled as quiet buttons (not bare text, which read
-                  as disabled). On a phone the row opens the shelf, which has the
-                  same actions — like the category select below. */}
-              {/* Actions: the secondary verbs live in the row's ⋯ menu (the
-                  app's one pattern for them); Edit stays visible. Fixed widths
-                  so every row's controls sit in the same columns. On a phone the
-                  row opens the shelf, which has the same actions. */}
-              {editable && (
-                <div className="hidden w-[7rem] shrink-0 items-center justify-end gap-1.5 sm:flex">
-                  <RowMenu>
-                      {onEnd && !r.ended && !dim && (
-                        <RowMenuItem label="Mark ended" onSelect={() => onEnd(r.merchant, true)} />
-                      )}
-                      {onEnd && r.ended && (
-                        <RowMenuItem label="Reactivate" onSelect={() => onEnd(r.merchant, false)} />
-                      )}
-                      {onMute && !r.ended && (
-                        <RowMenuItem label="Not recurring" onSelect={() => onMute(r.merchant)} className="hover:text-rose-500" />
-                      )}
-                  </RowMenu>
-                  {onOpen && (
-                    <Tooltip
-                      label="Edit in the shelf: name, amount, cadence, next due, matching"
-                      onlyIfTruncated={false}
-                      className="flex"
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpen(r.merchant);
-                        }}
-                        className={`${ROW_ACTION} w-12`}
-                      >
-                        Edit
-                      </button>
-                    </Tooltip>
-                  )}
-                  {/* Custom-settings marker in its own fixed slot, so the Edit
-                      button is the same width on every row. */}
-                  <span className="w-3 shrink-0 text-center text-xs text-[var(--accent)]">
-                    {r.settings ? (
-                      <Tooltip label="Has custom settings — edit or reset them in the shelf" onlyIfTruncated={false}>
-                        <span aria-label="Has custom settings">•</span>
-                      </Tooltip>
-                    ) : null}
-                  </span>
-                </div>
-              )}
+              {/* Category as a quiet property: icon + name, no tint; still a
+                  native select with its caret (a visible affordance), editing
+                  in place. Hidden on a phone, where the row opens the shelf. */}
               {editable && cats && onRecategorize ? (
                 <select
                   value={r.categoryId ?? ""}
@@ -638,14 +587,10 @@ function BillList({
                   onChange={(e) =>
                     onRecategorize(r.merchant, e.target.value ? Number(e.target.value) : null)
                   }
-                  className={`select-caret hidden w-40 shrink-0 cursor-pointer appearance-none truncate rounded-full py-1 pl-2.5 pr-6 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
-                    r.categoryId != null
-                      ? "text-[var(--foreground)] group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]"
-                      : "border border-dashed border-[var(--border)] text-[var(--muted)]"
+                  aria-label="Category"
+                  className={`select-caret hidden w-40 shrink-0 cursor-pointer appearance-none truncate rounded-md bg-transparent py-1 pl-1.5 pr-6 text-xs transition-colors hover:bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 sm:block ${
+                    r.categoryId != null ? "text-[var(--muted)] hover:text-[var(--foreground)]" : "italic text-[var(--muted)]"
                   }`}
-                  // backgroundColor (not `background`) so the .select-caret
-                  // chevron's background-image survives.
-                  style={r.categoryId != null ? { backgroundColor: color + "22" } : undefined}
                 >
                   <option value="">Uncategorized</option>
                   {cats.map((c) => (
@@ -656,17 +601,29 @@ function BillList({
                 </select>
               ) : (
                 r.categoryName && (
-                  <span
-                    className="hidden w-40 shrink-0 truncate rounded-full px-2 py-0.5 text-center text-[11px] font-semibold uppercase tracking-wide sm:inline-block"
-                    style={{ background: color + "22", color }}
-                  >
-                    {r.categoryName}
+                  <span className="hidden w-40 shrink-0 truncate text-xs text-[var(--muted)] sm:inline-block">
+                    {r.categoryIcon} {r.categoryName}
                   </span>
                 )
               )}
-              {/* The amount is why the row exists: full weight. The Overdue /
-                  Upcoming / Paid grouping already says whether it's been paid. */}
-              <div className="ml-auto w-24 text-right text-sm font-semibold tabular-nums text-[var(--foreground)] sm:ml-0">
+              {/* The only visible control: the row's ⋯ (the row itself opens the
+                  shelf, which is where editing lives). */}
+              {editable ? (
+                <RowMenu>
+                  {onEnd && !r.ended && !dim && (
+                    <RowMenuItem label="Mark ended" onSelect={() => onEnd(r.merchant, true)} />
+                  )}
+                  {onEnd && r.ended && (
+                    <RowMenuItem label="Reactivate" onSelect={() => onEnd(r.merchant, false)} />
+                  )}
+                  {onMute && !r.ended && (
+                    <RowMenuItem label="Not recurring" onSelect={() => onMute(r.merchant)} className="hover:text-rose-500" />
+                  )}
+                </RowMenu>
+              ) : (
+                <span className="w-6 shrink-0" aria-hidden />
+              )}
+              <div className="w-24 shrink-0 text-right font-semibold tabular-nums text-[var(--foreground)]">
                 {usd(amount)}
               </div>
             </div>

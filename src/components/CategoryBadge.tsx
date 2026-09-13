@@ -15,6 +15,7 @@ export function categoryIconOrNull(icon: string | null | undefined): string | nu
 }
 
 const SIZE = {
+  xs: "h-5 w-5 text-sm", // dense rows: the glyph alone, no tint (see `plain`)
   sm: "h-9 w-9 text-base", // list rows
   md: "h-10 w-10 text-lg", // statement / shelf headers
 };
@@ -24,12 +25,14 @@ export function CategoryBadge({
   color,
   size = "sm",
   fallback,
+  plain = false,
   className = "",
 }: {
   icon: string | null | undefined;
   color: string | null | undefined;
   size?: keyof typeof SIZE;
   fallback?: string | null; // a name whose initial stands in for a missing icon
+  plain?: boolean; // no tinted circle — colour is for status, not identity
   className?: string;
 }) {
   const glyph = categoryIconOrNull(icon);
@@ -37,7 +40,7 @@ export function CategoryBadge({
     <span
       data-category-badge
       className={`flex shrink-0 items-center justify-center rounded-full ${SIZE[size]} ${className}`.trim()}
-      style={{ background: categoryTint(color) }}
+      style={plain ? undefined : { background: categoryTint(color) }}
     >
       {glyph ?? (
         <span className="text-sm font-semibold text-[var(--muted)]">

@@ -39,7 +39,7 @@ body {
 /* Reusable surface + control styles, kept here so JSX stays readable. */
 @layer components {
   .card {
-    @apply bg-card rounded-2xl border border-[var(--border)] shadow-[0_1px_2px_rgba(16,24,40,0.04),0_1px_3px_rgba(16,24,40,0.06)];
+    @apply bg-card rounded-lg border border-[var(--border)] shadow-[0_1px_2px_rgba(16,24,40,0.04),0_1px_3px_rgba(16,24,40,0.06)];
   }
   .stat-label {
     @apply text-xs font-medium uppercase tracking-wide text-[var(--muted)];
@@ -48,7 +48,7 @@ body {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
   }
   .nav-link {
-    @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)];
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)];
   }
   .nav-link-active {
     @apply bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent)];
@@ -56,10 +56,10 @@ body {
   /* btn-primary / btn-ghost are used standalone in JSX, so each carries the full
      base — Tailwind v4 can't @apply one custom component class inside another. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--background)];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--background)];
   }
 }
 

@@ -109,7 +109,7 @@ and §3 carry over unchanged.
   enough of the month has elapsed. *(Honest)*
 - **Review queues** surface low-confidence work (uncategorized, merge / name-cleanup
   candidates) for one-tap confirmation instead of auto-applying it. *(Correct-don't-configure)*
-- **Tokens & theme.** One accent, neutral grays, 2xl card / xl control radii, dark
+- **Tokens & theme.** One accent, neutral grays, 8px (`lg`) card and control radii, dark
   mode via `data-theme` + CSS variables. New surfaces use the tokens — never
   hard-coded colors. *(One-pattern)*
 - **Touch is in scope; hover only enhances.** The app ships a mobile bottom nav

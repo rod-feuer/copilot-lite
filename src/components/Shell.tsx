@@ -19,7 +19,7 @@ export default function Shell({
           sit beside the actions; if they don't fit, the actions wrap below. */}
       <header className="z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--background)] px-5 py-3 sm:sticky sm:top-0 sm:px-8 sm:py-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-base font-semibold tracking-tight">{title}</h1>
           {subtitle && <p className="text-sm text-[var(--muted)]">{subtitle}</p>}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>

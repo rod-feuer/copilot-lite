@@ -14,10 +14,12 @@ export function InlineEdit({
   className = "",
   textClassName = "text-sm font-medium",
   inputClassName = "",
+  cueOnHover = false,
 }: {
   value: string;
   onCommit: (raw: string) => void;
   label?: string;
+  cueOnHover?: boolean; // only where another always-visible path to renaming exists (the shelf)
   className?: string; // the resting button
   textClassName?: string; // the resting text (also the input's type size)
   inputClassName?: string; // extra classes for the input (e.g. width)
@@ -37,7 +39,7 @@ export function InlineEdit({
           <span className={`truncate ${textClassName}`}>{value}</span>
           {/* Persistent (faint) edit cue so the text reads as click-to-edit even
               without hovering; darkens on hover. */}
-          <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
+          <span className={`shrink-0 text-[10px] text-[var(--muted)] transition-all group-hover/n:text-[var(--foreground)] ${cueOnHover ? "opacity-0 group-hover/n:opacity-100 group-focus-within/n:opacity-100" : ""}`}>
             <span className="inline-block -scale-x-100">✎</span>
           </span>
         </button>
