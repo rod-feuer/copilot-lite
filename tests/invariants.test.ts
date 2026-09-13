@@ -1205,21 +1205,37 @@ test("recurrings dedupe folds only clones of the same vendor, not same-price nei
   const subs = addCat("Subscriptions");
   const ins = getDb().prepare(
     `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
-     VALUES (?, ?, ?, 'monthly', '2026-08-18', '2026-09-18', ?)`
+     VALUES (?, ?, ?, 'monthly', ?, ?, ?)`
   );
-  ins.run("X Corp. Paid Featurebastrop", subs, -40, 20);
-  ins.run("D J*wsj", subs, -38.99, 19); // WSJ, the bank's old descriptor
-  ins.run("D J", subs, -38.99, 3); // WSJ since the bank changed the descriptor
-  ins.run("Michaeljburry.substasaratoga", subs, -39, 10);
-  ins.run("Willywoo.substack.cocentral Hk", subs, -39, 7);
-  ins.run("Chase Mortgage", subs, -40, 6); // distinct name, Combined by the user below
-  ins.run("Chase Home Lending", subs, -40, 4);
+  ins.run("X Corp. Paid Featurebastrop", subs, -40, "2026-08-31", "2026-09-30", 20);
+  ins.run("D J*wsj", subs, -38.99, "2026-05-25", "2026-06-25", 19); // WSJ, the bank's old descriptor
+  ins.run("D J", subs, -38.99, "2026-08-18", "2026-09-18", 3); // WSJ since the bank changed it
+  ins.run("Michaeljburry.substasaratoga", subs, -39, "2026-08-11", "2026-09-11", 10);
+  ins.run("Willywoo.substack.cocentral Hk", subs, -39, "2026-08-26", "2026-09-26", 7);
+  ins.run("Chase Mortgage", subs, -40, "2026-08-01", "2026-09-01", 6); // distinct name, Combined below
+  ins.run("Chase Home Lending", subs, -40, "2026-08-01", "2026-09-01", 4);
   linkMerchant("Chase Home Lending", "Chase Mortgage");
 
-  const shown = recurringsForMonth("2026-09").map((r) => r.merchant).sort();
+  const rows = recurringsForMonth("2026-09");
   assert.deepEqual(
-    shown,
+    rows.map((r) => r.merchant).sort(),
     ["Chase Mortgage", "D J*wsj", "Michaeljburry.substasaratoga", "Willywoo.substack.cocentral Hk", "X Corp. Paid Featurebastrop"],
     "same-vendor clones fold (D J → D J*wsj by key, Chase by link); different vendors in the same price band all stay"
   );
+
+  // The fold is a merge: the face keeps its key but takes the newest clone's
+  // last/next charge and the combined count — otherwise the face's own stale
+  // lastDate (May) files a bill that charged in August under "Inactive".
+  const wsj = rows.find((r) => r.merchant === "D J*wsj")!;
+  assert.equal(wsj.lastDate, "2026-08-18", "face carries the newest clone's last charge");
+  assert.equal(wsj.dueDate, "2026-09-18", "due day follows the live descriptor's charges");
+  assert.equal(wsj.count, 22, "history is the sum of the clones");
+  assert.equal(wsj.paid, false);
+
+  // A charge on the newer key pays the face (exact match through the fold, not
+  // the loose category+amount fallback).
+  tx("D J", { amount: -38.99, date: "2026-09-18", categoryId: subs });
+  const paid = recurringsForMonth("2026-09").find((r) => r.merchant === "D J*wsj")!;
+  assert.equal(paid.paid, true, "the clone's charge counts as the face's payment");
+  assert.equal(paid.paidAmount, 38.99);
 });
