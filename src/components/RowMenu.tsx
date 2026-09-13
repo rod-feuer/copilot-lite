@@ -10,7 +10,17 @@ import { Tooltip } from "@/components/Tooltip";
 // row so the recurrings row uses the same thing instead of a row of buttons.
 const CloseCtx = createContext<() => void>(() => {});
 
-export function RowMenu({ label = "More actions", children }: { label?: string; children: ReactNode }) {
+export function RowMenu({
+  label = "More actions",
+  marked = false,
+  markedLabel = "Has custom settings",
+  children,
+}: {
+  label?: string;
+  marked?: boolean; // a small accent dot on the trigger: "this row has overrides"
+  markedLabel?: string;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -55,14 +65,18 @@ export function RowMenu({ label = "More actions", children }: { label?: string; 
         <button
           ref={btnRef}
           onClick={toggle}
-          aria-label={label}
+          aria-label={marked ? `${label} · ${markedLabel}` : label}
           aria-haspopup="menu"
           aria-expanded={open}
-          className={`rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+          data-marked={marked || undefined}
+          className={`relative rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
             open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
           ⋯
+          {marked && (
+            <span aria-hidden className="absolute right-0 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+          )}
         </button>
       </Tooltip>
       {open &&
