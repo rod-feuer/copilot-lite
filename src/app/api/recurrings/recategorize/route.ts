@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setMerchantCategory, merchantVariants } from "@/lib/queries";
+import { setMerchantCategory, merchantVariants, setSeriesCategory } from "@/lib/queries";
 import { learnRule, detectRecurrings } from "@/lib/core";
 
 export const runtime = "nodejs";
@@ -18,9 +18,17 @@ export async function POST(req: NextRequest) {
   if (!merchant) {
     return NextResponse.json({ error: "merchant required" }, { status: 400 });
   }
-  for (const v of merchantVariants(merchant)) {
-    setMerchantCategory(v, categoryId);
-    if (categoryId != null) learnRule(v.toLowerCase(), categoryId, "user");
+  // One series of a shared descriptor (a split "Netflix · 26th"): move only its
+  // charges. No rule is learned — a rule is per descriptor and would drag the
+  // sibling's future charges along.
+  const recurringId = body.recurringId == null ? null : Number(body.recurringId);
+  if (recurringId != null) {
+    setSeriesCategory(recurringId, categoryId);
+  } else {
+    for (const v of merchantVariants(merchant)) {
+      setMerchantCategory(v, categoryId);
+      if (categoryId != null) learnRule(v.toLowerCase(), categoryId, "user");
+    }
   }
   detectRecurrings();
   return NextResponse.json({ ok: true });

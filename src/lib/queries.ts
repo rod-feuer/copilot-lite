@@ -1,3 +1,4 @@
+import { isSeriesKey, seriesVendor } from "./series";
 import {
   getDb,
   ensureRecurringSettings,
@@ -489,6 +490,15 @@ export function merchantVariants(merchant: string): string[] {
   return [...linked];
 }
 
+// Recategorize ONE series of a descriptor that carries several (a split
+// "Netflix · 26th"): only its linked charges move, so the sibling keeps its
+// category. Vendor-wide recategorize (setMerchantCategory) would move both.
+export function setSeriesCategory(recurringId: number, categoryId: number | null) {
+  const db = getDb();
+  db.prepare("UPDATE transactions SET categoryId = ? WHERE recurringId = ?").run(categoryId, recurringId);
+  db.prepare("UPDATE recurrings SET categoryId = ? WHERE id = ?").run(categoryId, recurringId);
+}
+
 // Roll a recurring's projected charge date forward by whole cadence steps until
 // it lands on/after today, so the drawer's "next due" never shows a past date
 // when a charge is late or the series has paused. Display-only: the stored
@@ -830,6 +840,7 @@ export type RecurringForMonth = Recurring & {
   categoryName: string | null;
   categoryColor: string | null;
   categoryIcon: string | null;
+  vendor: string; // the bank descriptor behind the series (= merchant unless split by day)
   expectedThisMonth: boolean;
   paid: boolean;
   paidAmount: number | null;
@@ -859,9 +870,13 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   // of 60 folds were different vendors, and their charges then "paid" the face.
   const recs: RecurringForMonth[] = [];
   const dedupeLinks = getMerchantLinks();
+  // Split series ("Netflix · 23rd" / "Netflix · 26th") are distinct bills by
+  // construction and never fold.
   const sameVendor = (a: string, b: string) =>
-    canonicalMerchant(a, dedupeLinks) === canonicalMerchant(b, dedupeLinks) ||
-    (merchantKey(a) !== "" && merchantKey(a) === merchantKey(b));
+    !isSeriesKey(a) &&
+    !isSeriesKey(b) &&
+    (canonicalMerchant(a, dedupeLinks) === canonicalMerchant(b, dedupeLinks) ||
+      (merchantKey(a) !== "" && merchantKey(a) === merchantKey(b)));
   // A fold MERGES the clone into the face: the face keeps its key (settings,
   // alias, links live there) but takes the newest clone's last/next charge and
   // the combined count. The bank only ever sends the newest descriptor again,
@@ -899,10 +914,10 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   // even when the bank relabels it. Each transaction is attributed once.
   const txns = db
     .prepare(
-      `SELECT merchant, categoryId, amount FROM transactions
+      `SELECT merchant, categoryId, amount, recurringId FROM transactions
        WHERE substr(COALESCE(effectiveDate,date),1,7) = ? AND excluded = 0`
     )
-    .all(month) as { merchant: string; categoryId: number | null; amount: number }[];
+    .all(month) as { merchant: string; categoryId: number | null; amount: number; recurringId: number | null }[];
 
   const consumed = new Set<number>();
   const actual = new Array(recs.length).fill(0);
@@ -958,8 +973,13 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
     const expense = r.avgAmount < 0;
     txns.forEach((t, i) => {
       if (consumed.has(i)) return;
+      // A split series shares its descriptor with a sibling, so only the
+      // charges the detector linked to it are its own; a whole-descriptor
+      // series claims every charge on its key (or a folded clone's).
       const key = canon(t.merchant);
-      const ours = key === r.merchant || clonesOf.get(r.merchant)?.has(key);
+      const ours = isSeriesKey(r.merchant)
+        ? t.recurringId === r.id
+        : key === r.merchant || clonesOf.get(r.merchant)?.has(key);
       if (ours && (expense ? t.amount < 0 : t.amount > 0)) {
         consumed.add(i);
         actual[ri] += Math.abs(t.amount);
@@ -1012,7 +1032,8 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       paidAmount: actual[ri] > 0.005 ? Number(actual[ri].toFixed(2)) : null,
       dueDate: `${month}-${String(day).padStart(2, "0")}`,
       matchRule: matchRuleFor(r.merchant),
-      linkedMerchants: linkedAliases(r.merchant, links).filter((m) => m !== r.merchant),
+      vendor: seriesVendor(r.merchant),
+      linkedMerchants: linkedAliases(seriesVendor(r.merchant), links).filter((m) => m !== seriesVendor(r.merchant)),
       displayName: s?.alias ?? r.merchant,
       expectedAmount: s?.expectedAmount ?? Number(Math.abs(r.avgAmount).toFixed(2)),
       ended: recurringEnded(s?.endedDate, r.lastDate),

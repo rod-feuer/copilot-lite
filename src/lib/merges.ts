@@ -1,3 +1,4 @@
+import { seriesVendor } from "./series";
 import { getDb, ensureMergeDismissals } from "./db";
 import {
   getMerchantLinks,
@@ -132,7 +133,11 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
       lo: number;
       hi: number;
     }[]
-  ).filter((r) => isRecurringActive(r.lastDate, r.cadence));
+  )
+    .filter((r) => isRecurringActive(r.lastDate, r.cadence))
+    // A split series ("Netflix · 26th") stands in for its vendor here: orphans
+    // echo the descriptor, and a merge must link onto the descriptor.
+    .map((r) => ({ ...r, merchant: seriesVendor(r.merchant) }));
 
   const merchants = distinctMerchants();
   const countOf: Record<string, number> = {};
