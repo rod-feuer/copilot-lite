@@ -579,7 +579,7 @@ export function merchantSummary(merchant: string) {
   const recent = db
     .prepare(
       `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.amount, t.account, t.excluded,
-         c.name AS categoryName
+         COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
        WHERE t.merchant IN (${ph}) ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
     )
