@@ -1314,8 +1314,19 @@ const TxRow = memo(function TxRow({
                           </span>
                         ) : null}
                       </div>
-                      {(!sameAcct || (t.effectiveDate && t.effectiveDate !== t.date)) && (
-                        <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                      {/* Mobile: the category chip belongs in the subtitle here too —
+                          the desktop pill is hidden on small screens, and suppressed
+                          when the row matches the vendor's category. */}
+                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                        <CategorySelect
+                          variant="chip"
+                          t={t}
+                          cats={cats}
+                          active={isCatActive}
+                          onActivate={() => setActiveCatSelect(t.id)}
+                          onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
+                          onChange={(id) => setCategory(t.id, id)}
+                        />
                           {!sameAcct && <span className="whitespace-nowrap">{t.account}</span>}
                           {t.effectiveDate && t.effectiveDate !== t.date && (
                             <span className="text-amber-600">
@@ -1334,7 +1345,6 @@ const TxRow = memo(function TxRow({
                             </span>
                           )}
                         </div>
-                      )}
                     </>
                   ) : (
                     <>
@@ -1475,8 +1485,11 @@ const TxRow = memo(function TxRow({
                     {/* Adding a note is reached via the row's ⋯ menu (Add note);
                         a set note renders on its own line below. */}
                   </div>
+                    </>
+                  )}
                   {/* A set note (or the editor) takes its own line below — that's
-                      persistent content, not a hover reveal, so it doesn't jitter. */}
+                      persistent content, not a hover reveal, so it doesn't jitter.
+                      Outside the mode ternary so statement (vendor) view has it too. */}
                   {isEditingNote ? (
                     <input
                       autoFocus
@@ -1508,8 +1521,6 @@ const TxRow = memo(function TxRow({
                       </button>
                     </Tooltip>
                   ) : null}
-                    </>
-                  )}
                 </div>
                 {/* Desktop: the right-side category pill (hidden on mobile, where
                     the compact chip in the subtitle handles it instead). */}
