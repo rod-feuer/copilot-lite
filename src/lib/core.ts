@@ -10,6 +10,8 @@ import {
   getMerchantLinks,
   canonicalMerchant,
   linkedAliases,
+  getRecurringSettings,
+  setRecurringSetting,
 } from "./queries";
 import type { Recurring } from "./types";
 import { CADENCE_DAYS, medianGap } from "./cadence";
@@ -192,10 +194,16 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
 // most of the vendor's charges (a weekly grocery run is not four bills).
 // Charges that fit no cluster are left unlinked, so a second plan with one or
 // two charges so far joins automatically once it reaches three.
+//
+// The same clusters also rescue a monthly plan that a few strays would break:
+// Benjamin Franklin on the 8th, plus a one-off service call on the 21st and
+// the first charge of a second plan on the 22nd, read as "biweekly" by gap
+// math. When one cluster holds most of the vendor's charges and the whole
+// descriptor doesn't classify as monthly, that cluster IS the bill.
 const MONTH_DAYS = 30.44;
 type DayPart<T> = { day: number; txs: T[]; events: { date: string; amount: number }[] };
-function splitByDayOfMonth<T extends { date: string; amount: number }>(txs: T[]): DayPart<T>[] | null {
-  if (txs.length < 6) return null;
+function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): DayPart<T>[] {
+  if (txs.length < 4) return [];
   const dayOf = (t: T) => Number(t.date.slice(8, 10));
   const bucket = (t: T) => Math.min(dayOf(t), 28); // 28th–31st = end of month
   const sorted = [...txs].sort((a, b) => bucket(a) - bucket(b) || a.date.localeCompare(b.date));
@@ -227,17 +235,22 @@ function splitByDayOfMonth<T extends { date: string; amount: number }>(txs: T[])
     const day = [...n.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
     parts.push({ day, txs: c, events });
   }
+  return parts;
+}
+
+// Which monthly day-parts of a descriptor stand as separate bills. Concurrent,
+// not sequential: each part shares ≥2 months with the longest one (a bill
+// whose day moved shares none). And the parts must BE the vendor — ≥80% of
+// its charges — or this is a store visited every week, whose trips also land
+// in every day-bucket month after month.
+function concurrentParts<T extends { date: string; amount: number }>(parts: DayPart<T>[], total: number): DayPart<T>[] | null {
   if (parts.length < 2) return null;
-  // Concurrent, not sequential: each part shares ≥2 months with the longest
-  // one (a bill whose day moved shares none). And the parts must BE the
-  // vendor — ≥80% of its charges — or this is a store visited every week,
-  // whose trips also land in every day-bucket month after month.
   const monthsOf = (p: DayPart<T>) => new Set(p.events.map((e) => e.date.slice(0, 7)));
   const anchor = monthsOf(parts.reduce((a, b) => (b.events.length > a.events.length ? b : a)));
   const overlapping = parts.filter((p) => [...monthsOf(p)].filter((m) => anchor.has(m)).length >= 2);
   if (overlapping.length < 2) return null;
   const covered = overlapping.reduce((n, p) => n + p.txs.length, 0);
-  return covered >= 0.8 * txs.length ? overlapping : null;
+  return covered >= 0.8 * total ? overlapping : null;
 }
 
 export function detectRecurrings(): Recurring[] {
@@ -296,6 +309,7 @@ export function detectRecurrings(): Recurring[] {
     overrides[canon] = status;
   }
   const excluded = getRecurringTxExclusions(); // charges flagged as one-offs
+  const settings = getRecurringSettings();
   const created = new Set<string>();
   const out: Recurring[] = [];
   const insert = db.prepare(
@@ -335,29 +349,59 @@ export function detectRecurrings(): Recurring[] {
     // (mute on its key) or whose amounts don't hold together is skipped — its
     // charges stay unlinked. Falls through to the whole-descriptor path unless
     // at least two parts stand on their own.
-    const parts = splitByDayOfMonth(txs)?.filter(
-      (p) => rawOverrides[seriesKey(merchant, p.day)] !== "mute" && amountsConsistent(p.events.map((e) => e.amount))
+    // Coverage counts every monthly day-cluster (that is what explains the
+    // vendor's charges); a cluster whose amounts don't hold together is then
+    // dropped from emission and its charges stay unlinked.
+    const allParts = monthlyDayParts(txs);
+    const steady = (p: DayPart<(typeof txs)[number]>) => amountsConsistent(p.events.map((e) => e.amount));
+    const dayParts = allParts.filter(steady);
+    const emitPart = (key: string, p: DayPart<(typeof txs)[number]>) => {
+      const lastDate = p.events[p.events.length - 1].date;
+      const categoryId = modalCategory(p.txs);
+      const rec = {
+        merchant: key,
+        categoryId,
+        avgAmount: Number(currentAmount(p.events.map((e) => e.amount)).toFixed(2)),
+        cadence: "monthly" as const,
+        lastDate,
+        nextDate: addCadence(lastDate, "monthly"),
+        count: p.events.length,
+      };
+      const info = insert.run(rec);
+      for (const t of p.txs) linkByHash.run(info.lastInsertRowid, t.hash);
+      if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
+      out.push({ id: Number(info.lastInsertRowid), ...rec });
+    };
+    const split = concurrentParts(allParts, txs.length)?.filter(
+      (p) => steady(p) && rawOverrides[seriesKey(merchant, p.day)] !== "mute"
     );
-    if (parts && parts.length >= 2) {
-      for (const p of parts) {
-        const lastDate = p.events[p.events.length - 1].date;
-        const categoryId = modalCategory(p.txs);
-        const rec = {
-          merchant: seriesKey(merchant, p.day),
-          categoryId,
-          avgAmount: Number(currentAmount(p.events.map((e) => e.amount)).toFixed(2)),
-          cadence: "monthly" as const,
-          lastDate,
-          nextDate: addCadence(lastDate, "monthly"),
-          count: p.events.length,
-        };
-        const info = insert.run(rec);
-        for (const t of p.txs) linkByHash.run(info.lastInsertRowid, t.hash);
-        if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
-        out.push({ id: Number(info.lastInsertRowid), ...rec });
+    if (split && split.length >= 2) {
+      // The vendor's own settings (its name, an expected amount) stay with the
+      // established plan — the part with the most history — the first time it
+      // splits; the new plan reads as the bare descriptor until it is named.
+      const own = settings[merchant];
+      if (own) {
+        const main = split.reduce((a, b) => (b.events.length > a.events.length ? b : a));
+        const mainKey = seriesKey(merchant, main.day);
+        if (!settings[mainKey]) setRecurringSetting(mainKey, own);
       }
+      for (const p of split) emitPart(seriesKey(merchant, p.day), p);
       created.add(merchant);
       continue;
+    }
+    // One monthly plan plus strays (a service call, the first charge of a
+    // second plan): when the plan holds ≥60% of the charges and the whole
+    // descriptor would not read as monthly, the plan is the bill and the
+    // strays stay unlinked. If the whole descriptor already reads monthly,
+    // the ordinary path below keeps every charge.
+    if (dayParts.length === 1 && dayParts[0].txs.length >= 0.6 * txs.length) {
+      const all = txs.map((t) => Date.parse(t.date + "T00:00:00Z"));
+      const allGaps = all.slice(1).map((d, i) => (d - all[i]) / DAY);
+      if (classifyCadence(medianGap(allGaps)) !== "monthly") {
+        emitPart(merchant, dayParts[0]);
+        created.add(merchant);
+        continue;
+      }
     }
 
     // Amounts must be roughly consistent — measured by coefficient of variation
