@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
 import type { CategorySuggestion } from "@/lib/categorizeSuggest";
@@ -24,6 +25,7 @@ export function CategorizeQueue({ onChange }: { onChange?: () => void }) {
     setNeedsModel(d.needsModelCount);
     setModelEnabled(d.modelEnabled);
   }, []);
+  const mutate = useMutation(load);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
@@ -32,61 +34,64 @@ export function CategorizeQueue({ onChange }: { onChange?: () => void }) {
 
   async function apply(s: CategorySuggestion) {
     setBusy(s.merchant);
-    setItems((a) => a.filter((x) => x.merchant !== s.merchant));
-    try {
-      await postJson("/api/category-suggestions", { action: "apply", merchant: s.merchant, categoryId: s.categoryId });
-      toast(`Categorized “${s.merchant}” as ${s.categoryName}`, "success");
-      onChange?.();
-    } catch {
-      toast("Couldn't categorize — please try again", "error");
-      load();
-    } finally {
-      setBusy(null);
-    }
+    setItems((a) => a.filter((x) => x.merchant !== s.merchant)); // optimistic
+    const ok = await mutate(
+      () =>
+        postJson("/api/category-suggestions", { action: "apply", merchant: s.merchant, categoryId: s.categoryId }),
+      {
+        success: `Categorized “${s.merchant}” as ${s.categoryName}`,
+        error: "Couldn't categorize — please try again",
+      },
+      { refresh: "error" } // restore the optimistic removal on failure
+    );
+    if (ok) onChange?.();
+    setBusy(null);
   }
 
   async function dismiss(s: CategorySuggestion) {
-    setItems((a) => a.filter((x) => x.merchant !== s.merchant));
-    try {
-      await postJson("/api/category-suggestions", { action: "dismiss", merchant: s.merchant });
-    } catch {
-      load();
-    }
+    setItems((a) => a.filter((x) => x.merchant !== s.merchant)); // optimistic
+    await mutate(
+      () => postJson("/api/category-suggestions", { action: "dismiss", merchant: s.merchant }),
+      { error: "Couldn't dismiss — please try again" },
+      { refresh: "error" }
+    );
   }
 
   async function applyAll() {
     setBusy("__all");
     const batch = items.map((s) => ({ merchant: s.merchant, categoryId: s.categoryId }));
-    setItems([]);
-    try {
-      await postJson("/api/category-suggestions", { action: "applyAll", items: batch });
-      toast(`Categorized ${batch.length} vendor${batch.length === 1 ? "" : "s"}`, "success");
-      onChange?.();
-    } catch {
-      toast("Couldn't categorize — please try again", "error");
-      load();
-    } finally {
-      setBusy(null);
-    }
+    setItems([]); // optimistic
+    const ok = await mutate(
+      () => postJson("/api/category-suggestions", { action: "applyAll", items: batch }),
+      {
+        success: `Categorized ${batch.length} vendor${batch.length === 1 ? "" : "s"}`,
+        error: "Couldn't categorize — please try again",
+      },
+      { refresh: "error" }
+    );
+    if (ok) onChange?.();
+    setBusy(null);
   }
 
   async function suggestAI() {
     setBusy("__ai");
-    try {
-      const d = (await postJson("/api/category-suggestions", { action: "suggestAI" })) as {
-        suggestions: CategorySuggestion[];
-      };
-      setNeedsModel(0);
-      setItems((a) => {
-        const have = new Set(a.map((x) => x.merchant));
-        return [...a, ...d.suggestions.filter((x) => !have.has(x.merchant))];
-      });
-      if (d.suggestions.length === 0) toast("No confident suggestions from the model", "info");
-    } catch {
-      toast("Couldn't reach the model — please try again", "error");
-    } finally {
-      setBusy(null);
-    }
+    await mutate(
+      async () => {
+        const d = (await postJson("/api/category-suggestions", { action: "suggestAI" })) as {
+          suggestions: CategorySuggestion[];
+        };
+        setNeedsModel(0);
+        setItems((a) => {
+          const have = new Set(a.map((x) => x.merchant));
+          return [...a, ...d.suggestions.filter((x) => !have.has(x.merchant))];
+        });
+        // An empty result is "info", not a success toast — it stays in the write.
+        if (d.suggestions.length === 0) toast("No confident suggestions from the model", "info");
+      },
+      { error: "Couldn't reach the model — please try again" },
+      { refresh: "never" } // nothing to restore: the list only ever gained rows
+    );
+    setBusy(null);
   }
 
   if (items.length === 0 && needsModel === 0) return null;

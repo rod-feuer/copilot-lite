@@ -8,6 +8,7 @@ import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { usd, defaultMonth, isCurrentMonth } from "@/lib/format";
 import type { CategoryWithTotals } from "@/lib/queries";
 import { getJson, patchJson } from "@/lib/http";
@@ -56,6 +57,7 @@ export default function CategoriesPage() {
       setStatus("error");
     }
   }, []);
+  const mutate = useMutation(useCallback(() => load(month), [load, month]));
   useSyncedRefresh(() => load(month));
 
   // Months, then the month's categories. Also the Retry path.
@@ -134,21 +136,19 @@ export default function CategoriesPage() {
     amount: number | null,
     period: "monthly" | "annual" = "monthly"
   ) {
-    try {
-      await patchJson(`/api/categories/${id}`, { budget: amount, period });
-    } catch {
-      toast("Couldn't save budget — please try again", "error");
-    }
-    load(month);
+    await mutate(
+      () => patchJson(`/api/categories/${id}`, { budget: amount, period }),
+      { error: "Couldn't save budget — please try again" },
+      { refresh: "always" }
+    );
   }
 
   async function toggleExclude(id: number, excludeFromTotals: boolean) {
-    try {
-      await patchJson(`/api/categories/${id}`, { excludeFromTotals });
-    } catch {
-      toast("Couldn't update category — please try again", "error");
-    }
-    load(month);
+    await mutate(
+      () => patchJson(`/api/categories/${id}`, { excludeFromTotals }),
+      { error: "Couldn't update category — please try again" },
+      { refresh: "always" }
+    );
   }
 
   // Edit a category's badge appearance (icon/color) or its kind (expense↔income).
@@ -156,12 +156,11 @@ export default function CategoriesPage() {
     id: number,
     patch: { icon?: string; color?: string; kind?: "expense" | "income" }
   ) {
-    try {
-      await patchJson(`/api/categories/${id}`, patch);
-    } catch {
-      toast("Couldn't update category — please try again", "error");
-    }
-    load(month);
+    await mutate(
+      () => patchJson(`/api/categories/${id}`, patch),
+      { error: "Couldn't update category — please try again" },
+      { refresh: "always" }
+    );
   }
 
   // Rename a category. The PATCH route rejects an empty name; the inline editor

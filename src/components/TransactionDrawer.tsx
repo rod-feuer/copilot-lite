@@ -11,7 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { RecurringGlyph, RECURRING_LABEL, recurringState, type RecurringState } from "@/components/RecurringGlyph";
 import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -70,7 +70,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const onChange = useRef<(() => void) | undefined>(undefined);
   const asideRef = useRef<HTMLElement>(null);
-  const toast = useToast();
+  // Each handler below re-reads its own target (the merchant or the category)
+  // after a write, so the shared refresh policy is "never" and the refresh
+  // happens on the returned success flag.
+  const mutate = useMutation();
 
   useEffect(() => {
     fetch("/api/categories")
@@ -200,13 +203,15 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   async function recategorize(categoryId: number | null) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
-    try {
-      await postJson("/api/recurrings/recategorize", { merchant, categoryId });
-      toast(`Recategorized "${merchant}"`, "success");
+    if (
+      await mutate(
+        () => postJson("/api/recurrings/recategorize", { merchant, categoryId }),
+        { success: `Recategorized "${merchant}"`, error: "Couldn't recategorize — please try again" },
+        { refresh: "never" }
+      )
+    ) {
       fetchMerchant(merchant);
       onChange.current?.();
-    } catch {
-      toast("Couldn't recategorize — please try again", "error");
     }
   }
 
@@ -228,13 +233,15 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   ) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
-    try {
-      await postJson("/api/recurrings/settings", { merchant, ...patch });
-      toast(message, "success");
+    if (
+      await mutate(
+        () => postJson("/api/recurrings/settings", { merchant, ...patch }),
+        { success: message, error: "Couldn't save — please try again" },
+        { refresh: "never" }
+      )
+    ) {
       fetchMerchant(merchant);
       onChange.current?.();
-    } catch {
-      toast("Couldn't save — please try again", "error");
     }
   }
 
@@ -249,31 +256,37 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     alias?: string,
     categoryId?: number | null
   ) {
-    try {
-      await postJson("/api/recurrings/link", { alias: loser, primary });
-      if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
-      // Unify the category when the user chose to, so a combined vendor isn't
-      // left split across categories. Recategorize covers all linked descriptors.
-      if (categoryId != null)
-        await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId });
-      toast("Vendors combined", "success");
+    if (
+      await mutate(
+        async () => {
+          await postJson("/api/recurrings/link", { alias: loser, primary });
+          if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
+          // Unify the category when the user chose to, so a combined vendor isn't
+          // left split across categories. Recategorize covers all linked descriptors.
+          if (categoryId != null)
+            await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId });
+        },
+        { success: "Vendors combined", error: "Couldn't combine — please try again" },
+        { refresh: "never" }
+      )
+    ) {
       onChange.current?.();
       close();
-    } catch {
-      toast("Couldn't combine — please try again", "error");
     }
   }
 
   async function unlinkName(alias: string) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
-    try {
-      await postJson("/api/recurrings/link", { alias, unlink: true });
-      toast(`Separated “${alias}”`, "success");
+    if (
+      await mutate(
+        () => postJson("/api/recurrings/link", { alias, unlink: true }),
+        { success: `Separated “${alias}”`, error: "Couldn't separate — please try again" },
+        { refresh: "never" }
+      )
+    ) {
       fetchMerchant(merchant);
       onChange.current?.();
-    } catch {
-      toast("Couldn't separate — please try again", "error");
     }
   }
 
@@ -281,13 +294,18 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     if (target?.kind !== "merchant" || !mData) return;
     const merchant = target.merchant;
     const makeIt = !mData.recurring;
-    try {
-      await postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" });
-      toast(makeIt ? "Marked recurring" : "No longer recurring", "success");
+    if (
+      await mutate(
+        () => postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" }),
+        {
+          success: makeIt ? "Marked recurring" : "No longer recurring",
+          error: "Couldn't update — please try again",
+        },
+        { refresh: "never" }
+      )
+    ) {
       fetchMerchant(merchant);
       onChange.current?.();
-    } catch {
-      toast("Couldn't update — please try again", "error");
     }
   }
 
@@ -297,23 +315,30 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month);
   };
   async function txRecategorize(txId: number, categoryId: number | null) {
-    try {
-      await patchJson(`/api/transactions/${txId}`, { categoryId });
-      toast("Recategorized", "success");
+    if (
+      await mutate(
+        () => patchJson(`/api/transactions/${txId}`, { categoryId }),
+        { success: "Recategorized", error: "Couldn't recategorize — please try again" },
+        { refresh: "never" }
+      )
+    ) {
       refreshCategory();
       onChange.current?.();
-    } catch {
-      toast("Couldn't recategorize — please try again", "error");
     }
   }
   async function txToggleRecurring(merchant: string, makeIt: boolean) {
-    try {
-      await postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" });
-      toast(makeIt ? "Marked recurring" : "No longer recurring", "success");
+    if (
+      await mutate(
+        () => postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" }),
+        {
+          success: makeIt ? "Marked recurring" : "No longer recurring",
+          error: "Couldn't update — please try again",
+        },
+        { refresh: "never" }
+      )
+    ) {
       refreshCategory();
       onChange.current?.();
-    } catch {
-      toast("Couldn't update — please try again", "error");
     }
   }
 
