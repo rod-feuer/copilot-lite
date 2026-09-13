@@ -456,6 +456,43 @@ test("Reset all clears overrides but keeps a subscription ended", () => {
   );
 });
 
+test("an excluded charge is not evidence of a bill and never joins a series", () => {
+  // WHY: split parents are excluded (their parts count) and land on the same
+  // day as their children. Fed to the detector, the zero-day gaps pulled the
+  // median down and a monthly bill read as biweekly — 2.17× its real monthly
+  // share in the category baseline (Chubb, real data). Transfers and reimbursed
+  // one-offs the user excluded are the same class: not spending, not a bill.
+  const iso = (offsetDays: number) => {
+    const d = new Date(); d.setUTCDate(d.getUTCDate() - offsetDays); return d.toISOString().slice(0, 10);
+  };
+  for (const d of [iso(95), iso(65), iso(35), iso(5)]) {
+    tx("Gym", { amount: -50, date: d, categoryId: CAT });
+    tx("Gym", { amount: -120, date: d, categoryId: CAT, excluded: 1 }); // same-day excluded twin
+  }
+  detectRecurrings();
+  const rec = getDb().prepare("SELECT cadence, avgAmount FROM recurrings WHERE merchant = 'Gym'").get() as { cadence: string; avgAmount: number };
+  assert.equal(rec.cadence, "monthly", "same-day excluded rows must not halve the gaps");
+  assert.equal(rec.avgAmount, -50, "the excluded amounts are not part of the bill");
+  const members = getDb().prepare("SELECT excluded, recurringId FROM transactions WHERE merchant = 'Gym'").all() as { excluded: number; recurringId: number | null }[];
+  assert.ok(members.filter((m) => m.excluded).every((m) => m.recurringId == null), "excluded rows are not series members");
+  assert.ok(members.filter((m) => !m.excluded).every((m) => m.recurringId != null), "posted rows are");
+});
+
+test("a series' last and next due follow the effective date, like every reader of it", () => {
+  // WHY: the user moves a charge that posts on the 31st into the next month on
+  // purpose. Paid-matching and the month views judge it there; the detector
+  // alone used the posted date, so "last charge" and "next due" sat on a
+  // different calendar from the months the bill was counted in.
+  tx("Lake Mortgage", { amount: -4800, date: "2025-03-31", effectiveDate: "2025-04-01", categoryId: CAT_X });
+  tx("Lake Mortgage", { amount: -4800, date: "2025-04-30", effectiveDate: "2025-05-01", categoryId: CAT_X });
+  tx("Lake Mortgage", { amount: -4800, date: "2025-05-31", effectiveDate: "2025-06-01", categoryId: CAT_X });
+  detectRecurrings();
+  const rec = getDb().prepare("SELECT cadence, lastDate, nextDate FROM recurrings WHERE merchant = 'Lake Mortgage'").get() as { cadence: string; lastDate: string; nextDate: string };
+  assert.equal(rec.cadence, "monthly");
+  assert.equal(rec.lastDate, "2025-06-01", "last charge on the effective calendar");
+  assert.equal(rec.nextDate, "2025-07-01", "next due one period on from it");
+});
+
 test("a quarterly bill counts one third per month toward the category baseline", () => {
   // WHY: the baseline feeds the dashboard bar marker and the budget suggestion.
   // A cadence missing from the monthly-factor table silently fell back to 1×,
