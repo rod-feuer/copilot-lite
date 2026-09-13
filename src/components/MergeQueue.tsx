@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
 import { usd, shortDate } from "@/lib/format";
@@ -21,12 +21,12 @@ export function MergeQueue({ onChange }: { onChange?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null); // expanded card key
   const [previews, setPreviews] = useState<Record<string, Record<string, PreviewTx[]>>>({});
-  const toast = useToast();
 
   const load = useCallback(async () => {
     const data = await fetch("/api/merges").then((r) => r.json());
     setMerges(data);
   }, []);
+  const mutate = useMutation(load);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
@@ -36,24 +36,23 @@ export function MergeQueue({ onChange }: { onChange?: () => void }) {
   async function resolve(g: MergeSuggestion, action: "approve" | "dismiss") {
     setBusy(g.key);
     setMerges((ms) => ms.filter((m) => m.key !== g.key)); // optimistic
-    try {
-      await postJson("/api/merges", {
-        action,
-        keys: g.dismissKeys,
-        canonical: g.canonical,
-        variants: g.variants.map((v) => v.merchant),
-        categoryId: g.categoryId,
-      });
-      if (action === "approve") {
-        toast(`Combined into “${g.canonical}”`, "success");
-        onChange?.();
-      }
-    } catch {
-      toast("Couldn't update — please try again", "error");
-      load(); // restore on failure
-    } finally {
-      setBusy(null);
-    }
+    const ok = await mutate(
+      () =>
+        postJson("/api/merges", {
+          action,
+          keys: g.dismissKeys,
+          canonical: g.canonical,
+          variants: g.variants.map((v) => v.merchant),
+          categoryId: g.categoryId,
+        }),
+      {
+        success: action === "approve" ? `Combined into “${g.canonical}”` : undefined,
+        error: "Couldn't update — please try again",
+      },
+      { refresh: "error" } // restore the optimistic removal on failure
+    );
+    if (ok && action === "approve") onChange?.();
+    setBusy(null);
   }
 
   async function toggle(g: MergeSuggestion) {

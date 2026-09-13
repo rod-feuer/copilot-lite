@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
 import type { NameCleanupSuggestion } from "@/lib/nameCleanup";
@@ -20,6 +21,7 @@ export function NameCleanupQueue({ onChange }: { onChange?: () => void }) {
     const d = await fetch("/api/name-cleanup").then((r) => r.json());
     setItems(d.suggestions);
   }, []);
+  const mutate = useMutation(load);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
@@ -31,57 +33,59 @@ export function NameCleanupQueue({ onChange }: { onChange?: () => void }) {
   async function apply(s: NameCleanupSuggestion) {
     setBusy(keyOf(s));
     setItems((a) => a.filter((x) => keyOf(x) !== keyOf(s))); // optimistic
-    try {
-      await postJson("/api/name-cleanup", { action: "apply", from: s.from, to: s.to });
-      setTidied(true);
-      toast(`Tidied to “${s.to}”`, "success");
-      onChange?.();
-    } catch {
-      toast("Couldn't tidy — please try again", "error");
-      load();
-    } finally {
-      setBusy(null);
-    }
+    const ok = await mutate(
+      async () => {
+        await postJson("/api/name-cleanup", { action: "apply", from: s.from, to: s.to });
+        setTidied(true);
+      },
+      { success: `Tidied to “${s.to}”`, error: "Couldn't tidy — please try again" },
+      { refresh: "error" } // restore the optimistic removal on failure
+    );
+    if (ok) onChange?.();
+    setBusy(null);
   }
 
   async function dismiss(s: NameCleanupSuggestion) {
-    setItems((a) => a.filter((x) => keyOf(x) !== keyOf(s)));
-    try {
-      await postJson("/api/name-cleanup", { action: "dismiss", from: s.from });
-    } catch {
-      load();
-    }
+    setItems((a) => a.filter((x) => keyOf(x) !== keyOf(s))); // optimistic
+    await mutate(
+      () => postJson("/api/name-cleanup", { action: "dismiss", from: s.from }),
+      { error: "Couldn't dismiss — please try again" },
+      { refresh: "error" }
+    );
   }
 
   async function applyAll() {
     setBusy("__all");
-    setItems([]);
-    try {
-      const d = (await postJson("/api/name-cleanup", { action: "applyAll" })) as { changed: number };
-      setTidied(true);
-      toast(`Tidied ${d.changed} name${d.changed === 1 ? "" : "s"}`, "success");
-      onChange?.();
-    } catch {
-      toast("Couldn't tidy — please try again", "error");
-      load();
-    } finally {
-      setBusy(null);
-    }
+    setItems([]); // optimistic
+    const ok = await mutate(
+      async () => {
+        const d = (await postJson("/api/name-cleanup", { action: "applyAll" })) as { changed: number };
+        setTidied(true);
+        // The count comes back with the response, so the toast lives in the write.
+        toast(`Tidied ${d.changed} name${d.changed === 1 ? "" : "s"}`, "success");
+      },
+      { error: "Couldn't tidy — please try again" },
+      { refresh: "error" }
+    );
+    if (ok) onChange?.();
+    setBusy(null);
   }
 
   async function undo() {
     setBusy("__undo");
-    try {
-      const d = await (await fetch("/api/renormalize/undo", { method: "POST" })).json();
-      setTidied(false);
-      toast(d.restored > 0 ? `Restored ${d.restored} name${d.restored === 1 ? "" : "s"}` : "Nothing to undo", "success");
-      onChange?.();
-      load();
-    } catch {
-      toast("Couldn't undo — please try again", "error");
-    } finally {
-      setBusy(null);
-    }
+    await mutate(
+      async () => {
+        const d = await (await fetch("/api/renormalize/undo", { method: "POST" })).json();
+        setTidied(false);
+        toast(
+          d.restored > 0 ? `Restored ${d.restored} name${d.restored === 1 ? "" : "s"}` : "Nothing to undo",
+          "success"
+        );
+        onChange?.();
+      },
+      { error: "Couldn't undo — please try again" }
+    );
+    setBusy(null);
   }
 
   // Nothing to tidy and nothing just-tidied → render nothing.

@@ -22,7 +22,7 @@ import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
-import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 // Aliased: `Tooltip` is already taken by recharts' chart tooltip above.
 import { Tooltip as HoverTip } from "@/components/Tooltip";
 import { getJson, patchJson } from "@/lib/http";
@@ -741,7 +741,9 @@ function UncategorizedResolver({
   const [hasMore, setHasMore] = useState(false);
   const [cats, setCats] = useState<{ id: number; name: string; icon: string }[]>([]);
   const [busy, setBusy] = useState<number | null>(null);
-  const toast = useToast();
+  // "always": onResolved refreshes the dashboard (count, totals) and re-syncs
+  // this list either way — a failed write has to put the optimistic row back.
+  const mutate = useMutation(onResolved);
 
   // Re-fetch when the count changes (after a resolve refreshes the dashboard) so
   // the inline list refills from the next uncategorized charges. Pulls CAP+1 to
@@ -771,16 +773,16 @@ function UncategorizedResolver({
   async function assign(t: UncatTx, categoryId: number) {
     setBusy(t.id);
     setRows((prev) => prev.filter((x) => x.id !== t.id)); // optimistic
-    try {
-      await patchJson(`/api/transactions/${t.id}`, { categoryId });
-      const c = cats.find((x) => x.id === categoryId);
-      toast(`Categorized “${t.displayName}”${c ? ` as ${c.name}` : ""}`, "success");
-    } catch {
-      toast("Couldn't categorize — please try again", "error");
-    } finally {
-      setBusy(null);
-      onResolved(); // refresh the dashboard (count, totals) and re-sync this list
-    }
+    const c = cats.find((x) => x.id === categoryId);
+    await mutate(
+      () => patchJson(`/api/transactions/${t.id}`, { categoryId }),
+      {
+        success: `Categorized “${t.displayName}”${c ? ` as ${c.name}` : ""}`,
+        error: "Couldn't categorize — please try again",
+      },
+      { refresh: "always" }
+    );
+    setBusy(null);
   }
 
   return (

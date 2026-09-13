@@ -5,7 +5,7 @@ import Shell from "@/components/Shell";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { MonthPicker } from "@/components/Actions";
-import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { InfoHint } from "@/components/InfoHint";
@@ -55,7 +55,6 @@ export default function RecurringsPage() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [q, setQ] = useState("");
   const [catFilter, setCatFilter] = useState(""); // "" = all, "none" = uncategorized, else id
-  const toast = useToast();
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
 
@@ -71,6 +70,8 @@ export default function RecurringsPage() {
       setStatus("error");
     }
   }, []);
+
+  const mutate = useMutation(useCallback(() => load(month), [load, month]));
 
   const loadSuggestions = useCallback(async () => {
     try {
@@ -112,27 +113,35 @@ export default function RecurringsPage() {
   // descriptor variants become one recurring), then force it.
   async function addSuggestion(s: Suggestion) {
     setSuggestions((arr) => arr.filter((x) => x.merchant !== s.merchant));
-    try {
+    const write = async () => {
       for (const alias of s.aliases)
         await postJson("/api/recurrings/link", { alias, primary: s.merchant });
       await postJson("/api/recurrings/override", { merchant: s.merchant, status: "force" });
-      toast(`Added "${s.merchant}" to recurrings`, "success");
-      load(month);
-    } catch {
-      toast("Couldn't update — please try again", "error");
+    };
+    if (
+      !(await mutate(write, {
+        success: `Added "${s.merchant}" to recurrings`,
+        error: "Couldn't update — please try again",
+      }))
+    )
       loadSuggestions(); // restore the optimistic removal
-    }
   }
 
   // Dismiss a suggestion: mute every descriptor so the whole cluster stays gone.
   async function dismissSuggestion(s: Suggestion) {
     setSuggestions((arr) => arr.filter((x) => x.merchant !== s.merchant));
-    try {
+    const write = async () => {
       for (const m of [s.merchant, ...s.aliases])
         await postJson("/api/recurrings/override", { merchant: m, status: "mute" });
-    } catch {
+    };
+    if (
+      !(await mutate(
+        write,
+        { error: "Couldn't dismiss — please try again" },
+        { refresh: "never" }
+      ))
+    )
       loadSuggestions();
-    }
   }
 
   function changeMonth(m: string) {
@@ -141,52 +150,54 @@ export default function RecurringsPage() {
   }
 
   async function recategorize(merchant: string, categoryId: number | null) {
-    try {
-      await postJson("/api/recurrings/recategorize", { merchant, categoryId });
-      toast(`Recategorized "${merchant}"`, "success");
-      load(month);
-    } catch {
-      toast("Couldn't recategorize — please try again", "error");
-    }
+    await mutate(
+      () => postJson("/api/recurrings/recategorize", { merchant, categoryId }),
+      {
+        success: `Recategorized "${merchant}"`,
+        error: "Couldn't recategorize — please try again",
+      }
+    );
   }
 
   async function saveSettings(merchant: string, patch: SettingsPatch | "clear") {
-    try {
-      await postJson(
-        "/api/recurrings/settings",
-        patch === "clear" ? { merchant, clear: true } : { merchant, ...patch }
-      );
-      toast(patch === "clear" ? "Settings reset" : "Recurring updated", "success");
-      load(month);
-    } catch {
-      toast("Couldn't save — please try again", "error");
-    }
+    await mutate(
+      () =>
+        postJson(
+          "/api/recurrings/settings",
+          patch === "clear" ? { merchant, clear: true } : { merchant, ...patch }
+        ),
+      {
+        success: patch === "clear" ? "Settings reset" : "Recurring updated",
+        error: "Couldn't save — please try again",
+      }
+    );
   }
 
   async function markNotRecurring(merchant: string) {
-    try {
-      await postJson("/api/recurrings/override", { merchant, status: "mute" });
-      toast(`"${merchant}" marked not recurring`, "success");
-      load(month);
-    } catch {
-      toast("Couldn't update — please try again", "error");
-    }
+    await mutate(
+      () => postJson("/api/recurrings/override", { merchant, status: "mute" }),
+      {
+        success: `"${merchant}" marked not recurring`,
+        error: "Couldn't update — please try again",
+      }
+    );
   }
 
   // Mark a subscription as ended/canceled as of today: it stops counting as an
   // upcoming bill and toward expected outflow immediately, keeps its history,
   // and moves to Inactive. Reactivate clears it.
   async function setEnded(merchant: string, ended: boolean) {
-    try {
-      await postJson("/api/recurrings/settings", {
-        merchant,
-        endedDate: ended ? new Date().toISOString().slice(0, 10) : null,
-      });
-      toast(ended ? `"${merchant}" marked ended` : `"${merchant}" reactivated`, "success");
-      load(month);
-    } catch {
-      toast("Couldn't update — please try again", "error");
-    }
+    await mutate(
+      () =>
+        postJson("/api/recurrings/settings", {
+          merchant,
+          endedDate: ended ? new Date().toISOString().slice(0, 10) : null,
+        }),
+      {
+        success: ended ? `"${merchant}" marked ended` : `"${merchant}" reactivated`,
+        error: "Couldn't update — please try again",
+      }
+    );
   }
 
   async function recompute() {

@@ -23,6 +23,7 @@ import { LoadError, LoadingRows } from "@/components/LoadState";
 import { MonthPicker, ImportButton } from "@/components/Actions";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useToast } from "@/components/Toast";
+import { useMutation } from "@/components/useMutation";
 import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { MergeQueue } from "@/components/MergeQueue";
@@ -120,6 +121,7 @@ export default function TransactionsPage() {
   // "No transactions match."
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const toast = useToast();
+  const mutate = useMutation(useCallback(() => setRefreshKey((k) => k + 1), []));
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
   useSyncedRefresh(() => setRefreshKey((k) => k + 1));
@@ -363,14 +365,14 @@ export default function TransactionsPage() {
             : t
         )
       );
-      try {
-        await patchJson(`/api/transactions/${id}`, { categoryId });
-      } catch {
-        toast("Couldn't save category — please try again", "error");
-        setRefreshKey((k) => k + 1); // re-sync the optimistic update from the server
-      }
+      // "error" re-syncs the optimistic update from the server on failure.
+      await mutate(
+        () => patchJson(`/api/transactions/${id}`, { categoryId }),
+        { error: "Couldn't save category — please try again" },
+        { refresh: "error" }
+      );
     },
-    [cats, toast]
+    [cats, mutate]
   );
 
   // Set/clear a transaction's free-text note. Empty clears it. Optimistic, with
@@ -379,14 +381,13 @@ export default function TransactionsPage() {
     async (id: number, raw: string) => {
       const note = raw.trim() || null;
       setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, note } : t)));
-      try {
-        await patchJson(`/api/transactions/${id}`, { note });
-      } catch {
-        toast("Couldn't save note — please try again", "error");
-        setRefreshKey((k) => k + 1);
-      }
+      await mutate(
+        () => patchJson(`/api/transactions/${id}`, { note }),
+        { error: "Couldn't save note — please try again" },
+        { refresh: "error" }
+      );
     },
-    [toast]
+    [mutate]
   );
 
   // Set/clear a transaction's effective (accounting) date. Equal to the posted
@@ -396,14 +397,13 @@ export default function TransactionsPage() {
       setEditingDateId(null);
       const eff = !value || value === t.date ? null : value;
       if (eff === (t.effectiveDate ?? null)) return;
-      try {
-        await patchJson(`/api/transactions/${t.id}`, { effectiveDate: eff });
-      } catch {
-        toast("Couldn't update date — please try again", "error");
-      }
-      setRefreshKey((k) => k + 1);
+      await mutate(
+        () => patchJson(`/api/transactions/${t.id}`, { effectiveDate: eff }),
+        { error: "Couldn't update date — please try again" },
+        { refresh: "always" }
+      );
     },
-    [toast]
+    [mutate]
   );
 
   // Recurring control — VENDOR-level (the row's common intent): is this vendor a
@@ -413,18 +413,19 @@ export default function TransactionsPage() {
   // one-off exclusion is a finer operation that belongs on the vendor shelf.
   const setRecurringVendor = useCallback(
     async (t: Tx, recurring: boolean) => {
-      try {
-        await postJson("/api/recurrings/override", {
-          merchant: t.merchant,
-          status: recurring ? "force" : "mute",
-        });
-        toast(recurring ? `Marked "${t.merchant}" recurring` : `"${t.merchant}" not recurring`, "success");
-        setRefreshKey((k) => k + 1);
-      } catch {
-        toast("Couldn't update — please try again", "error");
-      }
+      await mutate(
+        () =>
+          postJson("/api/recurrings/override", {
+            merchant: t.merchant,
+            status: recurring ? "force" : "mute",
+          }),
+        {
+          success: recurring ? `Marked "${t.merchant}" recurring` : `"${t.merchant}" not recurring`,
+          error: "Couldn't update — please try again",
+        }
+      );
     },
-    [toast]
+    [mutate]
   );
 
   // Per-charge recurring exclusion — the FINER counterpart to the vendor-level
@@ -435,15 +436,15 @@ export default function TransactionsPage() {
   // detection, so refresh to pick up the new recurringId.
   const setChargeRecurring = useCallback(
     async (t: Tx, excluded: boolean) => {
-      try {
-        await patchJson(`/api/transactions/${t.id}`, { recurringExcluded: excluded });
-        toast(excluded ? "Charge excluded from its series" : "Charge added back to its series", "success");
-        setRefreshKey((k) => k + 1);
-      } catch {
-        toast("Couldn't update — please try again", "error");
-      }
+      await mutate(
+        () => patchJson(`/api/transactions/${t.id}`, { recurringExcluded: excluded }),
+        {
+          success: excluded ? "Charge excluded from its series" : "Charge added back to its series",
+          error: "Couldn't update — please try again",
+        }
+      );
     },
-    [toast]
+    [mutate]
   );
 
   // Exclude/include a single charge from all totals (the per-transaction
@@ -452,16 +453,16 @@ export default function TransactionsPage() {
   const setExcluded = useCallback(
     async (t: Tx, excluded: boolean) => {
       setTxs((prev) => prev.map((x) => (x.id === t.id ? { ...x, excluded: excluded ? 1 : 0 } : x)));
-      try {
-        await patchJson(`/api/transactions/${t.id}`, { excluded });
-        toast(excluded ? "Excluded from totals" : "Included in totals", "success");
-        setRefreshKey((k) => k + 1);
-      } catch {
-        toast("Couldn't update — please try again", "error");
-        setRefreshKey((k) => k + 1);
-      }
+      await mutate(
+        () => patchJson(`/api/transactions/${t.id}`, { excluded }),
+        {
+          success: excluded ? "Excluded from totals" : "Included in totals",
+          error: "Couldn't update — please try again",
+        },
+        { refresh: "always" }
+      );
     },
-    [toast]
+    [mutate]
   );
 
   // The charge being split (drives the split dialog). null = closed.
@@ -469,13 +470,10 @@ export default function TransactionsPage() {
   // Undo a split from its parent row: the rule, its child rows, and the
   // parent's exclusion all go (see DELETE …/split).
   async function undoSplitTx(t: Tx) {
-    try {
-      await deleteJson(`/api/transactions/${t.id}/split`);
-      toast("Split undone", "success");
-      setRefreshKey((k) => k + 1);
-    } catch {
-      toast("Couldn't undo split — please try again", "error");
-    }
+    await mutate(() => deleteJson(`/api/transactions/${t.id}/split`), {
+      success: "Split undone",
+      error: "Couldn't undo split — please try again",
+    });
   }
 
   const onOpenRow = useCallback(
@@ -1566,7 +1564,8 @@ function SplitDialog({
     { categoryId: "", amount: "", label: "" },
   ]);
   const [saving, setSaving] = useState(false);
-  const toast = useToast();
+  // No page refresh here — onDone() is what re-reads the list.
+  const mutate = useMutation();
 
   const sum = parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
   const remaining = Number((total - sum).toFixed(2));
@@ -1581,20 +1580,20 @@ function SplitDialog({
   async function submit() {
     if (!valid || saving) return;
     setSaving(true);
-    try {
-      await postJson(`/api/transactions/${tx.id}/split`, {
-        parts: parts.map((p) => ({
-          categoryId: Number(p.categoryId),
-          amount: Number(p.amount),
-          label: p.label.trim() || cats.find((c) => c.id === Number(p.categoryId))?.name || "Part",
-        })),
-      });
-      toast("Transaction split", "success");
-      onDone();
-    } catch {
-      toast("Couldn't split — please try again", "error");
-      setSaving(false);
-    }
+    const ok = await mutate(
+      () =>
+        postJson(`/api/transactions/${tx.id}/split`, {
+          parts: parts.map((p) => ({
+            categoryId: Number(p.categoryId),
+            amount: Number(p.amount),
+            label: p.label.trim() || cats.find((c) => c.id === Number(p.categoryId))?.name || "Part",
+          })),
+        }),
+      { success: "Transaction split", error: "Couldn't split — please try again" },
+      { refresh: "never" }
+    );
+    if (ok) onDone();
+    else setSaving(false);
   }
 
   return createPortal(
