@@ -39,7 +39,7 @@ export function InlineEdit({
           <span className={`truncate ${textClassName}`}>{value}</span>
           {/* Persistent (faint) edit cue so the text reads as click-to-edit even
               without hovering; darkens on hover. */}
-          <span className={`shrink-0 text-[10px] text-[var(--muted)] transition-all group-hover/n:text-[var(--foreground)] ${cueOnHover ? "opacity-0 group-hover/n:opacity-100 group-focus-within/n:opacity-100" : ""}`}>
+          <span className={`shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)] ${cueOnHover ? "hidden group-hover/n:inline-block group-focus-within/n:inline-block" : ""}`}>
             <span className="inline-block -scale-x-100">✎</span>
           </span>
         </button>

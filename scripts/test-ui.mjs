@@ -502,19 +502,28 @@ async function recurringsRow(browser) {
       const selects = rows.map((li) => x(li.querySelector("select")));
       const amounts = rows.map((li) => { const els = [...li.querySelectorAll("div")]; return els.find((d) => /^\$[\d,]+\.\d\d$/.test(d.textContent.trim())); });
       const fg = getComputedStyle(document.body).color;
+      const cadXs = [...new Set(rows.map((li) => x(li.children[1])))]; // date, cadence, glyph, name…
+      const dateXs = [...new Set(rows.map((li) => x(li.children[0])))];
       const names = rows.map((li) => li.querySelector("span.truncate")).filter(Boolean);
       const truncated = names.filter((n) => n.scrollWidth > n.clientWidth).length;
       return {
         rows: rows.length,
         editXs: [...new Set(edits)], selectXs: [...new Set(selects)],
         amountColours: [...new Set(amounts.map((a) => a && getComputedStyle(a).color))], foreground: fg,
-        truncated, names: names.length,
+        truncated, names: names.length, cadXs, dateXs,
+        dateColours: [...new Set(rows.map((li) => getComputedStyle(li.children[0]).color))],
+        marked: document.querySelectorAll("[data-drawer-row] button[aria-haspopup][data-marked]").length,
+        gutterSameEdge: (() => { const t = document.querySelector("h1"); const d = rows[0] && rows[0].children[0]; return t && d ? Math.abs(x(t) - x(d)) : null; })(),
       };
     });
     record("recurrings row", `${r.rows} rows · ⋯ menus in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
     record("recurrings row", "category selects in one column", r.selectXs.length === 1, `x=${r.selectXs.join("/")}`);
     record("recurrings row", "amounts are full-weight foreground", r.amountColours.length === 1 && r.amountColours[0] === r.foreground, `${r.amountColours.join("/")} vs ${r.foreground}`);
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
+    record("recurrings row", "date and cadence columns share one x each", r.dateXs.length === 1 && r.cadXs.length === 1, `date x=${r.dateXs.join("/")}, cadence x=${r.cadXs.join("/")}`);
+    record("recurrings row", "row text starts on the title's left edge", r.gutterSameEdge !== null && r.gutterSameEdge <= 1, `Δ ${r.gutterSameEdge}px`);
+    const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
+    record("recurrings row", "settings mark rides the ⋯ (no dot after the name)", strayDot === 0, `marked ⋯: ${r.marked}, stray dots: ${strayDot}`);
     // the verbs live in the row's ⋯ menu, in §2 vocabulary
     await page.click("[data-drawer-row] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
     const menu = await page.evaluate(() => document.querySelector("[role='menu']").innerText);
