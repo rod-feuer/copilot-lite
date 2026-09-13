@@ -450,6 +450,42 @@ async function recurringGlyph(browser) {
   });
 }
 
+async function inlineEdit(browser) {
+  await withPage(browser, async (page, errs) => {
+    // Categories: click the name → type → Enter commits; click → type → Escape reverts.
+    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const firstName = await page.evaluate(() => document.querySelector("[data-drawer-row] button::-p-text(✎)") && document.querySelector("[data-drawer-row]").querySelector("button span.truncate").textContent);
+    await page.click("[data-drawer-row] button::-p-text(✎)");
+    const inp = await page.waitForSelector("[data-drawer-row] input", { timeout: 5000 });
+    await inp.click({ clickCount: 3 }); await inp.type("Dining Out"); await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector("[data-drawer-row]").innerText.includes("Dining Out"), { timeout: 8000 });
+    record("inline edit", "categories · Enter commits a rename", true, `${firstName} → Dining Out`);
+    await page.click("[data-drawer-row] button::-p-text(✎)");
+    const inp2 = await page.waitForSelector("[data-drawer-row] input", { timeout: 5000 });
+    await inp2.click({ clickCount: 3 }); await inp2.type("Garbage"); await page.keyboard.press("Escape");
+    await sleep(600);
+    const after = await page.evaluate(() => document.querySelector("[data-drawer-row]").innerText);
+    record("inline edit", "categories · Escape reverts a rename", after.includes("Dining Out") && !after.includes("Garbage"));
+    // Budget input: never reverted on Escape before.
+    const budget = await page.$("input[aria-label='Monthly budget']");
+    const before = await budget.evaluate((el) => el.value);
+    await budget.click({ clickCount: 3 }); await budget.type("999999"); await page.keyboard.press("Escape");
+    await sleep(600);
+    const afterB = await page.evaluate(() => document.querySelector("input[aria-label='Monthly budget']").value);
+    record("inline edit", "categories · Escape reverts the budget input", afterB === before, `${before} → ${afterB}`);
+    // Recurrings: the row name is the same click-to-edit.
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row] button::-p-text(✎)");
+    await page.click("[data-drawer-row] button::-p-text(✎)");
+    const inp3 = await page.waitForSelector("[data-drawer-row] input", { timeout: 5000 });
+    await inp3.click({ clickCount: 3 }); await inp3.type("Netflix HD"); await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.body.innerText.includes("Netflix HD"), { timeout: 8000 });
+    record("inline edit", "recurrings · Enter commits a rename", true);
+    if (errs.length) record("inline edit", "page errors", false, errs[0]);
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -460,7 +496,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }
