@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Shell from "@/components/Shell";
+import { CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
@@ -1275,16 +1276,12 @@ const TxRow = memo(function TxRow({
                     <>
                       <div className="flex items-center gap-2">
                         {isEditingDate ? (
-                          <input
+                          <CommitInput
                             type="date"
                             defaultValue={t.effectiveDate ?? t.date}
                             autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => commitDate(t, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur();
-                              if (e.key === "Escape") setEditingDateId(null);
-                            }}
+                            onCommit={(v) => commitDate(t, v)}
+                            onDone={() => setEditingDateId(null)}
                             className="rounded border border-[var(--border)] bg-card px-1 py-0.5 text-sm"
                           />
                         ) : (
@@ -1402,16 +1399,12 @@ const TxRow = memo(function TxRow({
                         {isEditingDate && (
                           <span className="inline-flex items-center gap-1">
                             ·
-                            <input
+                            <CommitInput
                               type="date"
                               defaultValue={t.effectiveDate ?? t.date}
                               autoFocus
-                              onClick={(e) => e.stopPropagation()}
-                              onBlur={(e) => commitDate(t, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.currentTarget.blur();
-                                if (e.key === "Escape") setEditingDateId(null);
-                              }}
+                              onCommit={(v) => commitDate(t, v)}
+                              onDone={() => setEditingDateId(null)}
                               className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
                             />
                           </span>
@@ -1420,16 +1413,12 @@ const TxRow = memo(function TxRow({
                     ) : (
                       <>
                         {isEditingDate ? (
-                          <input
+                          <CommitInput
                             type="date"
                             defaultValue={t.effectiveDate ?? t.date}
                             autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => commitDate(t, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur();
-                              if (e.key === "Escape") setEditingDateId(null);
-                            }}
+                            onCommit={(v) => commitDate(t, v)}
+                            onDone={() => setEditingDateId(null)}
                             className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
                           />
                         ) : (
@@ -1475,20 +1464,12 @@ const TxRow = memo(function TxRow({
                       persistent content, not a hover reveal, so it doesn't jitter.
                       Outside the mode ternary so statement (vendor) view has it too. */}
                   {isEditingNote ? (
-                    <input
+                    <CommitInput
                       autoFocus
                       defaultValue={t.note ?? ""}
                       placeholder="What was this for?"
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={(e) => {
-                        saveNote(t.id, e.target.value);
-                        setEditingNoteId(null);
-                      }}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === "Enter") e.currentTarget.blur();
-                        if (e.key === "Escape") setEditingNoteId(null);
-                      }}
+                      onCommit={(v) => saveNote(t.id, v)}
+                      onDone={() => setEditingNoteId(null)}
                       className="mt-0.5 w-full max-w-md rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
                     />
                   ) : t.note ? (

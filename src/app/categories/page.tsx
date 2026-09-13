@@ -2,6 +2,7 @@
 
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
+import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { CategoryBadge, categoryTint } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
@@ -810,54 +811,15 @@ function EmojiButton({ value, onPick }: { value: string; onPick: (emoji: string)
 // shelf header and recurrings rows. Plain text when not renamable (no onRename,
 // e.g. "Uncategorized").
 function CategoryName({ name, onRename }: { name: string; onRename?: (name: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const reverted = useRef(false);
-
-  if (!onRename) {
-    return <span className="truncate text-sm font-medium">{name}</span>;
-  }
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        defaultValue={name}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            reverted.current = true;
-            setEditing(false);
-          }
-        }}
-        onBlur={(e) => {
-          setEditing(false);
-          if (reverted.current) {
-            reverted.current = false;
-            return;
-          }
-          const v = e.target.value.trim();
-          if (v && v !== name) onRename(v);
-        }}
-        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-      />
-    );
-  }
+  if (!onRename) return <span className="truncate text-sm font-medium">{name}</span>;
   return (
-    <Tooltip label="Rename" onlyIfTruncated={false} className="flex min-w-0">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-        className="group/n flex min-w-0 items-center gap-1 text-left"
-      >
-        <span className="truncate text-sm font-medium">{name}</span>
-        <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
-          <span className="inline-block -scale-x-100">✎</span>
-        </span>
-      </button>
-    </Tooltip>
+    <InlineEdit
+      value={name}
+      onCommit={(raw) => {
+        const v = raw.trim();
+        if (v && v !== name) onRename(v);
+      }}
+    />
   );
 }
 
@@ -1021,13 +983,10 @@ function BudgetInput({
         {/* Sized to its content (the `size` attr) instead of a fixed w-14 right-
             aligned box, which stranded short values away from "of $" (e.g.
             "of $   259"). Now "of $259/mo" reads as one tight phrase. */}
-        <input
+        <CommitInput
           defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
           size={budget === null ? 2 : Math.max(2, budget.toLocaleString("en-US").length)}
-          onBlur={(e) => commit(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
+          onCommit={commit}
           placeholder="—"
           inputMode="decimal"
           aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}

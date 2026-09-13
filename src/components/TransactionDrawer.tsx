@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMutation } from "@/components/useMutation";
+import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState, type RecurringState } from "@/components/RecurringGlyph";
 import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -470,71 +471,15 @@ function EditableName({
   currentAlias: string | null;
   onSave: (alias: string | null) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const reverted = useRef(false);
-  const committed = useRef(value);
-
-  const commit = (raw: string) => {
-    committed.current = raw;
-    const v = raw.trim();
-    const next = v && v !== underlying ? v : null; // editing back to the bank name = clear
-    if (next !== currentAlias) onSave(next);
-  };
-
-  useEffect(() => {
-    if (!editing) return;
-    const el = inputRef.current;
-    return () => {
-      if (!reverted.current && el && el.value !== committed.current) commit(el.value);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing]);
-
-  if (!editing) {
-    return (
-      <Tooltip label="Rename" onlyIfTruncated={false} className="group/n flex max-w-full items-center gap-1 text-left">
-        <button
-          onClick={() => {
-            committed.current = value;
-            setEditing(true);
-          }}
-          className="flex max-w-full items-center gap-1 text-left"
-        >
-          <span className="truncate text-sm font-semibold">{value}</span>
-          {/* Persistent (faint) edit cue so the name reads as click-to-rename even
-              without hovering; darkens on hover. */}
-          <span className="shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)]">
-            <span className="inline-block -scale-x-100">✎</span>
-          </span>
-        </button>
-      </Tooltip>
-    );
-  }
   return (
-    <input
-      ref={inputRef}
-      autoFocus
-      defaultValue={value}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          reverted.current = true;
-          setEditing(false);
-        }
+    <InlineEdit
+      value={value}
+      textClassName="text-sm font-semibold"
+      onCommit={(raw) => {
+        const v = raw.trim();
+        const next = v && v !== underlying ? v : null; // editing back to the bank name = clear
+        if (next !== currentAlias) onSave(next);
       }}
-      onBlur={(e) => {
-        if (reverted.current) {
-          reverted.current = false;
-          setEditing(false);
-          return;
-        }
-        commit(e.target.value);
-        setEditing(false);
-      }}
-      className="w-full rounded-md border border-[var(--border)] bg-card px-1.5 py-0.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
     />
   );
 }
@@ -1599,27 +1544,6 @@ function ShelfEditField({
   edited?: boolean;
   onCommit: (value: string) => void;
 }) {
-  const reverted = useRef(false);
-  const committed = useRef(defaultValue); // last value we've already sent on
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const commit = (value: string) => {
-    committed.current = value;
-    onCommit(value);
-  };
-
-  // Flush on unmount: hold the node from mount time (the ref may be detached by
-  // the time cleanup runs) and commit if the live value is an uncommitted edit.
-  useEffect(() => {
-    const el = inputRef.current;
-    return () => {
-      if (!reverted.current && el && el.value !== committed.current) onCommit(el.value);
-    };
-    // Mount/unmount only — capturing the node at mount is the point; re-running
-    // on every onCommit identity change would defeat the flush-on-teardown.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
@@ -1628,27 +1552,12 @@ function ShelfEditField({
       </div>
       <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
         {prefix && <span className="shrink-0 text-sm text-[var(--muted)]">{prefix}</span>}
-        <input
+        <CommitInput
           key={defaultValue}
-          ref={inputRef}
           defaultValue={defaultValue}
           placeholder={placeholder}
           inputMode={inputMode}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") {
-              reverted.current = true;
-              e.currentTarget.value = defaultValue;
-              e.currentTarget.blur();
-            }
-          }}
-          onBlur={(e) => {
-            if (reverted.current) {
-              reverted.current = false;
-              return;
-            }
-            commit(e.target.value);
-          }}
+          onCommit={onCommit}
           className="w-full bg-transparent text-sm focus:outline-none"
         />
       </div>

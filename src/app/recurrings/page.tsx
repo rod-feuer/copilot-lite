@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { MonthPicker } from "@/components/Actions";
@@ -493,8 +494,6 @@ function BillList({
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
   onOpen?: (merchant: string) => void;
 }) {
-  const [renameId, setRenameId] = useState<number | null>(null);
-  const skipRenameSave = useRef(false); // set on Escape so the blur doesn't save
   const shelfActive = useShelfActive();
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize && onMute);
@@ -552,43 +551,13 @@ function BillList({
               <CategoryBadge icon={r.categoryIcon} color={r.categoryColor} fallback={r.displayName} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  {renameId === r.id && onSaveSettings ? (
-                    <input
-                      autoFocus
-                      defaultValue={r.displayName}
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === "Enter") e.currentTarget.blur();
-                        if (e.key === "Escape") {
-                          skipRenameSave.current = true;
-                          setRenameId(null);
-                        }
-                      }}
-                      onBlur={(e) => {
-                        if (skipRenameSave.current) skipRenameSave.current = false;
-                        else onSaveSettings(r.merchant, { alias: e.target.value.trim() || null });
-                        setRenameId(null);
-                      }}
-                      className="w-56 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                  {onSaveSettings ? (
+                    <InlineEdit
+                      value={r.displayName}
+                      onCommit={(raw) => onSaveSettings(r.merchant, { alias: raw.trim() || null })}
                     />
                   ) : (
-                    <>
-                      <span className="truncate text-sm font-medium">{r.displayName}</span>
-                      {onSaveSettings && (
-                        <Tooltip label="Rename" onlyIfTruncated={false} className="shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRenameId(r.id);
-                            }}
-                            className="rounded text-xs text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
-                          >
-                            <span className="inline-block -scale-x-100">✎</span>
-                          </button>
-                        </Tooltip>
-                      )}
-                    </>
+                    <span className="truncate text-sm font-medium">{r.displayName}</span>
                   )}
                   <span className="shrink-0 text-xs text-[var(--muted)]">
                     {CADENCE_LABEL[r.cadence]}

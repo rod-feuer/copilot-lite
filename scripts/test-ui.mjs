@@ -450,6 +450,47 @@ async function recurringGlyph(browser) {
   });
 }
 
+async function inlineEdit(browser) {
+  // The click-to-edit name is the row button that wraps a truncated span (the
+  // editable category badge also carries a ✎ cue, so target by structure).
+  const clickName = (page) => page.evaluate(() => {
+    const btn = [...document.querySelectorAll("[data-drawer-row] button")].find((b) => b.querySelector("span.truncate"));
+    if (!btn) return null; const name = btn.querySelector("span.truncate").textContent; btn.click(); return name;
+  });
+  const typeIntoFocused = async (page, text) => {
+    await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === "INPUT", { timeout: 5000 });
+    await page.evaluate(() => document.activeElement.select());
+    await page.keyboard.type(text);
+  };
+  const rowsText = (page) => page.evaluate(() => [...document.querySelectorAll("[data-drawer-row]")].map((r) => r.innerText).join("\n"));
+  await withPage(browser, async (page, errs) => {
+    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const original = await clickName(page);
+    await typeIntoFocused(page, "Dining Out"); await page.keyboard.press("Enter");
+    await page.waitForFunction(() => [...document.querySelectorAll("[data-drawer-row]")].some((r) => r.innerText.includes("Dining Out")), { timeout: 8000 });
+    record("inline edit", "categories · Enter commits a rename", true, `${original} → Dining Out`);
+    await clickName(page);
+    await typeIntoFocused(page, "Garbage"); await page.keyboard.press("Escape");
+    await sleep(600);
+    const t = await rowsText(page);
+    record("inline edit", "categories · Escape reverts a rename", t.includes("Dining Out") && !t.includes("Garbage"));
+    const budget = await page.$("input[aria-label='Monthly budget']");
+    const before = await budget.evaluate((el) => el.value);
+    await budget.click({ clickCount: 3 }); await budget.type("999999"); await page.keyboard.press("Escape");
+    await sleep(600);
+    const afterB = await page.evaluate(() => document.querySelector("input[aria-label='Monthly budget']").value);
+    record("inline edit", "categories · Escape reverts the budget input", afterB === before, `${before} → ${afterB}`);
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const rec = await clickName(page);
+    await typeIntoFocused(page, "Netflix HD"); await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.body.innerText.includes("Netflix HD"), { timeout: 8000 });
+    record("inline edit", "recurrings · Enter commits a rename", true, `${rec} → Netflix HD`);
+    if (errs.length) record("inline edit", "page errors", false, errs[0]);
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -460,7 +501,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }
