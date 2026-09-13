@@ -1003,6 +1003,10 @@ export function upcomingRecurringExpenses(
   return rows
     // A canceled (ended) subscription is no longer an upcoming bill.
     .filter((r) => !recurringEnded(settings[r.merchant]?.endedDate, r.lastDate))
+    // The same liveness rule the category baseline and the shelf apply: a series
+    // that has gone quiet is not an upcoming bill, even if a next-due or cadence
+    // override would land it in the window.
+    .filter((r) => isRecurringActive(r.lastDate, r.cadence))
     .map((r) => {
       const s = settings[r.merchant];
       // A cadence correction re-derives next-due from the last charge (so the
