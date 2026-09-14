@@ -1,4 +1,4 @@
-import { seriesKey } from "./series";
+import { seriesKey, dayLabel, amountLabel } from "./series";
 import crypto from "node:crypto";
 import { getDb } from "./db";
 import {
@@ -188,8 +188,10 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
 // months). So: cluster charges by day of the month (a cluster spans ≤2 days,
 // so a weekend slip stays together and 23 vs 26 stays apart; days 28–31 are
 // one "end of month"); charges in the same month of one cluster are ONE event
-// (two policies both billed on the 1st sum to one bill); a cluster is a bill
-// when it has ≥3 events that recur monthly. Split only when ≥2 such clusters
+// (two policies both billed on the 1st sum to one bill) — unless they are
+// debits of consistently different amounts, which are different bills (two
+// 529 contributions of $200 and $300 on the 18th); a cluster is a bill when it
+// has ≥3 events that recur monthly. Split only when ≥2 such clusters
 // overlap in time (a bill whose day moved is still one bill) and together hold
 // most of the vendor's charges (a weekly grocery run is not four bills).
 // Charges that fit no cluster are left unlinked, so a second plan with one or
@@ -201,7 +203,7 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
 // math. When one cluster holds most of the vendor's charges and the whole
 // descriptor doesn't classify as monthly, that cluster IS the bill.
 const MONTH_DAYS = 30.44;
-type DayPart<T> = { day: number; txs: T[]; events: { date: string; amount: number }[] };
+type DayPart<T> = { day: number; amount: number | null; txs: T[]; events: { date: string; amount: number }[] };
 function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): DayPart<T>[] {
   if (txs.length < 4) return [];
   const dayOf = (t: T) => Number(t.date.slice(8, 10));
@@ -213,8 +215,38 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     if (cur && bucket(t) - bucket(cur[0]) <= 2) cur.push(t);
     else clusters.push([t]);
   }
+  // Same-day debits of consistently different amounts are different bills:
+  // group a cluster's charges by amount (within 10%); when ≥2 groups CO-OCCUR
+  // — each shares ≥3 months with the largest — each is its own part. A price
+  // change is not a second bill: its eras never share a month, and each era
+  // folds into the concurrent group nearest in amount. Deposits never split —
+  // two deposits on a payday are one paycheck.
+  const amountGroups = (c: T[]): { amount: number | null; txs: T[] }[] => {
+    if (c.some((t) => t.amount > 0)) return [{ amount: null, txs: c }];
+    const groups: T[][] = [];
+    for (const t of [...c].sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount))) {
+      const g = groups[groups.length - 1];
+      if (g && Math.abs(Math.abs(t.amount) - Math.abs(g[0].amount)) <= 0.1 * Math.abs(g[0].amount)) g.push(t);
+      else groups.push([t]);
+    }
+    const monthsOf = (g: T[]) => new Set(g.map((t) => t.date.slice(0, 7)));
+    const main = groups.reduce((a, b) => (b.length > a.length ? b : a));
+    const mainMonths = monthsOf(main);
+    const bills = groups.filter((g) => g === main || [...monthsOf(g)].filter((m) => mainMonths.has(m)).length >= 3);
+    if (bills.length < 2) return [{ amount: null, txs: c }];
+    const median = (g: T[]) => Math.abs(g[g.length >> 1].amount);
+    for (const g of groups) {
+      if (bills.includes(g)) continue;
+      const home = bills.reduce((a, b) => (Math.abs(median(b) - median(g)) < Math.abs(median(a) - median(g)) ? b : a));
+      home.push(...g);
+    }
+    return bills.map((g) => {
+      const byDate = [...g].sort((a, b) => a.date.localeCompare(b.date));
+      return { amount: Number(currentAmount(byDate.map((t) => t.amount)).toFixed(2)), txs: byDate };
+    });
+  };
   const parts: DayPart<T>[] = [];
-  for (const c of clusters) {
+  for (const cluster of clusters) for (const { amount, txs: c } of amountGroups(cluster)) {
     const byMonth = new Map<string, { date: string; amount: number }>();
     for (const t of [...c].sort((a, b) => a.date.localeCompare(b.date))) {
       const m = t.date.slice(0, 7);
@@ -233,9 +265,19 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     const n = new Map<number, number>();
     for (const t of c) n.set(dayOf(t), (n.get(dayOf(t)) ?? 0) + 1);
     const day = [...n.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
-    parts.push({ day, txs: c, events });
+    parts.push({ day, amount, txs: c, events });
   }
   return parts;
+}
+
+// "<vendor> · 23rd" when parts differ by day; "· $200" when they share a day
+// and differ by amount; "· 18th · $200" when a vendor needs both.
+function partKey<T>(vendor: string, p: DayPart<T>, all: DayPart<T>[]): string {
+  const sameDay = all.filter((q) => q.day === p.day).length > 1;
+  const oneDay = all.every((q) => q.day === p.day);
+  if (!sameDay || p.amount == null) return seriesKey(vendor, dayLabel(p.day));
+  if (oneDay) return seriesKey(vendor, amountLabel(p.amount));
+  return seriesKey(vendor, `${dayLabel(p.day)}${" · "}${amountLabel(p.amount)}`);
 }
 
 // Which monthly day-parts of a descriptor stand as separate bills. Concurrent,
@@ -372,34 +414,43 @@ export function detectRecurrings(): Recurring[] {
       if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
       out.push({ id: Number(info.lastInsertRowid), ...rec });
     };
-    const split = concurrentParts(allParts, txs.length)?.filter(
-      (p) => steady(p) && rawOverrides[seriesKey(merchant, p.day)] !== "mute"
-    );
-    if (split && split.length >= 2) {
-      // The vendor's own settings (its name, an expected amount) stay with the
-      // established plan — the part with the most history — the first time it
-      // splits; the new plan reads as the bare descriptor until it is named.
+    // Emit several plans of one descriptor. The vendor's own settings (its
+    // name, an expected amount) stay with the established plan — the part with
+    // the most history — the first time it splits; the new plan reads as the
+    // bare descriptor until it is named.
+    const emitSplit = (parts: DayPart<(typeof txs)[number]>[]) => {
       const own = settings[merchant];
       if (own) {
-        const main = split.reduce((a, b) => (b.events.length > a.events.length ? b : a));
-        const mainKey = seriesKey(merchant, main.day);
+        const main = parts.reduce((a, b) => (b.events.length > a.events.length ? b : a));
+        const mainKey = partKey(merchant, main, parts);
         if (!settings[mainKey]) setRecurringSetting(mainKey, own);
       }
-      for (const p of split) emitPart(seriesKey(merchant, p.day), p);
+      for (const p of parts) emitPart(partKey(merchant, p, parts), p);
       created.add(merchant);
+    };
+    const concurrent = concurrentParts(allParts, txs.length);
+    const split = concurrent?.filter(
+      (p) => steady(p) && rawOverrides[partKey(merchant, p, concurrent)] !== "mute"
+    );
+    if (split && split.length >= 2) {
+      emitSplit(split);
       continue;
     }
-    // One monthly plan plus strays (a service call, the first charge of a
-    // second plan): when the plan holds ≥60% of the charges and the whole
-    // descriptor would not read as monthly, the plan is the bill and the
-    // strays stay unlinked. If the whole descriptor already reads monthly,
-    // the ordinary path below keeps every charge.
-    if (dayParts.length === 1 && dayParts[0].txs.length >= 0.6 * txs.length) {
+    // One billing day plus strays (a service call, the first charge of a
+    // second plan, a pair that posted a month early): when that day's plan —
+    // or its same-day plans of different amounts — holds ≥60% of the charges
+    // and the whole descriptor would not read as monthly, the plan is the bill
+    // and the strays stay unlinked. If the whole descriptor already reads
+    // monthly, the ordinary path below keeps every charge.
+    const oneDay = dayParts.length >= 1 && new Set(dayParts.map((p) => p.day)).size === 1;
+    if (oneDay && dayParts.reduce((n, p) => n + p.txs.length, 0) >= 0.6 * txs.length) {
       const all = txs.map((t) => Date.parse(t.date + "T00:00:00Z"));
       const allGaps = all.slice(1).map((d, i) => (d - all[i]) / DAY);
       if (classifyCadence(medianGap(allGaps)) !== "monthly") {
-        emitPart(merchant, dayParts[0]);
-        created.add(merchant);
+        if (dayParts.length === 1) {
+          emitPart(merchant, dayParts[0]);
+          created.add(merchant);
+        } else emitSplit(dayParts.filter((p) => rawOverrides[partKey(merchant, p, dayParts)] !== "mute"));
         continue;
       }
     }

@@ -1276,6 +1276,26 @@ test("detector splits a descriptor that carries two monthly bills into one serie
     tx("Chubb", { amount: -544.94, date: `${ym(m)}-17`, categoryId: home });
   }
 
+  // Two 529 contributions, $200 and $300, on the 18th each month (one per
+  // account) — same day, different amounts: two bills, keyed by amount. July's
+  // pair posted on the 20th (weekend slip, within the cluster's two days). Two
+  // deposits on a payday, though, are one paycheck: never split by amount.
+  for (let m = 1; m <= 8; m++) {
+    const d = m === 7 ? "20" : "18";
+    tx("In 529 Dir Ach Contrib", { amount: -200, date: `${ym(m)}-${d}`, categoryId: home });
+    tx("In 529 Dir Ach Contrib", { amount: -300, date: `${ym(m)}-${d}`, categoryId: home, account: "Savings" });
+    tx("Payroll", { amount: 9738.55, date: `${ym(m)}-15`, categoryId: home });
+    tx("Payroll", { amount: 7553.94, date: `${ym(m)}-15`, categoryId: home, account: "Savings" });
+  }
+
+  // Two policies of different amounts on the 1st, three months, plus a pair
+  // that posted a month early on the 31st: two same-day plans that together
+  // hold most of the charges are the bills; the early pair stays unlinked.
+  for (const d of ["2026-01-31", "2026-03-01", "2026-04-01", "2026-05-03"]) {
+    tx("Chubb Prs", { amount: -259.75, date: d, categoryId: home });
+    tx("Chubb Prs", { amount: -729.75, date: d, categoryId: home, account: "Savings" });
+  }
+
   // A grocery store visited every few days lands in every day-bucket month
   // after month; that is one variable vendor, not a stack of monthly bills.
   const g0 = Date.UTC(2026, 0, 2);
@@ -1287,12 +1307,17 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   assert.ok(!recs.some((r) => r.merchant.startsWith("Market District · ")), "a weekly store never splits into monthly bills");
   assert.deepEqual(
     recs.map((r) => r.merchant).filter((m) => !m.startsWith("Market District")).sort(),
-    ["Chubb · 17th", "Chubb · 1st", "Gym", "Netflix · 23rd", "Netflix · 26th", "Sofi · 1st", "Sofi · 21st", "Water"],
+    ["Chubb Prs · $259.75", "Chubb Prs · $729.75", "Chubb · 17th", "Chubb · 1st", "Gym", "In 529 Dir Ach Contrib · $200", "In 529 Dir Ach Contrib · $300", "Netflix · 23rd", "Netflix · 26th", "Payroll", "Sofi · 1st", "Sofi · 21st", "Water"],
     "two bills per descriptor become two series; a drifting biweekly and a bill that changed its day stay one"
   );
   assert.equal(by("Chubb · 1st")!.avgAmount, -989.5, "same-day charges are one event, summed");
   assert.equal(by("Chubb · 1st")!.count, 6, "count is events (months), not charges");
   assert.equal(by("Chubb · 17th")!.avgAmount, -544.94);
+  assert.equal(by("In 529 Dir Ach Contrib · $200")!.count, 8);
+  assert.equal(by("In 529 Dir Ach Contrib · $300")!.avgAmount, -300);
+  assert.equal(by("Payroll")!.avgAmount, 17292.49, "two deposits on a payday are one paycheck");
+  assert.equal(by("Payroll")!.count, 8);
+  assert.equal(by("Chubb Prs · $729.75")!.count, 3, "the early pair on the 31st is not a member");
   assert.equal(by("Gym")!.cadence, "biweekly");
   assert.equal(by("Water")!.cadence, "monthly");
   assert.equal(by("Netflix · 23rd")!.count, 8);
