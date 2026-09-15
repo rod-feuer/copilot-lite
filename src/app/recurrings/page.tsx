@@ -3,7 +3,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
-import { RowMenu, RowMenuItem } from "@/components/RowMenu";
 import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
 import { withoutAmountQualifier } from "@/lib/series";
 import { InlineEdit } from "@/components/InlineEdit";
@@ -189,32 +188,6 @@ export default function RecurringsPage() {
     );
   }
 
-  async function markNotRecurring(merchant: string) {
-    await mutate(
-      () => postJson("/api/recurrings/override", { merchant, status: "mute" }),
-      {
-        success: `"${merchant}" marked not recurring`,
-        error: "Couldn't update — please try again",
-      }
-    );
-  }
-
-  // Mark a subscription as ended/canceled as of today: it stops counting as an
-  // upcoming bill and toward expected outflow immediately, keeps its history,
-  // and moves to Inactive. Reactivate clears it.
-  async function setEnded(merchant: string, ended: boolean) {
-    await mutate(
-      () =>
-        postJson("/api/recurrings/settings", {
-          merchant,
-          endedDate: ended ? new Date().toISOString().slice(0, 10) : null,
-        }),
-      {
-        success: ended ? `"${merchant}" marked ended` : `"${merchant}" reactivated`,
-        error: "Couldn't update — please try again",
-      }
-    );
-  }
 
   async function recompute() {
     setBusy(true);
@@ -383,8 +356,6 @@ export default function RecurringsPage() {
             cats={cats}
             onRecategorize={recategorize}
             onNewCategory={addCategoryFromRow}
-            onMute={markNotRecurring}
-            onEnd={setEnded}
             onSaveSettings={saveSettings}
             onOpen={(m) => openTx(m, { onChange: () => load(month) })}
             pastMonth={!isCurrentMonth}
@@ -395,8 +366,6 @@ export default function RecurringsPage() {
             cats={cats}
             onRecategorize={recategorize}
             onNewCategory={addCategoryFromRow}
-            onMute={markNotRecurring}
-            onEnd={setEnded}
             onSaveSettings={saveSettings}
             onOpen={(m) => openTx(m, { onChange: () => load(month) })}
           />
@@ -502,7 +471,6 @@ export default function RecurringsPage() {
                   title=""
                   recs={shownInactive}
                   dim
-                  onEnd={setEnded}
                   onOpen={(m) => openTx(m, { onChange: () => load(month) })}
                 />
               )}
@@ -548,8 +516,6 @@ function BillList({
   cats,
   onRecategorize,
   onNewCategory,
-  onMute,
-  onEnd,
   onSaveSettings,
   onOpen,
   pastMonth = false,
@@ -560,8 +526,6 @@ function BillList({
   cats?: Cat[];
   onRecategorize?: (r: Rec, categoryId: number | null) => void;
   onNewCategory?: (cat: Cat, r: Rec) => void; // created from the row's dropdown → apply to the row
-  onMute?: (merchant: string) => void;
-  onEnd?: (merchant: string, ended: boolean) => void;
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
   onOpen?: (merchant: string) => void;
   pastMonth?: boolean; // a closed month: unmatched bills are "Unpaid", not "Overdue"
@@ -571,7 +535,7 @@ function BillList({
   // that dropdown and the new category is applied to that row on Add.
   const newCat = useNewCategory<Rec>((cat, rec) => onNewCategory?.(cat, rec));
   if (recs.length === 0) return null;
-  const editable = !!(cats && onRecategorize && onMute);
+  const editable = !!(cats && onRecategorize);
 
   // Convey paid status by grouping rather than a cryptic per-row ✓/○. Unpaid
   // bills split by due date: Overdue (date already passed — expected but not yet
@@ -736,21 +700,9 @@ function BillList({
               </div>
               {/* The only visible control: the row's ⋯ (the row itself opens the
                   shelf, which is where editing lives). */}
-              {editable ? (
-                <RowMenu>
-                  {onEnd && !r.ended && !dim && (
-                    <RowMenuItem label="Mark ended" onSelect={() => onEnd(r.merchant, true)} />
-                  )}
-                  {onEnd && r.ended && (
-                    <RowMenuItem label="Reactivate" onSelect={() => onEnd(r.merchant, false)} />
-                  )}
-                  {onMute && !r.ended && (
-                    <RowMenuItem label="Not recurring" onSelect={() => onMute(r.merchant)} className="hover:text-rose-500" />
-                  )}
-                </RowMenu>
-              ) : (
-                <span className="w-6 shrink-0" aria-hidden />
-              )}
+              {/* No row menu. Mark ended / Reactivate / Not recurring are rare
+                  verbs and live in the shelf — the control surface — which the
+                  row opens on click, tap, or Enter. */}
               {/* The amount says what kind of number it is: a posted charge is
                   settled (bold, foreground); an expected one is provisional
                   (medium, muted — the app's qualifier colour); an overdue one
