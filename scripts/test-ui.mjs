@@ -527,6 +527,7 @@ async function recurringsRow(browser) {
         cardInset: (() => { const li = rows[0]; const card = li && li.closest(".card"); return li && card ? Math.round(li.children[0].getBoundingClientRect().left - card.getBoundingClientRect().left) : null; })(),
         totalOnAmountsColumn: (() => { const sec = document.querySelector("[data-bill-section] h3"); if (!sec) return null; const total = sec.parentElement.lastElementChild; const amount = sec.closest("[data-bill-section]").querySelector("[data-drawer-row]")?.lastElementChild; return total && amount ? Math.abs(Math.round(total.getBoundingClientRect().right - amount.getBoundingClientRect().right)) : null; })(),
         titleAbove: (() => { const sec = document.querySelector("[data-bill-section] h3"); const card = sec && sec.closest("[data-bill-section]").querySelector(".card"); return sec && card ? sec.getBoundingClientRect().bottom <= card.getBoundingClientRect().top : null; })(),
+        bar: (() => { const b = document.querySelector("[data-summary] [role='progressbar']"); return !!b && /%/.test(b.getAttribute("aria-label") || "") && b.getAttribute("aria-valuenow") !== null; })(),
         summary: !!document.querySelector("[data-summary] .stat-label") && [...document.querySelectorAll("[data-summary] .stat-label")].some((l) => /paid/i.test(l.textContent)) && /overdue/i.test(document.querySelector("[data-summary]").textContent),
       };
     });
@@ -542,6 +543,19 @@ async function recurringsRow(browser) {
     record("recurrings row", "section title sits above its card, not inside it", r.titleAbove === true, r.titleAbove === null ? "no titled section" : `above=${r.titleAbove}`);
     record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
+    record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
+    // A count in the status line jumps to its section.
+    {
+      const before = await page.evaluate(() => document.querySelector("[data-bill-section='up']")?.getBoundingClientRect().top ?? null);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const clicked = await page.$("[data-section-link='up']");
+      if (clicked) { await clicked.click(); await new Promise((r) => setTimeout(r, 700)); }
+      // On a page shorter than the viewport nothing can scroll; the section must
+      // simply be in view. On a taller page it must land near the top.
+      const after = await page.evaluate(() => { const el = document.querySelector("[data-bill-section='up']"); const top = el ? el.getBoundingClientRect().top : null; return { top, scrollable: document.documentElement.scrollHeight > window.innerHeight + 10, vh: window.innerHeight }; });
+      const ok = !!clicked && after.top !== null && after.top >= -2 && (after.scrollable ? after.top <= 120 : after.top <= after.vh);
+      record("recurrings row", "'N upcoming' in the summary scrolls to the Upcoming section", ok, clicked ? `section top ${before}px → ${after.top}px${after.scrollable ? "" : " (page fits the viewport)"}` : "no link");
+    }
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);
     // the verbs live in the row's ⋯ menu, in §2 vocabulary

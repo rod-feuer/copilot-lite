@@ -335,33 +335,39 @@ export default function RecurringsPage() {
             <SummaryCard
               primary={{
                 value: usd(paidSoFar, { cents: false }),
-                label: `paid${isCurrentMonth ? " so far" : ""} of ${usd(totalBills, { cents: false })} expected`,
+                // "Expected" is the word that needs teaching; the hint sits on it.
+                label: (
+                  <span className="inline-flex items-center gap-1">
+                    paid{isCurrentMonth ? " so far" : ""} of {usd(totalBills, { cents: false })} expected
+                    <InfoHint text="Expected amounts are each bill's latest charge. Change one, or its cadence, in the shelf." />
+                  </span>
+                ),
               }}
               secondary={{
                 value: usd(leftToPay, { cents: false }),
-                // The left label already says the total is expected; this side
-                // doesn't repeat the qualifier.
-                label: "remaining",
+                // A closed month's unmatched bills weren't "left to pay"; they went unpaid.
+                label: isCurrentMonth ? "left to pay" : "unpaid",
               }}
               progress={paidSoFar / totalBills}
+              barLabel={`${Math.round((paidSoFar / totalBills) * 100)}% of expected bills paid`}
               status={
                 <>
                   {overdueCount > 0 ? (
-                    <span className="font-medium text-amber-600">
-                      {overdueCount} overdue
-                    </span>
+                    <SectionLink section="od" className="font-medium text-amber-600">
+                      {overdueCount} {isCurrentMonth ? "overdue" : "unpaid"}
+                    </SectionLink>
                   ) : (
-                    <span className="text-[var(--muted)]">Nothing overdue</span>
+                    <span className="text-[var(--muted)]">{isCurrentMonth ? "Nothing overdue" : "Nothing unpaid"}</span>
+                  )}
+                  {isCurrentMonth && (
+                    <>
+                      <span className="text-[var(--muted)]">·</span>
+                      <SectionLink section="up">{upcomingCount} upcoming</SectionLink>
+                    </>
                   )}
                   <span className="text-[var(--muted)]">·</span>
-                  <span className="text-[var(--muted)]">{upcomingCount} upcoming</span>
-                  <span className="text-[var(--muted)]">·</span>
-                  <span className="text-[var(--muted)]">{paidCount} paid</span>
+                  <SectionLink section="pd">{paidCount} paid</SectionLink>
                 </>
-              }
-              note={
-                isCurrentMonth &&
-                "Expected amounts are each bill's latest charge; set your own, or the cadence, in the shelf."
               }
             />
           )}
@@ -376,6 +382,7 @@ export default function RecurringsPage() {
             onEnd={setEnded}
             onSaveSettings={saveSettings}
             onOpen={(m) => openTx(m, { onChange: () => load(month) })}
+            pastMonth={!isCurrentMonth}
           />
           <BillList
             title="Recurring income"
@@ -502,6 +509,33 @@ export default function RecurringsPage() {
   );
 }
 
+// A count in the summary's status line that jumps to its section below —
+// the same job the Categories status line does with its filters.
+function SectionLink({
+  section,
+  className = "text-[var(--muted)] hover:text-[var(--foreground)]",
+  children,
+}: {
+  section: "od" | "up" | "pd";
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      data-section-link={section}
+      onClick={() =>
+        document
+          .querySelector(`[data-bill-section="${section}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }
+      className={`hover:underline ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function BillList({
   title,
   recs,
@@ -513,6 +547,7 @@ function BillList({
   onEnd,
   onSaveSettings,
   onOpen,
+  pastMonth = false,
 }: {
   title: string;
   recs: Rec[];
@@ -524,6 +559,7 @@ function BillList({
   onEnd?: (merchant: string, ended: boolean) => void;
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
   onOpen?: (merchant: string) => void;
+  pastMonth?: boolean; // a closed month: unmatched bills are "Unpaid", not "Overdue"
 }) {
   const shelfActive = useShelfActive();
   // "+ New category…" chosen in a row's dropdown: the create form opens under
@@ -538,7 +574,7 @@ function BillList({
   // there's something to distinguish; a lone all-paid list renders flat.
   const today = new Date().toISOString().slice(0, 10);
   const groups = [
-    { key: "od", label: "Overdue", recs: recs.filter((r) => !r.paid && r.dueDate < today) },
+    { key: "od", label: pastMonth ? "Unpaid" : "Overdue", recs: recs.filter((r) => !r.paid && r.dueDate < today) },
     { key: "up", label: "Upcoming", recs: recs.filter((r) => !r.paid && r.dueDate >= today) },
     { key: "pd", label: "Paid this month", recs: recs.filter((r) => r.paid) },
   ].filter((g) => g.recs.length > 0);
@@ -577,7 +613,7 @@ function BillList({
                 {section.recs.length}
               </span>
               <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--foreground)]">
-                {usd(sectionTotal(section.recs))}
+                {usd(sectionTotal(section.recs), { cents: false })}
               </span>
             </div>
           )}
