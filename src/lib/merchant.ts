@@ -52,3 +52,13 @@ export function normalizeMerchant(raw: string): string {
 function canonCase(s: string): string {
   return s.toLowerCase().replace(/(^|\s)([a-z])/g, (_, b, c) => b + c.toUpperCase());
 }
+
+// What a vendor is called on screen when no alias is set. Payment rails carry
+// the payee AFTER them — "Zelle Payment To Rosy's Cleaning" — and the rail
+// is noise in a list of bills: strip it for display only. The stored merchant
+// is untouched (grouping, links, and settings still key on it), so this is
+// safe to apply anywhere a merchant string is shown.
+export function displayMerchant(merchant: string): string {
+  const s = merchant.replace(/^zelle payment (to|from) /i, "").trim();
+  return s || merchant;
+}

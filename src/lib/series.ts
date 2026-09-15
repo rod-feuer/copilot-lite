@@ -35,3 +35,13 @@ function ordinal(n: number): string {
   const suffix = v >= 11 && v <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
   return `${n}${suffix}`;
 }
+
+// A series keyed by amount ("In 529 Dir Ach Contrib · $200") in a row that
+// already shows its amount: drop the amount qualifier, keep any day qualifier
+// ("· 18th · $200" → "· 18th"). For display beside an amount column only.
+export function withoutAmountQualifier(key: string): string {
+  const i = key.indexOf(SERIES_SEP);
+  if (i < 0) return key;
+  const parts = key.slice(i + SERIES_SEP.length).split(SERIES_SEP).filter((q) => !q.startsWith("$"));
+  return parts.length ? `${key.slice(0, i)}${SERIES_SEP}${parts.join(SERIES_SEP)}` : key.slice(0, i);
+}

@@ -1,4 +1,4 @@
-import { seriesKey, dayLabel, amountLabel } from "./series";
+import { seriesKey, seriesVendor, dayLabel, amountLabel } from "./series";
 import crypto from "node:crypto";
 import { getDb } from "./db";
 import {
@@ -968,7 +968,9 @@ export function dashboard(month?: string): DashboardData {
     total: Number(due.reduce((a, r) => a + Math.abs(r.avgAmount), 0).toFixed(2)),
     count: due.length,
     items: due.slice(0, 6).map((r) => ({
-      merchant: r.merchant,
+      // The shelf opens on the descriptor; a split series' key ("Netflix ·
+      // 26th") is not one.
+      merchant: seriesVendor(r.merchant),
       name: r.displayName,
       nextDate: r.nextDate,
       amount: r.avgAmount,

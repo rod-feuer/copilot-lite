@@ -5,6 +5,7 @@ import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { RowMenu, RowMenuItem } from "@/components/RowMenu";
 import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
+import { withoutAmountQualifier } from "@/lib/series";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -268,8 +269,10 @@ export default function RecurringsPage() {
       ? cats.find((c) => String(c.id) === catFilter)?.name ?? null
       : null;
   const matchText = (text: string) => !ql || text.toLowerCase().includes(ql);
+  // Search the shown name AND the bank's descriptor, so "zelle" still finds a
+  // payee whose display name has the rail stripped.
   const matchRec = (r: Rec) =>
-    matchText(`${r.displayName ?? r.merchant} ${r.categoryName ?? ""}`) &&
+    matchText(`${r.displayName ?? r.merchant} ${r.merchant} ${r.categoryName ?? ""}`) &&
     (!catFilter ||
       (catFilter === "none" ? r.categoryId == null : String(r.categoryId) === catFilter));
   const matchSug = (s: Suggestion) =>
@@ -622,6 +625,9 @@ function BillList({
           <div className="card divide-y divide-[var(--border)] overflow-hidden">
             {section.recs.map((r) => {
           const amount = r.paid ? r.paidAmount ?? 0 : r.expectedAmount;
+          // The amount column already says "$200"; a series keyed by amount
+          // needn't repeat it in its name. A user-set name is shown as typed.
+          const rowName = r.settings?.alias ? r.displayName : withoutAmountQualifier(r.displayName);
           return (
             <div key={r.id}>
             <div
@@ -650,13 +656,13 @@ function BillList({
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 {onSaveSettings ? (
                   <InlineEdit
-                    value={r.displayName}
+                    value={rowName}
                     textClassName="text-[13px] font-medium"
                     cueOnHover
                     onCommit={(raw) => onSaveSettings(r.merchant, { alias: raw.trim() || null })}
                   />
                 ) : (
-                  <span className="truncate font-medium">{r.displayName}</span>
+                  <span className="truncate font-medium">{rowName}</span>
                 )}
                 {/* Cadence only when it isn't monthly, as a quiet tag after the
                     name: the exception is the information, and a column for it
