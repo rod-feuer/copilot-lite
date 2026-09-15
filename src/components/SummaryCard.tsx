@@ -9,14 +9,16 @@ export function SummaryCard({
   primary,
   secondary,
   progress,
+  barLabel,
   alarm = false,
   status,
   note,
   className = "",
 }: {
-  primary: { value: string; label: string };
-  secondary?: { value: string; label: string; alarm?: boolean };
+  primary: { value: string; label: ReactNode };
+  secondary?: { value: string; label: ReactNode; alarm?: boolean };
   progress: number; // 0..1
+  barLabel: string; // what the bar measures, for assistive tech ("70% of expected bills paid")
   alarm?: boolean; // the bar turns red (over budget)
   status?: ReactNode; // the line under the bar; the caller sets its colours
   note?: ReactNode; // small helper sentence
@@ -39,7 +41,14 @@ export function SummaryCard({
           </div>
         )}
       </div>
-      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]">
+      <div
+        className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]"
+        role="progressbar"
+        aria-label={barLabel}
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         <div
           className="h-full rounded-full"
           style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
