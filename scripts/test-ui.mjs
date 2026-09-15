@@ -544,6 +544,16 @@ async function recurringsRow(browser) {
     record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
+    // Narrow layouts: with the sidebar up and a ~330px content column, the row
+    // must still show its name and keep its amount inside the card.
+    for (const w of [700, 900]) {
+      await page.setViewport({ width: w, height: 700 });
+      await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      const n = await page.evaluate(() => { const row = document.querySelector("[data-drawer-row]"); const kids = [...row.children]; const name = kids[1].getBoundingClientRect(); const amount = kids[kids.length - 1].getBoundingClientRect(); const rb = row.getBoundingClientRect(); return { name: Math.round(name.width), amountInside: amount.right <= rb.right + 1, overflow: row.scrollWidth - row.clientWidth }; });
+      record("recurrings row", `at ${w}px the name has room and the amount stays inside the card`, n.name >= 60 && n.amountInside && n.overflow <= 0, `name ${n.name}px, amount inside=${n.amountInside}, overflow ${n.overflow}px`);
+    }
+    await page.setViewport({ width: 1280, height: 860 });
     // A hovered row takes the hover token — a wash of the card surface, not the
     // page grey behind it. Hover media is not available in headless Linux CI.
     {
