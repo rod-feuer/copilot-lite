@@ -1,4 +1,5 @@
 import { isSeriesKey, seriesVendor } from "./series";
+import { displayMerchant } from "./merchant";
 import {
   getDb,
   ensureRecurringSettings,
@@ -66,7 +67,7 @@ export function merchantDisplayName(
   settings: Record<string, RecurringSettings>,
   links: Record<string, string>
 ): string {
-  return settings[canonicalMerchant(merchant, links)]?.alias ?? merchant;
+  return settings[canonicalMerchant(merchant, links)]?.alias ?? displayMerchant(merchant);
 }
 
 // Distinct merchant strings with transaction counts — powers the link picker.
@@ -1034,7 +1035,7 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       matchRule: matchRuleFor(r.merchant),
       vendor: seriesVendor(r.merchant),
       linkedMerchants: linkedAliases(seriesVendor(r.merchant), links).filter((m) => m !== seriesVendor(r.merchant)),
-      displayName: s?.alias ?? r.merchant,
+      displayName: s?.alias ?? displayMerchant(r.merchant),
       expectedAmount: s?.expectedAmount ?? Number(Math.abs(r.avgAmount).toFixed(2)),
       ended: recurringEnded(s?.endedDate, r.lastDate),
       endedDate: s?.endedDate ?? null,
@@ -1081,7 +1082,7 @@ export function upcomingRecurringExpenses(
       // dashboard's upcoming list follows it), unless next-due was set explicitly.
       const nextDate = s?.nextDate ?? (s?.cadence ? nextAfter(r.lastDate, s.cadence) : r.nextDate);
       const mag = s?.expectedAmount ?? Math.abs(r.avgAmount);
-      return { ...r, cadence: s?.cadence ?? r.cadence, nextDate, avgAmount: -mag, displayName: s?.alias ?? r.merchant };
+      return { ...r, cadence: s?.cadence ?? r.cadence, nextDate, avgAmount: -mag, displayName: s?.alias ?? displayMerchant(r.merchant) };
     })
     .filter((r) => r.nextDate >= from && r.nextDate <= to)
     .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
@@ -1500,7 +1501,7 @@ export function suggestedRecurrings(): RecurringSuggestion[] {
     const st = settings[s.merchant];
     return {
       ...s,
-      displayName: st?.alias ?? s.merchant,
+      displayName: st?.alias ?? displayMerchant(s.merchant),
       avgAmount: st?.expectedAmount != null ? -Math.abs(st.expectedAmount) : s.avgAmount,
     };
   });

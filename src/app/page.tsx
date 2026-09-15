@@ -1,5 +1,6 @@
 "use client";
 
+import { withoutAmountQualifier } from "@/lib/series";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -356,7 +357,8 @@ export default function DashboardPage() {
                     >
                       <CategoryBadge icon={u.categoryIcon} color={u.categoryColor} fallback={u.name} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{u.name}</div>
+                        {/* Beside its amount, a series keyed by amount needn't repeat it. */}
+                        <div className="truncate text-sm font-medium">{withoutAmountQualifier(u.name)}</div>
                         <div className="text-xs text-[var(--muted)]">
                           {shortDate(u.nextDate)}
                           {u.categoryName ? ` · ${u.categoryName}` : ""}
