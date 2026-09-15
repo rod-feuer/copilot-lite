@@ -596,7 +596,9 @@ export function merchantSummary(merchant: string) {
   const recent = db
     .prepare(
       `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.amount, t.account, t.excluded,
-         COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName
+         COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName,
+         t.categoryId, t.recurringId,
+         (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
        WHERE t.merchant IN (${ph}) ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
     )
@@ -608,6 +610,9 @@ export function merchantSummary(merchant: string) {
     excluded: 0 | 1;
     categoryExcluded: 0 | 1;
     categoryName: string | null;
+    categoryId: number | null;
+    recurringId: number | null;
+    recurringExcluded: 0 | 1; // flagged as a one-off: not part of this vendor's series
   }[];
 
   // Trailing-12-months spend + count (the drawer's box row uses this window).

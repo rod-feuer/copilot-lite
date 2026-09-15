@@ -17,6 +17,11 @@ export function rowButtonProps(onActivate: () => void) {
         e.preventDefault(); // Space would otherwise scroll the page
         onActivate();
       }
+      // Escape dismisses in steps: with the shelf open it closes the shelf
+      // (the shelf's own listener) and the row keeps focus so a keyboard user
+      // still knows where they are; pressed again on the bare row it drops
+      // focus, and the focus ring with it. Browsers resume Tab from here.
+      if (e.key === "Escape" && !document.querySelector("[data-shelf]")) e.currentTarget.blur();
     },
   };
 }
