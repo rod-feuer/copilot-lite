@@ -17,6 +17,7 @@ import { EmojiPicker } from "@/components/EmojiPicker";
 import { NewCategoryForm, PALETTE } from "@/components/NewCategoryForm";
 import { Tooltip } from "@/components/Tooltip";
 import { LoadError, LoadingRows } from "@/components/LoadState";
+import { SummaryCard } from "@/components/SummaryCard";
 
 type Cat = CategoryWithTotals;
 
@@ -340,80 +341,63 @@ function BudgetSummary({
   const pct = Math.min((spent / budget) * 100, 100);
   const hasAnnual = budgeted.some((c) => c.budgetPeriod === "annual");
   return (
-    <div className="card mb-5 p-5">
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-2xl font-semibold tracking-tight">
-            {usd(spent, { cents: false })}
-          </div>
-          <div className="stat-label">
-            spent{partial ? " so far" : ""} of {usd(budget, { cents: false })} budgeted
-          </div>
-        </div>
-        <div className="text-right">
-          <div
-            className={`text-2xl font-semibold tracking-tight ${
-              over ? "text-rose-600" : ""
-            }`}
-          >
-            {usd(Math.abs(remaining), { cents: false })}
-          </div>
-          <div className="stat-label">
-            {over ? "over budget" : "left"}
-            {partial ? " so far" : ""}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]">
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${pct}%`, background: over ? "#e11d48" : "var(--accent)" }}
-        />
-      </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-xs">
-        {overCount > 0 ? (
-          <Tooltip label="Show the categories over budget" onlyIfTruncated={false}>
-            <button
-              onClick={() => onFilter("over")}
-              className={`font-medium text-rose-600 hover:underline ${filter === "over" ? "underline" : ""}`}
-            >
-              {overLabel}
-            </button>
-          </Tooltip>
-        ) : (
-          <span className="text-[var(--muted)]">On track — nothing over budget</span>
-        )}
-        {unbudgeted.length > 0 && (
-          <>
-            <span className="text-[var(--muted)]">·</span>
-            <Tooltip label="Show the categories with no budget, to set one" onlyIfTruncated={false}>
+    <SummaryCard
+      className="mb-5"
+      primary={{
+        value: usd(spent, { cents: false }),
+        label: `spent${partial ? " so far" : ""} of ${usd(budget, { cents: false })} budgeted`,
+      }}
+      secondary={{
+        value: usd(Math.abs(remaining), { cents: false }),
+        label: `${over ? "over budget" : "left"}${partial ? " so far" : ""}`,
+        alarm: over,
+      }}
+      progress={pct / 100}
+      alarm={over}
+      status={
+        <>
+          {overCount > 0 ? (
+            <Tooltip label="Show the categories over budget" onlyIfTruncated={false}>
               <button
-                onClick={() => onFilter("unbudgeted")}
-                className={`text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
-                  filter === "unbudgeted" ? "text-[var(--foreground)] underline" : ""
-                }`}
+                onClick={() => onFilter("over")}
+                className={`font-medium text-rose-600 hover:underline ${filter === "over" ? "underline" : ""}`}
               >
-                {unbudgeted.length} not budgeted
+                {overLabel}
               </button>
             </Tooltip>
-          </>
-        )}
-        {filter && (
-          <button
-            onClick={() => onFilter(filter)}
-            className="ml-1 text-[var(--muted)] hover:text-[var(--foreground)]"
-          >
-            ✕ clear
-          </button>
-        )}
-      </div>
-      {hasAnnual && (
-        <p className="mt-2 text-[11px] text-[var(--muted)]">
-          Annual budgets counted at 1⁄12 per month here; each annual category
-          tracks its own calendar-year total in the list below.
-        </p>
-      )}
-    </div>
+          ) : (
+            <span className="text-[var(--muted)]">On track — nothing over budget</span>
+          )}
+          {unbudgeted.length > 0 && (
+            <>
+              <span className="text-[var(--muted)]">·</span>
+              <Tooltip label="Show the categories with no budget, to set one" onlyIfTruncated={false}>
+                <button
+                  onClick={() => onFilter("unbudgeted")}
+                  className={`text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
+                    filter === "unbudgeted" ? "text-[var(--foreground)] underline" : ""
+                  }`}
+                >
+                  {unbudgeted.length} not budgeted
+                </button>
+              </Tooltip>
+            </>
+          )}
+          {filter && (
+            <button
+              onClick={() => onFilter(filter)}
+              className="ml-1 text-[var(--muted)] hover:text-[var(--foreground)]"
+            >
+              ✕ clear
+            </button>
+          )}
+        </>
+      }
+      note={
+        hasAnnual &&
+        "Annual budgets counted at 1⁄12 per month here; each annual category tracks its own calendar-year total in the list below."
+      }
+    />
   );
 }
 

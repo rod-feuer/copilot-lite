@@ -519,6 +519,8 @@ async function recurringsRow(browser) {
         monthlyLabels: rows.filter((li) => /\bMonthly\b/.test(li.textContent)).length,
         leadingGlyphs: rows.filter((li) => li.querySelector("[data-category-badge]")).length,
         gutterSameEdge: (() => { const t = document.querySelector("h1"); const d = rows[0] && rows[0].children[0]; return t && d ? Math.abs(x(t) - x(d)) : null; })(),
+        cardInset: (() => { const li = rows[0]; const card = li && li.closest("[data-bill-section]"); return li && card ? Math.round(li.children[0].getBoundingClientRect().left - card.getBoundingClientRect().left) : null; })(),
+        summary: !!document.querySelector("[data-summary] .stat-label") && [...document.querySelectorAll("[data-summary] .stat-label")].some((l) => /paid/i.test(l.textContent)) && /overdue/i.test(document.querySelector("[data-summary]").textContent),
       };
     });
     record("recurrings row", `${r.rows} rows · ⋯ menus in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
@@ -529,7 +531,8 @@ async function recurringsRow(browser) {
     record("recurrings row", "amounts are full-weight foreground", r.amountColours.length === 1 && r.amountColours[0] === r.foreground, `${r.amountColours.join("/")} vs ${r.foreground}`);
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
     record("recurrings row", "date and name columns share one x each", r.dateXs.length === 1 && r.nameXs.length === 1, `date x=${r.dateXs.join("/")}, name x=${r.nameXs.join("/")}`);
-    record("recurrings row", "row text starts on the title's left edge", r.gutterSameEdge !== null && r.gutterSameEdge <= 1, `Δ ${r.gutterSameEdge}px`);
+    record("recurrings row", "rows sit in section cards, text inset by the card's border + 16px padding", r.cardInset === 17, `inset ${r.cardInset}px`);
+    record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);
     // the verbs live in the row's ⋯ menu, in §2 vocabulary
