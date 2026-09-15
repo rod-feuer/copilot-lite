@@ -503,7 +503,8 @@ async function recurringsRow(browser) {
       const caretGaps = rows.map((li) => { const c = li.querySelector("[data-category-caret]"); const t = c && c.previousElementSibling; return c && t ? Math.round(c.getBoundingClientRect().left - t.getBoundingClientRect().right) : null; });
       const amounts = rows.map((li) => { const els = [...li.querySelectorAll("div")]; return els.find((d) => /^\$[\d,]+\.\d\d$/.test(d.textContent.trim())); });
       const fg = getComputedStyle(document.body).color;
-      const cadXs = [...new Set(rows.map((li) => x(li.children[1])))]; // date, cadence, glyph, name…
+      const nameXs = [...new Set(rows.map((li) => x(li.children[1])))]; // date, name…
+      const cadenceTags = rows.map((li) => { const t = li.querySelector("[data-cadence]"); return t ? { text: t.textContent.trim(), afterName: t.previousElementSibling != null && t.previousElementSibling.textContent.trim().length > 0 } : null; });
       const dateXs = [...new Set(rows.map((li) => x(li.children[0])))];
       const names = rows.map((li) => li.querySelector("span.truncate")).filter(Boolean);
       const truncated = names.filter((n) => n.scrollWidth > n.clientWidth).length;
@@ -511,11 +512,11 @@ async function recurringsRow(browser) {
         rows: rows.length,
         editXs: [...new Set(edits)], selectXs: [...new Set(selects)],
         amountColours: [...new Set(amounts.map((a) => a && getComputedStyle(a).color))], foreground: fg,
-        truncated, names: names.length, cadXs, dateXs,
+        truncated, names: names.length, nameXs, dateXs, cadenceTags,
         dateColours: [...new Set(rows.map((li) => getComputedStyle(li.children[0]).color))],
         marked: document.querySelectorAll("[data-drawer-row] button[aria-haspopup][data-marked], [data-drawer-row] button[aria-haspopup] span[aria-hidden]").length,
         caretGaps: [...new Set(caretGaps)],
-        monthlyLabels: rows.filter((li) => li.children[1].textContent.trim() === "Monthly").length,
+        monthlyLabels: rows.filter((li) => /\bMonthly\b/.test(li.textContent)).length,
         leadingGlyphs: rows.filter((li) => li.querySelector("[data-category-badge]")).length,
         gutterSameEdge: (() => { const t = document.querySelector("h1"); const d = rows[0] && rows[0].children[0]; return t && d ? Math.abs(x(t) - x(d)) : null; })(),
       };
@@ -523,11 +524,11 @@ async function recurringsRow(browser) {
     record("recurrings row", `${r.rows} rows · ⋯ menus in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
     record("recurrings row", "category chevrons in one column", r.selectXs.length === 1, `x=${r.selectXs.join("/")}`);
     record("recurrings row", "category chevron sits beside its label", r.caretGaps.every((g) => g !== null && g <= 8), `gaps ${r.caretGaps.join("/")}px`);
-    record("recurrings row", "cadence shows only when not monthly", r.monthlyLabels === 0, `"Monthly" cells: ${r.monthlyLabels}`);
+    record("recurrings row", "cadence shows only when not monthly, as a tag after the name", r.monthlyLabels === 0 && r.cadenceTags.every((t) => t === null || t.afterName), `"Monthly" rows: ${r.monthlyLabels}; tags: ${r.cadenceTags.filter(Boolean).map((t) => t.text).join("/") || "none"}`);
     record("recurrings row", "one category icon per row (none before the name)", r.leadingGlyphs === 0, `leading glyphs: ${r.leadingGlyphs}`);
     record("recurrings row", "amounts are full-weight foreground", r.amountColours.length === 1 && r.amountColours[0] === r.foreground, `${r.amountColours.join("/")} vs ${r.foreground}`);
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
-    record("recurrings row", "date and cadence columns share one x each", r.dateXs.length === 1 && r.cadXs.length === 1, `date x=${r.dateXs.join("/")}, cadence x=${r.cadXs.join("/")}`);
+    record("recurrings row", "date and name columns share one x each", r.dateXs.length === 1 && r.nameXs.length === 1, `date x=${r.dateXs.join("/")}, name x=${r.nameXs.join("/")}`);
     record("recurrings row", "row text starts on the title's left edge", r.gutterSameEdge !== null && r.gutterSameEdge <= 1, `Δ ${r.gutterSameEdge}px`);
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);
