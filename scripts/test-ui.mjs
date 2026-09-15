@@ -517,6 +517,8 @@ async function recurringsRow(browser) {
         rows: rows.length,
         editXs: [...new Set(edits)], selectXs: [...new Set(selects)],
         amountColours: [...new Set(amounts.map((a) => a && getComputedStyle(a).color))], foreground: fg,
+        amountStates: rows.map((li) => { const a = li.lastElementChild; return { state: a.getAttribute("data-amount-state"), color: getComputedStyle(a).color, weight: getComputedStyle(a).fontWeight }; }),
+        mutedColour: getComputedStyle(document.body).getPropertyValue("--muted").trim(),
         truncated, names: names.length, nameXs, dateXs, cadenceTags,
         dateColours: [...new Set(rows.map((li) => getComputedStyle(li.children[0]).color))],
         marked: document.querySelectorAll("[data-drawer-row] button[aria-haspopup][data-marked], [data-drawer-row] button[aria-haspopup] span[aria-hidden]").length,
@@ -536,7 +538,16 @@ async function recurringsRow(browser) {
     record("recurrings row", "category chevron sits beside its label", r.caretGaps.every((g) => g !== null && g <= 8), `gaps ${r.caretGaps.join("/")}px`);
     record("recurrings row", "cadence shows only when not monthly, as a tag after the name", r.monthlyLabels === 0 && r.cadenceTags.every((t) => t === null || t.afterName), `"Monthly" rows: ${r.monthlyLabels}; tags: ${r.cadenceTags.filter(Boolean).map((t) => t.text).join("/") || "none"}`);
     record("recurrings row", "one category icon per row (none before the name)", r.leadingGlyphs === 0, `leading glyphs: ${r.leadingGlyphs}`);
-    record("recurrings row", "amounts are full-weight foreground", r.amountColours.length === 1 && r.amountColours[0] === r.foreground, `${r.amountColours.join("/")} vs ${r.foreground}`);
+    {
+      // Paid amounts are settled (foreground, semibold); expected ones are
+      // provisional (muted, medium). The fixture has both.
+      const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; };
+      const paid = r.amountStates.filter((a) => a.state === "paid");
+      const expected = r.amountStates.filter((a) => a.state === "expected");
+      const paidOk = paid.length > 0 && paid.every((a) => a.color === r.foreground && Number(a.weight) >= 600);
+      const expectedOk = expected.length > 0 && expected.every((a) => hex(a.color) === r.mutedColour.toLowerCase() && Number(a.weight) === 500);
+      record("recurrings row", "paid amounts read settled, expected amounts read provisional", paidOk && expectedOk, `paid ${paid.length} (fg, ≥600), expected ${expected.length} (muted, 500)`);
+    }
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
     record("recurrings row", "date and name columns share one x each", r.dateXs.length === 1 && r.nameXs.length === 1, `date x=${r.dateXs.join("/")}, name x=${r.nameXs.join("/")}`);
     record("recurrings row", "rows sit in section cards, text inset by the card's border + 16px padding", r.cardInset === 17, `inset ${r.cardInset}px`);

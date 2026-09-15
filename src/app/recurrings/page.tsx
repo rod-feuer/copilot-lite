@@ -751,9 +751,39 @@ function BillList({
               ) : (
                 <span className="w-6 shrink-0" aria-hidden />
               )}
-              <div className="w-24 shrink-0 text-right font-semibold tabular-nums text-[var(--foreground)]">
-                {usd(amount)}
-              </div>
+              {/* The amount says what kind of number it is: a posted charge is
+                  settled (bold, foreground); an expected one is provisional
+                  (medium, muted — the app's qualifier colour); an overdue one
+                  wears the row's amber. A paid row that differed from its
+                  expected shows the difference — the one fact a paid row can
+                  tell you that you didn't already know. */}
+              {(() => {
+                const state = r.paid ? "paid" : section.key === "od" ? "overdue" : "expected";
+                const delta =
+                  r.paid && r.paidAmount != null && Math.abs(r.paidAmount - r.expectedAmount) >= 0.5
+                    ? r.paidAmount - r.expectedAmount
+                    : null;
+                return (
+                  <div
+                    data-amount-state={state}
+                    className={`w-32 shrink-0 text-right tabular-nums ${
+                      state === "paid"
+                        ? "font-semibold text-[var(--foreground)]"
+                        : state === "overdue"
+                          ? "font-semibold text-amber-600"
+                          : "font-medium text-[var(--muted)]"
+                    }`}
+                  >
+                    {delta != null && (
+                      <span className="mr-1.5 text-[10px] font-medium text-[var(--muted)]">
+                        {delta > 0 ? "+" : "−"}
+                        {usd(Math.abs(delta))}
+                      </span>
+                    )}
+                    {usd(amount)}
+                  </div>
+                );
+              })()}
             </div>
             </div>
           );
