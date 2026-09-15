@@ -1,4 +1,4 @@
-import { seriesKey, seriesVendor, dayLabel, amountLabel } from "./series";
+import { seriesKey, seriesVendor, isSeriesKey, dayLabel, amountLabel } from "./series";
 import crypto from "node:crypto";
 import { getDb } from "./db";
 import {
@@ -667,6 +667,7 @@ export type DashboardData = {
     count: number;
     items: {
       merchant: string;
+      series: string | null; // the plan's key when the vendor carries several
       name: string;
       nextDate: string;
       amount: number;
@@ -971,6 +972,7 @@ export function dashboard(month?: string): DashboardData {
       // The shelf opens on the descriptor; a split series' key ("Netflix ·
       // 26th") is not one.
       merchant: seriesVendor(r.merchant),
+      series: isSeriesKey(r.merchant) ? r.merchant : null,
       name: r.displayName,
       nextDate: r.nextDate,
       amount: r.avgAmount,

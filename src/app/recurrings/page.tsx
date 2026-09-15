@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
-import { withoutAmountQualifier } from "@/lib/series";
+import { withoutAmountQualifier, isSeriesKey } from "@/lib/series";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -357,7 +357,7 @@ export default function RecurringsPage() {
             onRecategorize={recategorize}
             onNewCategory={addCategoryFromRow}
             onSaveSettings={saveSettings}
-            onOpen={(m) => openTx(m, { onChange: () => load(month) })}
+            onOpen={(m, series) => openTx(m, { onChange: () => load(month), series })}
             pastMonth={!isCurrentMonth}
           />
           <BillList
@@ -367,7 +367,7 @@ export default function RecurringsPage() {
             onRecategorize={recategorize}
             onNewCategory={addCategoryFromRow}
             onSaveSettings={saveSettings}
-            onOpen={(m) => openTx(m, { onChange: () => load(month) })}
+            onOpen={(m, series) => openTx(m, { onChange: () => load(month), series })}
           />
 
           {!filtering && bills.length === 0 && incomeBills.length === 0 && (
@@ -471,7 +471,7 @@ export default function RecurringsPage() {
                   title=""
                   recs={shownInactive}
                   dim
-                  onOpen={(m) => openTx(m, { onChange: () => load(month) })}
+                  onOpen={(m, series) => openTx(m, { onChange: () => load(month), series })}
                 />
               )}
             </div>
@@ -527,7 +527,7 @@ function BillList({
   onRecategorize?: (r: Rec, categoryId: number | null) => void;
   onNewCategory?: (cat: Cat, r: Rec) => void; // created from the row's dropdown → apply to the row
   onSaveSettings?: (merchant: string, patch: SettingsPatch | "clear") => void;
-  onOpen?: (merchant: string) => void;
+  onOpen?: (merchant: string, series?: string) => void; // series: the plan's key when the vendor carries several
   pastMonth?: boolean; // a closed month: unmatched bills are "Unpaid", not "Overdue"
 }) {
   const shelfActive = useShelfActive();
@@ -596,12 +596,12 @@ function BillList({
             <div key={r.id}>
             <div
               data-drawer-row
-              {...(onOpen ? rowButtonProps(() => onOpen(r.vendor)) : {})}
+              {...(onOpen ? rowButtonProps(() => onOpen(r.vendor, isSeriesKey(r.merchant) ? r.merchant : undefined)) : {})}
               className={`group flex items-center gap-3 px-4 py-2 text-[13px] ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
-                  ? shelfActive.isMerchant(r.vendor)
+                  ? shelfActive.isMerchant(r.vendor, isSeriesKey(r.merchant) ? r.merchant : undefined)
                     ? "cursor-pointer bg-[var(--accent)]/10"
                     : "cursor-pointer hover:bg-[var(--hover)]"
                   : ""

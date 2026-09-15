@@ -545,10 +545,26 @@ function expectedInMonth(cadence: string, anchorMonth: number, mm: number): bool
 // category, recurring status, and recent transactions. Aggregates across all
 // descriptor variants of the vendor (see merchantVariants) so a sparse variant
 // no longer shows an empty history.
-export function merchantSummary(merchant: string) {
+// `series` scopes the summary to ONE plan of a vendor that carries several
+// ("In 529 Dir Ach Contrib · $200"): figures, next due, the price-change check,
+// by-year, and the charge list come from that plan's own linked charges, and
+// overrides read/write under the plan's key. Without it (or for a vendor with
+// one plan) the summary is the whole vendor, as before.
+export function merchantSummary(merchant: string, series?: string | null) {
   const db = getDb();
   const variants = merchantVariants(merchant);
   const ph = variants.map(() => "?").join(",");
+  const seriesRow =
+    series && isSeriesKey(series)
+      ? (db
+          .prepare("SELECT id, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
+          .get(series) as { id: number; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
+      : undefined;
+  const seriesId = seriesRow?.id ?? null;
+  // Scope: the vendor's descriptors, and — for one plan — only its linked charges.
+  const scope = seriesId != null ? `merchant IN (${ph}) AND recurringId = ?` : `merchant IN (${ph})`;
+  const scopeT = seriesId != null ? `t.merchant IN (${ph}) AND t.recurringId = ?` : `t.merchant IN (${ph})`;
+  const scopeArgs: (string | number)[] = seriesId != null ? [...variants, seriesId] : [...variants];
   // The descriptor variants with per-name counts. canUnlink is true only for
   // explicit merchant_links aliases (those can be split off); the canonical and
   // the automatic first-2-token key-rollups have no link to remove.
@@ -558,7 +574,8 @@ export function merchantSummary(merchant: string) {
   // merchant, so they read consistently no matter which descriptor opened the
   // shelf. Keying on the raw `merchant` here split the alias from the displayed
   // name when the shelf was opened on a folded-in variant.
-  const sett = settings[canonicalMerchant(merchant, links)] ?? null;
+  const settingsKey = seriesRow ? (series as string) : canonicalMerchant(merchant, links);
+  const sett = settings[settingsKey] ?? null;
   const variantCounts = db
     .prepare(`SELECT merchant, COUNT(*) n FROM transactions WHERE merchant IN (${ph}) GROUP BY merchant`)
     .all(...variants) as { merchant: string; n: number }[];
@@ -575,9 +592,9 @@ export function merchantSummary(merchant: string) {
          COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS received,
          COUNT(DISTINCT substr(COALESCE(effectiveDate, date),1,7)) AS months,
          MAX(CASE WHEN recurringId IS NOT NULL THEN 1 ELSE 0 END) AS recurring
-       FROM transactions WHERE merchant IN (${ph}) AND excluded = 0`
+       FROM transactions WHERE ${scope} AND excluded = 0`
     )
-    .get(...variants) as {
+    .get(...scopeArgs) as {
     n: number;
     spent: number;
     received: number;
@@ -588,9 +605,9 @@ export function merchantSummary(merchant: string) {
     .prepare(
       `SELECT c.id, c.name, c.color, c.icon, COUNT(*) AS n
        FROM transactions t JOIN categories c ON t.categoryId = c.id
-       WHERE t.merchant IN (${ph}) GROUP BY t.categoryId ORDER BY n DESC LIMIT 1`
+       WHERE ${scopeT} GROUP BY t.categoryId ORDER BY n DESC LIMIT 1`
     )
-    .get(...variants) as
+    .get(...scopeArgs) as
     | { id: number; name: string; color: string; icon: string }
     | undefined;
   const recent = db
@@ -600,9 +617,10 @@ export function merchantSummary(merchant: string) {
          t.categoryId, t.recurringId,
          (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
-       WHERE t.merchant IN (${ph}) ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
+       WHERE ${seriesId != null ? `t.merchant IN (${ph}) AND (t.recurringId = ? OR t.recurringId IS NULL)` : `t.merchant IN (${ph})`}
+       ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
     )
-    .all(...variants) as {
+    .all(...scopeArgs) as {
     id: number;
     date: string;
     amount: number;
@@ -622,10 +640,10 @@ export function merchantSummary(merchant: string) {
     .prepare(
       `SELECT COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS t,
          COUNT(*) AS n
-       FROM transactions WHERE merchant IN (${ph}) AND excluded = 0
+       FROM transactions WHERE ${scope} AND excluded = 0
          AND COALESCE(effectiveDate, date) >= ?`
     )
-    .get(...variants, cutoff.toISOString().slice(0, 10)) as { t: number; n: number };
+    .get(...scopeArgs, cutoff.toISOString().slice(0, 10)) as { t: number; n: number };
   const trailing12 = t12.t;
   const count12 = t12.n;
 
@@ -635,9 +653,9 @@ export function merchantSummary(merchant: string) {
       db
         .prepare(
           `SELECT MIN(COALESCE(effectiveDate, date)) AS f
-           FROM transactions WHERE merchant IN (${ph}) AND excluded = 0`
+           FROM transactions WHERE ${scope} AND excluded = 0`
         )
-        .get(...variants) as { f: string | null }
+        .get(...scopeArgs) as { f: string | null }
     ).f ?? null;
 
   // Spend by calendar year (current year reads as YTD).
@@ -646,22 +664,24 @@ export function merchantSummary(merchant: string) {
       .prepare(
         `SELECT substr(COALESCE(effectiveDate, date),1,4) AS year,
            COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS spent
-         FROM transactions WHERE merchant IN (${ph}) AND excluded = 0
+         FROM transactions WHERE ${scope} AND excluded = 0
          GROUP BY year ORDER BY year DESC LIMIT 4`
       )
-      .all(...variants) as { year: string; spent: number }[]
+      .all(...scopeArgs) as { year: string; spent: number }[]
   ).map((r) => ({ year: r.year, spent: Number(r.spent.toFixed(2)) }));
 
   // Recurring detail (via the linked recurring, even if its name drifted).
-  const rec = db
-    .prepare(
-      `SELECT cadence, avgAmount, nextDate, lastDate FROM recurrings
-       WHERE id = (SELECT recurringId FROM transactions
-                   WHERE merchant IN (${ph}) AND recurringId IS NOT NULL LIMIT 1)`
-    )
-    .get(...variants) as
-    | { cadence: string; avgAmount: number; nextDate: string; lastDate: string }
-    | undefined;
+  const rec =
+    seriesRow ??
+    (db
+      .prepare(
+        `SELECT cadence, avgAmount, nextDate, lastDate FROM recurrings
+         WHERE id = (SELECT recurringId FROM transactions
+                     WHERE merchant IN (${ph}) AND recurringId IS NOT NULL LIMIT 1)`
+      )
+      .get(...variants) as
+      | { cadence: string; avgAmount: number; nextDate: string; lastDate: string }
+      | undefined);
   // recurringDetail reflects the EFFECTIVE schedule (a cadence correction wins and
   // re-derives next-due), so the shelf's metrics match what the user just set.
   // detectedCadence (raw) is exposed separately so the correction UI can show
@@ -687,10 +707,10 @@ export function merchantSummary(merchant: string) {
     ? (db
         .prepare(
           `SELECT COALESCE(effectiveDate, date) AS date, amount FROM transactions
-           WHERE merchant IN (${ph}) AND amount < 0 AND excluded = 0
+           WHERE ${scope} AND amount < 0 AND excluded = 0
            ORDER BY COALESCE(effectiveDate, date) ASC`
         )
-        .all(...variants) as { date: string; amount: number }[])
+        .all(...scopeArgs) as { date: string; amount: number }[])
     : [];
   let priceChange: { from: number; to: number; since: string } | null = null;
   if (charges.length >= 2) {
@@ -709,9 +729,17 @@ export function merchantSummary(merchant: string) {
       };
   }
 
+  // How many plans the vendor carries (a shelf on one of several says so).
+  const plans = (
+    db.prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[]
+  ).filter((r) => canonicalMerchant(seriesVendor(r.merchant), links) === canonicalMerchant(merchant, links)).length;
   return {
     merchant,
-    displayName: merchantDisplayName(merchant, settings, links),
+    series: seriesRow ? (series as string) : null, // the plan this summary is scoped to, if any
+    seriesId,
+    settingsKey, // where alias / expected / cadence / ended / match live for this shelf
+    plans,
+    displayName: seriesRow ? (sett?.alias ?? displayMerchant(series as string)) : merchantDisplayName(merchant, settings, links),
     // Current per-merchant overrides, so the shelf can prefill its editors and
     // distinguish a user-set value from the detected one (null = no override).
     alias: sett?.alias ?? null,

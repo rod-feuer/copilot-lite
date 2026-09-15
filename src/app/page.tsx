@@ -348,9 +348,9 @@ export default function DashboardPage() {
                   <li key={i}>
                     <button
                       data-drawer-row
-                      onClick={() => openTx(u.merchant, { onChange: refresh })}
+                      onClick={() => openTx(u.merchant, { onChange: refresh, series: u.series ?? undefined })}
                       className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${
-                        shelfActive.isMerchant(u.merchant)
+                        shelfActive.isMerchant(u.merchant, u.series ?? undefined)
                           ? "bg-[var(--accent)]/10"
                           : "hover:bg-[var(--hover)]"
                       }`}
