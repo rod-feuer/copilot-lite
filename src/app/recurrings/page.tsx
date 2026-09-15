@@ -533,11 +533,15 @@ function BillList({
           {title}
         </h3>
       )}
-      <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+      {/* The list bleeds 12px into the gutter on both sides and every row pads
+          the same 12px back, so text still starts on the title's left edge
+          while the hover wash and the focus ring get breathing room instead
+          of sitting flush against the date and the amount. */}
+      <div className="-mx-3 divide-y divide-[var(--border)] border-y border-[var(--border)]">
         {sections.map((section) => (
           <Fragment key={section.key}>
             {section.label && (
-              <div className="sticky top-0 z-10 flex items-center gap-2 bg-[var(--background)] py-1.5 text-xs font-medium text-[var(--muted)]">
+              <div className="sticky top-0 z-10 flex items-center gap-2 bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)]">
                 {section.label}
                 <span
                   className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
@@ -555,7 +559,7 @@ function BillList({
             <div
               data-drawer-row
               {...(onOpen ? rowButtonProps(() => onOpen(r.vendor)) : {})}
-              className={`group flex items-center gap-3 py-2 text-[13px] ${ROW_FOCUS} ${
+              className={`group flex items-center gap-3 px-3 py-2 text-[13px] ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
