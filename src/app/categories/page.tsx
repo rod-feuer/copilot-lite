@@ -435,7 +435,7 @@ function Group({
   return (
     <div>
       <h3
-        className={`px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] ${
+        className={`px-1 text-xs font-semibold uppercase tracking-wide text-[var(--foreground)] ${
           hint ? "mb-1" : "mb-2"
         }`}
       >
