@@ -18,6 +18,7 @@ import { SearchBox } from "@/components/SearchBox";
 import { getJson, postJson } from "@/lib/http";
 import { CADENCE_DAYS } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
+import { SummaryCard } from "@/components/SummaryCard";
 import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
 import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
 import type { Category } from "@/lib/types";
@@ -247,6 +248,11 @@ export default function RecurringsPage() {
     .filter((r) => !r.paid)
     .reduce((a, r) => a + r.expectedAmount, 0);
   const totalBills = paidSoFar + leftToPay;
+  // The status line under the summary bar: overdue in red when there are any.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const overdueCount = bills.filter((r) => !r.paid && r.dueDate < todayIso).length;
+  const upcomingCount = bills.filter((r) => !r.paid && r.dueDate >= todayIso).length;
+  const paidCount = bills.filter((r) => r.paid).length;
 
   // Stale recurrings that didn't charge this month — tucked away.
   const inactive = recs
@@ -326,24 +332,36 @@ export default function RecurringsPage() {
       ) : (
         <div className="flex flex-col gap-5">
           {totalBills > 0 && (
-            <div className="inline-flex flex-col gap-1.5">
-              <div className="flex flex-wrap items-center gap-x-2 text-sm">
-                <span className="font-semibold tabular-nums">{usd(paidSoFar, { cents: false })}</span>
-                <span className="text-[var(--muted)]">paid so far</span>
-                <span className="text-[var(--muted)]">·</span>
-                <span className="font-semibold tabular-nums">
-                  {isCurrentMonth ? "≈ " : ""}
-                  {usd(leftToPay, { cents: false })}
-                </span>
-                <span className="text-[var(--muted)]">{isCurrentMonth ? "left to pay (expected)" : "remaining"}</span>
-              </div>
-              <div className="h-1 overflow-hidden rounded-full bg-[var(--border)]">
-                <div
-                  className="h-full rounded-full bg-[var(--accent)]"
-                  style={{ width: `${Math.round((paidSoFar / totalBills) * 100)}%` }}
-                />
-              </div>
-            </div>
+            <SummaryCard
+              primary={{
+                value: usd(paidSoFar, { cents: false }),
+                label: `paid${isCurrentMonth ? " so far" : ""} of ${usd(totalBills, { cents: false })} expected`,
+              }}
+              secondary={{
+                value: `${isCurrentMonth ? "≈ " : ""}${usd(leftToPay, { cents: false })}`,
+                label: isCurrentMonth ? "left to pay (expected)" : "remaining",
+              }}
+              progress={paidSoFar / totalBills}
+              status={
+                <>
+                  {overdueCount > 0 ? (
+                    <span className="font-medium text-amber-600">
+                      {overdueCount} overdue
+                    </span>
+                  ) : (
+                    <span className="text-[var(--muted)]">Nothing overdue</span>
+                  )}
+                  <span className="text-[var(--muted)]">·</span>
+                  <span className="text-[var(--muted)]">{upcomingCount} upcoming</span>
+                  <span className="text-[var(--muted)]">·</span>
+                  <span className="text-[var(--muted)]">{paidCount} paid</span>
+                </>
+              }
+              note={
+                isCurrentMonth &&
+                "Expected amounts are each bill's latest charge; set your own, or the cadence, in the shelf."
+              }
+            />
           )}
 
           <BillList
@@ -390,7 +408,7 @@ export default function RecurringsPage() {
                 {showSuggestions ? "▾" : "▸"} Suggested ({shownSuggestions.length})
               </button>
               {showSuggestions && (
-                <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+                <div className="card divide-y divide-[var(--border)] overflow-hidden">
                   {shownSuggestions.map((s) => {
                     return (
                       <div key={s.merchant}>
@@ -526,32 +544,36 @@ function BillList({
   const sections = dim
     ? [{ key: "all", label: "", recs }]
     : groups.map((g) => ({ ...g, label: onlyPaid ? "" : g.label }));
+  const sectionTotal = (recs: Rec[]) => recs.reduce((a, r) => a + (r.paid ? r.paidAmount ?? 0 : r.expectedAmount), 0);
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {title && (
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+        <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
           {title}
         </h3>
       )}
-      {/* The list bleeds 12px into the gutter on both sides and every row pads
-          the same 12px back, so text still starts on the title's left edge
-          while the hover wash and the focus ring get breathing room instead
-          of sitting flush against the date and the amount. */}
-      <div className="-mx-3 divide-y divide-[var(--border)] border-y border-[var(--border)]">
-        {sections.map((section) => (
-          <Fragment key={section.key}>
-            {section.label && (
-              <div className="sticky top-0 z-10 flex items-center gap-2 bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted)]">
-                {section.label}
-                <span
-                  className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
-                    section.key === "od" ? "bg-amber-500/15 text-amber-600" : "bg-[var(--border)] text-[var(--muted)]"
-                  }`}
-                >
-                  {section.recs.length}
-                </span>
-              </div>
-            )}
+      {/* One card per section (Overdue / Upcoming / Paid this month), so the
+          boundaries are structural, not a small label inside one long list.
+          The header carries the section's name, count, and total; Overdue
+          keeps the amber the dates already use. */}
+      {sections.map((section) => (
+        <section key={section.key} className="card overflow-hidden" data-bill-section={section.key}>
+          {section.label && (
+            <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--background)] px-4 py-2">
+              <span className={`stat-label ${section.key === "od" ? "text-amber-600" : ""}`}>{section.label}</span>
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                  section.key === "od" ? "bg-amber-500/15 text-amber-600" : "bg-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {section.recs.length}
+              </span>
+              <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--muted)]">
+                {usd(sectionTotal(section.recs))}
+              </span>
+            </div>
+          )}
+          <div className="divide-y divide-[var(--border)]">
             {section.recs.map((r) => {
           const amount = r.paid ? r.paidAmount ?? 0 : r.expectedAmount;
           return (
@@ -559,7 +581,7 @@ function BillList({
             <div
               data-drawer-row
               {...(onOpen ? rowButtonProps(() => onOpen(r.vendor)) : {})}
-              className={`group flex items-center gap-3 px-3 py-2 text-[13px] ${ROW_FOCUS} ${
+              className={`group flex items-center gap-3 px-4 py-2 text-[13px] ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
@@ -681,9 +703,9 @@ function BillList({
             </div>
           );
             })}
-          </Fragment>
-        ))}
-      </div>
+          </div>
+        </section>
+      ))}
       {newCat.popover}
     </div>
   );
