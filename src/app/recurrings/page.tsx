@@ -579,12 +579,6 @@ function BillList({
               >
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
               </div>
-              {/* Cadence shows only when it isn't monthly: the exception is the
-                  information; a column of "Monthly" trains the eye to skip it.
-                  The shelf always states the cadence in full. */}
-              <div className="w-16 shrink-0 truncate text-xs text-[var(--muted)]">
-                {r.cadence !== "monthly" ? CADENCE_LABEL[r.cadence] : ""}
-              </div>
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 {onSaveSettings ? (
                   <InlineEdit
@@ -595,6 +589,17 @@ function BillList({
                   />
                 ) : (
                   <span className="truncate font-medium">{r.displayName}</span>
+                )}
+                {/* Cadence only when it isn't monthly, as a quiet tag after the
+                    name: the exception is the information, and a column for it
+                    sat empty on nearly every row. The shelf states it in full. */}
+                {r.cadence !== "monthly" && (
+                  <span
+                    data-cadence
+                    className="shrink-0 rounded-full bg-[var(--border)] px-1.5 text-[10px] font-medium text-[var(--muted)]"
+                  >
+                    {CADENCE_LABEL[r.cadence]}
+                  </span>
                 )}
                 {r.ended && (
                   <Tooltip
