@@ -215,6 +215,25 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     if (cur && bucket(t) - bucket(cur[0]) <= 2) cur.push(t);
     else clusters.push([t]);
   }
+  // A weekend slip can land past a cluster's two-day span (a bill on the
+  // 18th posting on the 20th, when the cluster began on the 16th). A SMALL
+  // leftover cluster within two days of a big cluster's typical day joins it.
+  // Only small ones: two established clusters three days apart (Netflix on
+  // the 23rd and the 26th) stay apart.
+  const typicalDay = (c: T[]) => {
+    const n = new Map<number, number>();
+    for (const t of c) n.set(bucket(t), (n.get(bucket(t)) ?? 0) + 1);
+    return [...n.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
+  };
+  for (let i = clusters.length - 1; i >= 0; i--) {
+    const c = clusters[i];
+    if (c.length >= 3) continue;
+    const home = clusters.find((o, j) => j !== i && o.length >= 3 && Math.abs(typicalDay(o) - bucket(c[0])) <= 2);
+    if (home) {
+      home.push(...c);
+      clusters.splice(i, 1);
+    }
+  }
   // Same-day debits of consistently different amounts are different bills:
   // group a cluster's charges by amount (within 10%); when ≥2 groups CO-OCCUR
   // — each shares ≥3 months with the largest — each is its own part. A price
