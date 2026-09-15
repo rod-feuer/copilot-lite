@@ -78,6 +78,11 @@ async function loadFixture() {
     [day(-2, 3), "Netflix", "-15.49", "Credit"],
     [day(-1, 3), "Netflix", "-15.49", "Credit"],
     [day(0, 3), "Netflix", "-15.49", "Credit"],
+    // A subscription with no charge yet this month, so the recurrings page has
+    // an Upcoming (or Overdue) section with a title, not only "Paid this month".
+    [day(-3, 28), "Spotify", "-9.99", "Credit"],
+    [day(-2, 28), "Spotify", "-9.99", "Credit"],
+    [day(-1, 28), "Spotify", "-9.99", "Credit"],
   ];
   const csv = rows.map((r) => r.join(",")).join("\n");
   const imp = await (await fetch(BASE + "/api/import", { method: "POST", body: csv })).json();
@@ -247,11 +252,11 @@ async function partialMonthQualifiers(browser) {
     };
     await check("/", CUR, ["Expenses so far", "% used so far"], true);
     await check("/categories", CUR, ["spent so far of", "left so far"], true);
-    await check("/recurrings", CUR, ["expected to pay"], true);
+    await check("/recurrings", CUR, ["paid so far of"], true);
     await check("/transactions", CUR, ["· net", "so far"], true);
     await check("/", PAST, ["Expenses so far", "% used so far"], false);
     await check("/categories", PAST, ["spent so far of"], false);
-    await check("/recurrings", PAST, ["expected to pay"], false);
+    await check("/recurrings", PAST, ["paid so far of"], false);
     await check("/transactions", PAST, ["so far"], false);
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
@@ -519,7 +524,9 @@ async function recurringsRow(browser) {
         monthlyLabels: rows.filter((li) => /\bMonthly\b/.test(li.textContent)).length,
         leadingGlyphs: rows.filter((li) => li.querySelector("[data-category-badge]")).length,
         gutterSameEdge: (() => { const t = document.querySelector("h1"); const d = rows[0] && rows[0].children[0]; return t && d ? Math.abs(x(t) - x(d)) : null; })(),
-        cardInset: (() => { const li = rows[0]; const card = li && li.closest("[data-bill-section]"); return li && card ? Math.round(li.children[0].getBoundingClientRect().left - card.getBoundingClientRect().left) : null; })(),
+        cardInset: (() => { const li = rows[0]; const card = li && li.closest(".card"); return li && card ? Math.round(li.children[0].getBoundingClientRect().left - card.getBoundingClientRect().left) : null; })(),
+        totalOnAmountsColumn: (() => { const sec = document.querySelector("[data-bill-section] h3"); if (!sec) return null; const total = sec.parentElement.lastElementChild; const amount = sec.closest("[data-bill-section]").querySelector("[data-drawer-row]")?.lastElementChild; return total && amount ? Math.abs(Math.round(total.getBoundingClientRect().right - amount.getBoundingClientRect().right)) : null; })(),
+        titleAbove: (() => { const sec = document.querySelector("[data-bill-section] h3"); const card = sec && sec.closest("[data-bill-section]").querySelector(".card"); return sec && card ? sec.getBoundingClientRect().bottom <= card.getBoundingClientRect().top : null; })(),
         summary: !!document.querySelector("[data-summary] .stat-label") && [...document.querySelectorAll("[data-summary] .stat-label")].some((l) => /paid/i.test(l.textContent)) && /overdue/i.test(document.querySelector("[data-summary]").textContent),
       };
     });
@@ -532,6 +539,8 @@ async function recurringsRow(browser) {
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
     record("recurrings row", "date and name columns share one x each", r.dateXs.length === 1 && r.nameXs.length === 1, `date x=${r.dateXs.join("/")}, name x=${r.nameXs.join("/")}`);
     record("recurrings row", "rows sit in section cards, text inset by the card's border + 16px padding", r.cardInset === 17, `inset ${r.cardInset}px`);
+    record("recurrings row", "section title sits above its card, not inside it", r.titleAbove === true, r.titleAbove === null ? "no titled section" : `above=${r.titleAbove}`);
+    record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);

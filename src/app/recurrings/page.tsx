@@ -339,8 +339,9 @@ export default function RecurringsPage() {
               }}
               secondary={{
                 value: usd(leftToPay, { cents: false }),
-                // Forward-looking, so qualified — by the word, not a symbol.
-                label: isCurrentMonth ? "expected to pay" : "remaining",
+                // The left label already says the total is expected; this side
+                // doesn't repeat the qualifier.
+                label: "remaining",
               }}
               progress={paidSoFar / totalBills}
               status={
@@ -555,15 +556,19 @@ function BillList({
       )}
       {/* One card per section (Overdue / Upcoming / Paid this month), so the
           boundaries are structural, not a small label inside one long list.
-          The header carries the section's name, count, and total; Overdue
-          keeps the amber the dates already use. */}
+          The title sits ABOVE the card on the page background — the same
+          small-caps group title the Categories tab uses — with the count and
+          the section's total on the same line; the card holds only rows.
+          Overdue keeps the amber the dates already use. */}
       {sections.map((section) => (
-        <section key={section.key} className="card overflow-hidden" data-bill-section={section.key}>
+        <section key={section.key} className="flex flex-col gap-2" data-bill-section={section.key}>
+          {/* Padded like the rows inside the card, so the section total sits
+              on the amounts column and the title on the date column. */}
           {section.label && (
-            <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--background)] px-4 py-2">
-              <span className={`stat-label ${section.key === "od" ? "text-amber-600" : "text-[var(--foreground)]"}`}>
+            <div className="flex items-center gap-2 px-4">
+              <h3 className={`stat-label ${section.key === "od" ? "text-amber-600" : "text-[var(--foreground)]"}`}>
                 {section.label}
-              </span>
+              </h3>
               <span
                 className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
                   section.key === "od" ? "bg-amber-500/15 text-amber-600" : "bg-[var(--border)] text-[var(--muted)]"
@@ -576,7 +581,7 @@ function BillList({
               </span>
             </div>
           )}
-          <div className="divide-y divide-[var(--border)]">
+          <div className="card divide-y divide-[var(--border)] overflow-hidden">
             {section.recs.map((r) => {
           const amount = r.paid ? r.paidAmount ?? 0 : r.expectedAmount;
           return (
