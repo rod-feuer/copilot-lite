@@ -1391,3 +1391,35 @@ test("detector keeps the dominant monthly plan when strays break the rhythm, the
   assert.equal(s[`${bf} · 8th`]?.alias, "Benjamin Franklin Plumbing", "the name follows the established plan");
   assert.equal(s[`${bf} · 22nd`], undefined, "the new plan is unnamed until the user names it");
 });
+
+// Two jobs taking turns under one descriptor. Rosy's Cleaning is paid every
+// two weeks — $240, then $270, then $240 — two homes alternating. Read as one
+// biweekly bill it expects $270 every time. The amounts interleave, and each
+// runs on its own four-week grid: two bills, keyed by amount, the odd $480
+// double-payment left unlinked. A price change never interleaves (six $240s
+// then six $270s) and stays one biweekly bill.
+test("detector splits amounts that take turns into their own series; a price change stays one bill", () => {
+  const home = addCat("Lake House (rosy)");
+  const rosy = "Zelle Payment To Rosy's Cleaning";
+  const d0 = Date.UTC(2026, 0, 9);
+  const day = (i: number) => new Date(d0 + i * 14 * 86_400_000).toISOString().slice(0, 10);
+  for (let i = 0; i < 14; i++) tx(rosy, { amount: i % 2 ? -270 : -240, date: day(i), categoryId: home });
+  tx(rosy, { amount: -480, date: "2026-04-01", categoryId: home });
+  for (let i = 0; i < 12; i++) tx("Window Washer", { amount: i < 6 ? -240 : -270, date: day(i), categoryId: home });
+
+  const recs = detectRecurrings();
+  const by = (m: string) => recs.find((r) => r.merchant === m);
+  assert.deepEqual(
+    recs.map((r) => r.merchant).filter((m) => m.startsWith(rosy)).sort(),
+    [`${rosy} · $240`, `${rosy} · $270`]
+  );
+  assert.equal(by(`${rosy} · $240`)!.count, 7);
+  assert.equal(by(`${rosy} · $270`)!.avgAmount, -270);
+  assert.equal(by(`${rosy} · $240`)!.cadence, "monthly", "a 28-day turn reads as monthly");
+  const orphan = getDb().prepare("SELECT recurringId FROM transactions WHERE merchant = ? AND amount = -480").get(rosy) as { recurringId: number | null };
+  assert.equal(orphan.recurringId, null, "the double payment is nobody's member");
+  const ww = recs.filter((r) => r.merchant.startsWith("Window Washer"));
+  assert.equal(ww.length, 1, "a price change is one bill");
+  assert.equal(ww[0].merchant, "Window Washer");
+  assert.equal(ww[0].cadence, "biweekly");
+});
