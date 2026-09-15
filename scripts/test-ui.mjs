@@ -499,11 +499,11 @@ async function recurringsRow(browser) {
   // border), use the §2 vocabulary, and the amount is full-weight foreground.
   await withPage(browser, async (page) => {
     await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
-    await page.waitForSelector("[data-drawer-row] button[aria-haspopup]");
+    await page.waitForSelector("[data-drawer-row] select");
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("[data-drawer-row]")].filter((li) => li.querySelector("select"));
       const x = (el) => Math.round(el.getBoundingClientRect().left);
-      const edits = rows.map((li) => x(li.querySelector("button[aria-haspopup]")));
+      const rowMenus = rows.filter((li) => li.querySelector("button[aria-haspopup]")).length;
       const selects = rows.map((li) => x(li.querySelector("[data-category-caret]") || li.querySelector("select")));
       const caretGaps = rows.map((li) => { const c = li.querySelector("[data-category-caret]"); const t = c && c.previousElementSibling; return c && t ? Math.round(c.getBoundingClientRect().left - t.getBoundingClientRect().right) : null; });
       const amounts = rows.map((li) => { const els = [...li.querySelectorAll("div")]; return els.find((d) => /^\$[\d,]+\.\d\d$/.test(d.textContent.trim())); });
@@ -515,7 +515,7 @@ async function recurringsRow(browser) {
       const truncated = names.filter((n) => n.scrollWidth > n.clientWidth).length;
       return {
         rows: rows.length,
-        editXs: [...new Set(edits)], selectXs: [...new Set(selects)],
+        rowMenus, selectXs: [...new Set(selects)],
         amountColours: [...new Set(amounts.map((a) => a && getComputedStyle(a).color))], foreground: fg,
         amountStates: rows.map((li) => { const a = li.lastElementChild; return { state: a.getAttribute("data-amount-state"), color: getComputedStyle(a).color, weight: getComputedStyle(a).fontWeight }; }),
         mutedColour: getComputedStyle(document.body).getPropertyValue("--muted").trim(),
@@ -533,7 +533,7 @@ async function recurringsRow(browser) {
         summary: !!document.querySelector("[data-summary] .stat-label") && [...document.querySelectorAll("[data-summary] .stat-label")].some((l) => /paid/i.test(l.textContent)) && /overdue/i.test(document.querySelector("[data-summary]").textContent),
       };
     });
-    record("recurrings row", `${r.rows} rows · ⋯ menus in one column`, r.rows >= 2 && r.editXs.length === 1, `x=${r.editXs.join("/")}`);
+    record("recurrings row", `${r.rows} rows · no row menu (the verbs live in the shelf)`, r.rows >= 2 && r.rowMenus === 0, `row menus: ${r.rowMenus}`);
     record("recurrings row", "category chevrons in one column", r.selectXs.length === 1, `x=${r.selectXs.join("/")}`);
     record("recurrings row", "category chevron sits beside its label", r.caretGaps.every((g) => g !== null && g <= 8), `gaps ${r.caretGaps.join("/")}px`);
     record("recurrings row", "cadence shows only when not monthly, as a tag after the name", r.monthlyLabels === 0 && r.cadenceTags.every((t) => t === null || t.afterName), `"Monthly" rows: ${r.monthlyLabels}; tags: ${r.cadenceTags.filter(Boolean).map((t) => t.text).join("/") || "none"}`);
@@ -637,10 +637,10 @@ async function recurringsRow(browser) {
     }
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);
-    // the verbs live in the row's ⋯ menu, in §2 vocabulary
-    await page.click("[data-drawer-row] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
-    const menu = await page.evaluate(() => document.querySelector("[role='menu']").innerText);
-    record("recurrings row", "⋯ menu holds Mark ended + Not recurring", menu.includes("Mark ended") && menu.includes("Not recurring"), menu.replace(/\n/g, " · "));
+    // the verbs live in the shelf, in §2 vocabulary, reached from the row
+    await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]");
+    const shelfText = await page.evaluate(() => document.querySelector("[data-shelf]").innerText);
+    record("recurrings row", "the row opens the shelf, which holds Not recurring + Mark as ended", shelfText.includes("Not recurring") && shelfText.includes("Mark as ended"), "both present");
     await page.keyboard.press("Escape");
 
     // "+ New category…" in a row's dropdown creates the category in place and
