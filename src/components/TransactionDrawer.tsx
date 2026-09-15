@@ -397,7 +397,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             </div>
             <button
               onClick={close}
-              className="shrink-0 rounded-md px-2 py-1 text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+              className="shrink-0 rounded-md px-2 py-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
               aria-label="Close"
             >
               ✕
@@ -452,7 +452,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                   : `/transactions?category=${target.categoryId}&month=${target.month}`
               }
               onClick={close}
-              className="block rounded-lg px-2 py-2 text-center text-sm font-medium text-[var(--accent)] hover:bg-[var(--background)]"
+              className="block rounded-lg px-2 py-2 text-center text-sm font-medium text-[var(--accent)] hover:bg-[var(--hover)]"
             >
               View all transactions →
             </Link>
@@ -1099,7 +1099,7 @@ function ShelfRow({
       <div
         {...(onClick ? rowButtonProps(onClick) : {})}
         className={`group flex w-full items-center gap-2 px-3 py-2 text-xs ${
-          onClick ? `cursor-pointer hover:bg-[var(--background)] ${ROW_FOCUS}` : ""
+          onClick ? `cursor-pointer hover:bg-[var(--hover)] ${ROW_FOCUS}` : ""
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -1319,7 +1319,7 @@ function CombineControl({
                         e.preventDefault();
                         chooseOther(v.merchant);
                       }}
-                      className="block w-full px-2 py-1.5 text-left leading-snug hover:bg-[var(--background)]"
+                      className="block w-full px-2 py-1.5 text-left leading-snug hover:bg-[var(--hover)]"
                     >
                       {v.displayName}
                     </button>

@@ -713,7 +713,7 @@ export default function TransactionsPage() {
                         setAdded((a) => [...a, f.id]);
                         setMenuOpen(false);
                       }}
-                      className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+                      className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)]"
                     >
                       {f.label}
                     </button>
@@ -1010,7 +1010,7 @@ function MobileSortFilter({
                   onSort(s, d);
                   setOpen(false);
                 }}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)]"
               >
                 {label}
                 {value === v && <span className="text-[var(--accent)]">✓</span>}
@@ -1030,7 +1030,7 @@ function MobileSortFilter({
                       onAddFilter(f.id);
                       setOpen(false);
                     }}
-                    className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--background)]"
+                    className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)]"
                   >
                     {f.label}
                   </button>
@@ -1185,7 +1185,7 @@ const TxRow = memo(function TxRow({
                 className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-3 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${ROW_FOCUS} ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
-                    : "hover:bg-[var(--background)]"
+                    : "hover:bg-[var(--hover)]"
                 } ${t.excluded ? "opacity-55" : ""}`}
               >
                 {!modal && (
@@ -1616,7 +1616,7 @@ function Chip({
       {children}
       <button
         onClick={onRemove}
-        className="rounded px-1 text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+        className="rounded px-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
         aria-label="Remove filter"
       >
         ✕

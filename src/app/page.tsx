@@ -350,7 +350,7 @@ export default function DashboardPage() {
                       className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${
                         shelfActive.isMerchant(u.merchant)
                           ? "bg-[var(--accent)]/10"
-                          : "hover:bg-[var(--background)]"
+                          : "hover:bg-[var(--hover)]"
                       }`}
                     >
                       <CategoryBadge icon={u.categoryIcon} color={u.categoryColor} fallback={u.name} />
@@ -396,7 +396,7 @@ export default function DashboardPage() {
                     className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${
                       shelfActive.isMerchant(t.merchant)
                         ? "bg-[var(--accent)]/10"
-                        : "hover:bg-[var(--background)]"
+                        : "hover:bg-[var(--hover)]"
                     }`}
                   >
                     <CategoryBadge icon={t.categoryIcon} color={t.categoryColor} fallback={t.displayName} />
