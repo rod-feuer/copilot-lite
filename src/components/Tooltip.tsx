@@ -11,9 +11,11 @@ export function Tooltip({
   className,
   children,
   onlyIfTruncated = true,
+  placement = "above",
 }: {
   label: string;
   className?: string;
+  placement?: "above" | "below"; // "below" for small cues inside dense lists, so the tip never covers the row above
   children: ReactNode;
   onlyIfTruncated?: boolean;
 }) {
@@ -45,7 +47,7 @@ export function Tooltip({
         createPortal(
           // Prefer above; flip below when there isn't room above the trigger.
           (() => {
-            const above = rect.top > 44;
+            const above = placement === "above" ? rect.top > 44 : rect.bottom + 44 > window.innerHeight;
             return (
               <div
                 role="tooltip"
