@@ -1280,8 +1280,10 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   // account) — same day, different amounts: two bills, keyed by amount. July's
   // pair posted on the 20th (weekend slip, within the cluster's two days). Two
   // deposits on a payday, though, are one paycheck: never split by amount.
+  // Real posting days: 16th, 17th, 18th, 18th, 20th … — the 20th is a weekend
+  // slip two days past a cluster that began on the 16th; it must still join.
   for (let m = 1; m <= 8; m++) {
-    const d = m === 7 ? "20" : "18";
+    const d = m === 1 ? "16" : m === 2 ? "17" : m === 7 ? "20" : "18";
     tx("In 529 Dir Ach Contrib", { amount: -200, date: `${ym(m)}-${d}`, categoryId: home });
     tx("In 529 Dir Ach Contrib", { amount: -300, date: `${ym(m)}-${d}`, categoryId: home, account: "Savings" });
     tx("Payroll", { amount: 9738.55, date: `${ym(m)}-15`, categoryId: home });
@@ -1313,7 +1315,12 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   assert.equal(by("Chubb · 1st")!.avgAmount, -989.5, "same-day charges are one event, summed");
   assert.equal(by("Chubb · 1st")!.count, 6, "count is events (months), not charges");
   assert.equal(by("Chubb · 17th")!.avgAmount, -544.94);
-  assert.equal(by("In 529 Dir Ach Contrib · $200")!.count, 8);
+  assert.equal(by("In 529 Dir Ach Contrib · $200")!.count, 8, "the weekend slip on the 20th is a member");
+  assert.equal(
+    (getDb().prepare("SELECT COUNT(*) n FROM transactions WHERE merchant = 'In 529 Dir Ach Contrib' AND recurringId IS NULL").get() as { n: number }).n,
+    0,
+    "no 529 charge is left unlinked"
+  );
   assert.equal(by("In 529 Dir Ach Contrib · $300")!.avgAmount, -300);
   assert.equal(by("Payroll")!.avgAmount, 17292.49, "two deposits on a payday are one paycheck");
   assert.equal(by("Payroll")!.count, 8);
