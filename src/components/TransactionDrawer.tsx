@@ -321,6 +321,11 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const refreshCategory = () => {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month);
   };
+  // Re-read whichever detail is open after a per-charge write.
+  const refreshTarget = () => {
+    if (target?.kind === "category") fetchCategory(target.categoryId, target.month);
+    else if (target?.kind === "merchant") fetchMerchant(target.merchant);
+  };
   async function txRecategorize(txId: number, categoryId: number | null) {
     if (
       await mutate(
@@ -329,7 +334,24 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      refreshCategory();
+      refreshTarget();
+      onChange.current?.();
+    }
+  }
+  // One charge in or out of its vendor's series (a device purchase under
+  // "Apple" is not the subscription). The server rebuilds detection.
+  async function txSetOneOff(txId: number, excluded: boolean) {
+    if (
+      await mutate(
+        () => patchJson(`/api/transactions/${txId}`, { recurringExcluded: excluded }),
+        {
+          success: excluded ? "Charge excluded from its series" : "Charge added back to its series",
+          error: "Couldn't update — please try again",
+        },
+        { refresh: "never" }
+      )
+    ) {
+      refreshTarget();
       onChange.current?.();
     }
   }
@@ -364,6 +386,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             aria-hidden
           />
           <aside
+            data-shelf
             ref={asideRef}
             // Bottom sheet on mobile (slides up, capped height, rounded top);
             // right-side panel on desktop (sm:+) exactly as before.
@@ -426,6 +449,8 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 cats={cats}
                 onAddCategory={addCat}
                 onRecategorize={recategorize}
+                onTxRecategorize={txRecategorize}
+                onTxSetOneOff={txSetOneOff}
                 onToggleRecurring={toggleRecurring}
                 onSaveSettings={saveMerchantSettings}
                 amountHint={amountHint}
@@ -605,6 +630,8 @@ function MerchantBody({
   cats,
   onAddCategory,
   onRecategorize,
+  onTxRecategorize,
+  onTxSetOneOff,
   onToggleRecurring,
   onSaveSettings,
   amountHint,
@@ -615,6 +642,8 @@ function MerchantBody({
   cats: Cat[];
   onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
+  onTxRecategorize: (txId: number, categoryId: number | null) => void;
+  onTxSetOneOff: (txId: number, excluded: boolean) => void;
   onToggleRecurring: () => void;
   onSaveSettings: (
     patch: {
@@ -880,17 +909,26 @@ function MerchantBody({
 
       <div>
         <div className="stat-label mb-1.5">Recent</div>
+        {/* Each charge is editable here: recategorize it, or say it is not part
+            of this vendor's series (a device purchase under "Apple" is not the
+            subscription). The ↻ gutter shows the charge's own state. */}
         <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
           {data.recent.map((r) => (
-            <li
+            <ShelfRow
               key={r.id}
-              className={`flex items-center justify-between gap-2 px-3 py-2 text-sm ${
-                r.excluded ? "opacity-55" : ""
-              }`}
-            >
-              <span className="text-xs text-[var(--muted)]">{monthDayYear(r.date)}</span>
-              <Money value={r.amount} excluded={!!r.excluded || !!r.categoryExcluded} />
-            </li>
+              date={r.date}
+              name={r.categoryName ?? "Uncategorized"}
+              amount={r.amount}
+              muted={r.excluded === 1}
+              excluded={!!r.excluded || !!r.categoryExcluded}
+              recurring={recurringState(r)}
+              editable={{
+                cats,
+                onAddCategory,
+                onRecategorize: (cid) => onTxRecategorize(r.id, cid),
+                oneOff: { excluded: r.recurringExcluded === 1, set: (ex) => onTxSetOneOff(r.id, ex) },
+              }}
+            />
           ))}
         </ul>
       </div>
@@ -1064,7 +1102,8 @@ type RowEdit = {
   cats: Cat[];
   onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
-  onToggleRecurring: () => void;
+  onToggleRecurring?: () => void; // whole vendor: force/mute (the category shelf)
+  oneOff?: { excluded: boolean; set: (excluded: boolean) => void }; // this charge in/out of its series (the vendor shelf)
 };
 function ShelfRow({
   date,
@@ -1103,7 +1142,7 @@ function ShelfRow({
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          {editable ? (
+          {editable?.onToggleRecurring ? (
             // The ↻ gutter doubles as the recurring toggle (whole vendor: force/mute).
             <Tooltip
               label={recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring"}
@@ -1111,6 +1150,15 @@ function ShelfRow({
               className="w-3.5 shrink-0"
             >
               <RecurringGlyph state={recurring} onToggle={editable.onToggleRecurring} muted={muted} className="w-full" />
+            </Tooltip>
+          ) : editable?.oneOff ? (
+            // The ↻ gutter toggles THIS charge in or out of the series.
+            <Tooltip
+              label={editable.oneOff.excluded ? "Add this charge back to the series" : "Not part of this recurring"}
+              onlyIfTruncated={false}
+              className="w-3.5 shrink-0"
+            >
+              <RecurringGlyph state={recurring} onToggle={() => editable.oneOff!.set(!editable.oneOff!.excluded)} muted={muted} className="w-full" />
             </Tooltip>
           ) : recurring !== "none" ? (
             <Tooltip label={RECURRING_LABEL[recurring]} onlyIfTruncated={false} className="w-3.5 shrink-0">
@@ -1180,9 +1228,21 @@ function ShelfRow({
             <NewCategoryOption />
           </select>
           {newCat.popover}
-          <span className="text-[var(--muted)]">
-            Recurring? Use the ↻ at the start of the row.
-          </span>
+          {editable.oneOff ? (
+            <button
+              type="button"
+              data-one-off
+              onClick={() => {
+                editable.oneOff!.set(!editable.oneOff!.excluded);
+                setEditing(false);
+              }}
+              className="rounded-lg border border-[var(--border)] bg-card px-2 py-1 font-medium hover:bg-[var(--hover)]"
+            >
+              {editable.oneOff.excluded ? "Part of this recurring" : "Not part of this recurring"}
+            </button>
+          ) : (
+            <span className="text-[var(--muted)]">Recurring? Use the ↻ at the start of the row.</span>
+          )}
         </div>
       )}
     </li>

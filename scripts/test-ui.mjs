@@ -555,6 +555,36 @@ async function recurringsRow(browser) {
     record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
+    // Escape in steps: the first closes the shelf and leaves the row focused
+    // (a keyboard user still knows where they are); the second drops focus.
+    {
+      await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]");
+      await page.keyboard.press("Escape"); await new Promise((r) => setTimeout(r, 300));
+      const afterOne = await page.evaluate(() => ({ shelf: !!document.querySelector("[data-shelf]"), rowFocused: document.activeElement?.hasAttribute("data-drawer-row") }));
+      await page.keyboard.press("Escape"); await new Promise((r) => setTimeout(r, 200));
+      const afterTwo = await page.evaluate(() => ({ rowFocused: document.activeElement?.hasAttribute("data-drawer-row"), tag: document.activeElement?.tagName }));
+      record("keyboard rows", "Escape closes the shelf, then Escape drops the row's focus", !afterOne.shelf && afterOne.rowFocused && !afterTwo.rowFocused, `after 1: shelf=${afterOne.shelf} row=${afterOne.rowFocused}; after 2: row=${afterTwo.rowFocused} (${afterTwo.tag})`);
+    }
+    // The vendor shelf's Recent rows carry a per-charge editor: "Not part of this
+    // recurring" flags one charge out of the series, and the same button, now
+    // reading "Part of this recurring", puts it back.
+    {
+      await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      await page.evaluate(() => { const row = [...document.querySelectorAll("[data-drawer-row]")].find((r) => /Netflix/.test(r.textContent)); row?.click(); });
+      await page.waitForSelector("[data-shelf] button[aria-label='Edit transaction']");
+      const openEditor = async () => { await page.waitForSelector("[data-shelf] button[aria-label='Edit transaction']"); await page.click("[data-shelf] button[aria-label='Edit transaction']"); const b = await page.waitForSelector("[data-shelf] [data-one-off]", { timeout: 4000 }).catch(() => null); return b ? { btn: b, text: await b.evaluate((e) => e.textContent.trim()) } : null; };
+      const editable = await page.$$eval("[data-shelf] li", (lis) => lis.filter((li) => li.querySelector("button[aria-label='Edit transaction']")).length);
+      const first = await openEditor();
+      if (first) { await first.btn.click(); await new Promise((r) => setTimeout(r, 1200)); }
+      const second = await openEditor();
+      if (second) { await second.btn.click(); await new Promise((r) => setTimeout(r, 1200)); } // back in
+      const third = await openEditor();
+      record("shelf", "Recent rows have a per-charge menu; 'Not part of this recurring' flags one charge out and back", editable >= 3 && first?.text === "Not part of this recurring" && second?.text === "Part of this recurring" && third?.text === "Not part of this recurring", `editable rows ${editable}; ${first?.text} → ${second?.text} → ${third?.text}`);
+      await page.keyboard.press("Escape");
+    }
     // The inline editor raises no tooltip: hovering a name, or its ✎ cue, shows
     // nothing (the button's aria-label carries "Rename"). Hover media only.
     {
