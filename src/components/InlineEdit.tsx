@@ -27,9 +27,10 @@ export function InlineEdit({
   const [editing, setEditing] = useState(false);
   if (!editing) {
     return (
-      <Tooltip label={label} onlyIfTruncated={false} className={`group/n flex min-w-0 max-w-full ${className}`.trim()}>
+      <span className={`group/n flex min-w-0 max-w-full ${className}`.trim()}>
         <button
           type="button"
+          aria-label={`${label} ${value}`}
           onClick={(e) => {
             e.stopPropagation();
             setEditing(true);
@@ -38,12 +39,19 @@ export function InlineEdit({
         >
           <span className={`truncate ${textClassName}`}>{value}</span>
           {/* Persistent (faint) edit cue so the text reads as click-to-edit even
-              without hovering; darkens on hover. */}
-          <span className={`shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)] ${cueOnHover ? "hidden group-hover/n:inline-block group-focus-within/n:inline-block" : ""}`}>
+              without hovering; darkens on hover. The tip belongs to the cue, not
+              the whole name — hovering a name in a dense list shouldn't raise a
+              bubble over the row above — and sits below the cue. */}
+          <Tooltip
+            label={label}
+            onlyIfTruncated={false}
+            placement="below"
+            className={`shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)] ${cueOnHover ? "hidden group-hover/n:inline-block group-focus-within/n:inline-block" : ""}`}
+          >
             <span className="inline-block -scale-x-100">✎</span>
-          </span>
+          </Tooltip>
         </button>
-      </Tooltip>
+      </span>
     );
   }
   return <EditingInput value={value} onCommit={onCommit} onDone={() => setEditing(false)} className={`${textClassName} ${inputClassName}`.trim()} />;

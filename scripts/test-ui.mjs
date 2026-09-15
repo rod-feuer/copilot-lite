@@ -544,6 +544,21 @@ async function recurringsRow(browser) {
     record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
+    // The Rename tip belongs to the ✎ cue and sits below it; hovering the name
+    // alone raises nothing. Hover media is unavailable in headless CI.
+    {
+      const canHover = await page.evaluate(() => matchMedia("(hover: hover)").matches);
+      if (canHover) {
+        const nameText = await page.$("[data-drawer-row] button[aria-label^='Rename'] > span:first-child");
+        await nameText.hover(); await new Promise((r) => setTimeout(r, 200));
+        const onName = await page.$("[role='tooltip']");
+        const cue = await page.$("[data-drawer-row] button[aria-label^='Rename'] > span:last-child");
+        await cue.hover(); await new Promise((r) => setTimeout(r, 200));
+        const pos = await page.evaluate(() => { const t = document.querySelector("[role='tooltip']"); const c = document.querySelector("[data-drawer-row] button[aria-label^='Rename'] > span:last-child"); return t && c ? { text: t.textContent, below: t.getBoundingClientRect().top >= c.getBoundingClientRect().bottom } : null; });
+        record("inline edit", "Rename tip belongs to the ✎ cue and sits below it", !onName && !!pos && pos.text === "Rename" && pos.below, `on name: ${!!onName}; on cue: ${pos ? `${pos.text}, below=${pos.below}` : "none"}`);
+        await page.mouse.move(5, 5);
+      }
+    }
     // Narrow layouts: with the sidebar up and a ~330px content column, the row
     // must still show its name and keep its amount inside the card.
     for (const w of [700, 900]) {
