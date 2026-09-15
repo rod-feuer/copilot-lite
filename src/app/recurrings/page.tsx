@@ -336,9 +336,11 @@ export default function RecurringsPage() {
               primary={{
                 value: usd(paidSoFar, { cents: false }),
                 // "Expected" is the word that needs teaching; the hint sits on it.
+                // Inline, not inline-flex: when the label wraps on a narrow
+                // screen the hint must follow "expected", not float mid-height.
                 label: (
-                  <span className="inline-flex items-center gap-1">
-                    paid{isCurrentMonth ? " so far" : ""} of {usd(totalBills, { cents: false })} expected
+                  <span>
+                    paid{isCurrentMonth ? " so far" : ""} of {usd(totalBills, { cents: false })} expected{" "}
                     <InfoHint text="Expected amounts are each bill's latest charge. Change one, or its cadence, in the shelf." />
                   </span>
                 ),
@@ -346,7 +348,7 @@ export default function RecurringsPage() {
               secondary={{
                 value: usd(leftToPay, { cents: false }),
                 // A closed month's unmatched bills weren't "left to pay"; they went unpaid.
-                label: isCurrentMonth ? "left to pay" : "unpaid",
+                label: <span className="whitespace-nowrap">{isCurrentMonth ? "left to pay" : "unpaid"}</span>,
               }}
               progress={paidSoFar / totalBills}
               barLabel={`${Math.round((paidSoFar / totalBills) * 100)}% of expected bills paid`}
@@ -684,7 +686,10 @@ function BillList({
                   beside it (a native select sizes to its widest option, which
                   stranded the chevron), and the real <select> laid transparently
                   over the label — still native, still keyboard, caret visible. */}
-              <div className="hidden w-44 shrink-0 justify-end sm:flex">
+              {/* The category property needs ~176px. With the sidebar up, the
+                  content column is only ~330px wide until the lg breakpoint, so
+                  the property waits for lg; below that the shelf carries it. */}
+              <div className="hidden w-44 shrink-0 justify-end lg:flex">
                 {editable && cats && onRecategorize ? (
                   <span className="group/cat relative inline-flex max-w-full items-center gap-1 rounded-md py-1 pl-1.5 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40">
                     <span className={`truncate ${r.categoryId == null ? "italic" : ""}`}>

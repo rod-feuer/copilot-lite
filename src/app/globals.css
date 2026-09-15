@@ -19,7 +19,7 @@
   --muted: #969ba5;
   --border: #2a2c31;
   --accent: #8071fd;
-  --hover: #222428; /* one step lighter than the card */
+  --hover: #26282c; /* two steps lighter than the card — equal numeric steps read weaker on dark */
 }
 
 @theme inline {
