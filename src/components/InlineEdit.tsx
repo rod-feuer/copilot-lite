@@ -1,6 +1,5 @@
 "use client";
 import { useState, type InputHTMLAttributes } from "react";
-import { Tooltip } from "@/components/Tooltip";
 import { useCommitInput } from "@/components/useCommitInput";
 
 // Click-to-edit text: the value with a persistent faint ✎ cue at rest; an input
@@ -39,17 +38,15 @@ export function InlineEdit({
         >
           <span className={`truncate ${textClassName}`}>{value}</span>
           {/* Persistent (faint) edit cue so the text reads as click-to-edit even
-              without hovering; darkens on hover. The tip belongs to the cue, not
-              the whole name — hovering a name in a dense list shouldn't raise a
-              bubble over the row above — and sits below the cue. */}
-          <Tooltip
-            label={label}
-            onlyIfTruncated={false}
-            placement="below"
+              without hovering; darkens on hover. No tooltip: the pencil beside
+              the text already says "rename", and the button's aria-label
+              carries it for assistive tech. */}
+          <span
+            aria-hidden
             className={`shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)] ${cueOnHover ? "hidden group-hover/n:inline-block group-focus-within/n:inline-block" : ""}`}
           >
             <span className="inline-block -scale-x-100">✎</span>
-          </Tooltip>
+          </span>
         </button>
       </span>
     );

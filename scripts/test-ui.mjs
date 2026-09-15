@@ -544,18 +544,18 @@ async function recurringsRow(browser) {
     record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
-    // The Rename tip belongs to the ✎ cue and sits below it; hovering the name
-    // alone raises nothing. Hover media is unavailable in headless CI.
+    // The inline editor raises no tooltip: hovering a name, or its ✎ cue, shows
+    // nothing (the button's aria-label carries "Rename"). Hover media only.
     {
       const canHover = await page.evaluate(() => matchMedia("(hover: hover)").matches);
       if (canHover) {
         const nameText = await page.$("[data-drawer-row] button[aria-label^='Rename'] > span:first-child");
         await nameText.hover(); await new Promise((r) => setTimeout(r, 200));
-        const onName = await page.$("[role='tooltip']");
         const cue = await page.$("[data-drawer-row] button[aria-label^='Rename'] > span:last-child");
         await cue.hover(); await new Promise((r) => setTimeout(r, 200));
-        const pos = await page.evaluate(() => { const t = document.querySelector("[role='tooltip']"); const c = document.querySelector("[data-drawer-row] button[aria-label^='Rename'] > span:last-child"); return t && c ? { text: t.textContent, below: t.getBoundingClientRect().top >= c.getBoundingClientRect().bottom } : null; });
-        record("inline edit", "Rename tip belongs to the ✎ cue and sits below it", !onName && !!pos && pos.text === "Rename" && pos.below, `on name: ${!!onName}; on cue: ${pos ? `${pos.text}, below=${pos.below}` : "none"}`);
+        const tip = await page.$("[role='tooltip']");
+        const label = await page.$eval("[data-drawer-row] button[aria-label^='Rename']", (b) => b.getAttribute("aria-label"));
+        record("inline edit", "no rename bubble; the button is labelled for assistive tech", !tip && /^Rename /.test(label || ""), `tooltip: ${!!tip}; aria-label: ${label}`);
         await page.mouse.move(5, 5);
       }
     }
