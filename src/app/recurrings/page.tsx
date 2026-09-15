@@ -338,8 +338,9 @@ export default function RecurringsPage() {
                 label: `paid${isCurrentMonth ? " so far" : ""} of ${usd(totalBills, { cents: false })} expected`,
               }}
               secondary={{
-                value: `${isCurrentMonth ? "≈ " : ""}${usd(leftToPay, { cents: false })}`,
-                label: isCurrentMonth ? "left to pay (expected)" : "remaining",
+                value: usd(leftToPay, { cents: false }),
+                // Forward-looking, so qualified — by the word, not a symbol.
+                label: isCurrentMonth ? "expected to pay" : "remaining",
               }}
               progress={paidSoFar / totalBills}
               status={
@@ -560,7 +561,9 @@ function BillList({
         <section key={section.key} className="card overflow-hidden" data-bill-section={section.key}>
           {section.label && (
             <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--background)] px-4 py-2">
-              <span className={`stat-label ${section.key === "od" ? "text-amber-600" : ""}`}>{section.label}</span>
+              <span className={`stat-label ${section.key === "od" ? "text-amber-600" : "text-[var(--foreground)]"}`}>
+                {section.label}
+              </span>
               <span
                 className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
                   section.key === "od" ? "bg-amber-500/15 text-amber-600" : "bg-[var(--border)] text-[var(--muted)]"
@@ -568,7 +571,7 @@ function BillList({
               >
                 {section.recs.length}
               </span>
-              <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--muted)]">
+              <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--foreground)]">
                 {usd(sectionTotal(section.recs))}
               </span>
             </div>

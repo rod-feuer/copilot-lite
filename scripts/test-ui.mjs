@@ -247,11 +247,11 @@ async function partialMonthQualifiers(browser) {
     };
     await check("/", CUR, ["Expenses so far", "% used so far"], true);
     await check("/categories", CUR, ["spent so far of", "left so far"], true);
-    await check("/recurrings", CUR, ["left to pay (expected)"], true);
+    await check("/recurrings", CUR, ["expected to pay"], true);
     await check("/transactions", CUR, ["· net", "so far"], true);
     await check("/", PAST, ["Expenses so far", "% used so far"], false);
     await check("/categories", PAST, ["spent so far of"], false);
-    await check("/recurrings", PAST, ["left to pay (expected)"], false);
+    await check("/recurrings", PAST, ["expected to pay"], false);
     await check("/transactions", PAST, ["so far"], false);
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
