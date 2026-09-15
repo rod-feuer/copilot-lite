@@ -270,6 +270,51 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
   return parts;
 }
 
+// Two jobs taking turns under one descriptor: Rosy's Cleaning is paid every
+// two weeks, $240 then $270 then $240 — two homes, alternating. Day clustering
+// can't see it (a two-week rhythm drifts through the month), but the amounts
+// can: group debits by amount (within 10%); when ≥2 groups INTERLEAVE in date
+// order (each swaps with the largest ≥3 times — a price change swaps once),
+// each is regular on its own grid, and together they hold ≥80% of the
+// charges, each group is its own bill, keyed by amount. Cadence per group is
+// whatever its own gaps say (a 28-day turn reads as monthly).
+function interleavedAmountParts<T extends { date: string; amount: number }>(
+  txs: T[]
+): { amount: number; cadence: Recurring["cadence"]; txs: T[] }[] | null {
+  if (txs.length < 6 || txs.some((t) => t.amount > 0)) return null;
+  const groups: T[][] = [];
+  for (const t of [...txs].sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount))) {
+    const g = groups[groups.length - 1];
+    if (g && Math.abs(Math.abs(t.amount) - Math.abs(g[0].amount)) <= 0.1 * Math.abs(g[0].amount)) g.push(t);
+    else groups.push([t]);
+  }
+  const big = groups.filter((g) => g.length >= 3).map((g) => [...g].sort((a, b) => a.date.localeCompare(b.date)));
+  if (big.length < 2) return null;
+  const main = big.reduce((a, b) => (b.length > a.length ? b : a));
+  const swaps = (g: T[]) => {
+    const seq = [...main.map((t) => ({ d: t.date, k: 0 })), ...g.map((t) => ({ d: t.date, k: 1 }))].sort((a, b) => a.d.localeCompare(b.d));
+    let n = 0;
+    for (let i = 1; i < seq.length; i++) if (seq[i].k !== seq[i - 1].k) n++;
+    return n;
+  };
+  const regular = (g: T[]): Recurring["cadence"] | null => {
+    const gaps: number[] = [];
+    for (let i = 1; i < g.length; i++) gaps.push((Date.parse(g[i].date) - Date.parse(g[i - 1].date)) / DAY);
+    const cadence = classifyCadence(medianGap(gaps));
+    return cadence && onGridFraction(gaps, CADENCE_DAYS[cadence]) >= 0.6 ? cadence : null;
+  };
+  const parts: { amount: number; cadence: Recurring["cadence"]; txs: T[] }[] = [];
+  for (const g of big) {
+    if (g !== main && swaps(g) < 3) continue;
+    const cadence = regular(g);
+    if (!cadence) continue;
+    parts.push({ amount: Number(currentAmount(g.map((t) => t.amount)).toFixed(2)), cadence, txs: g });
+  }
+  if (parts.length < 2 || !parts.some((p) => p.txs === main)) return null;
+  const covered = parts.reduce((n, p) => n + p.txs.length, 0);
+  return covered >= 0.8 * txs.length ? parts : null;
+}
+
 // "<vendor> · 23rd" when parts differ by day; "· $200" when they share a day
 // and differ by amount; "· 18th · $200" when a vendor needs both.
 function partKey<T>(vendor: string, p: DayPart<T>, all: DayPart<T>[]): string {
@@ -397,16 +442,20 @@ export function detectRecurrings(): Recurring[] {
     const allParts = monthlyDayParts(txs);
     const steady = (p: DayPart<(typeof txs)[number]>) => amountsConsistent(p.events.map((e) => e.amount));
     const dayParts = allParts.filter(steady);
-    const emitPart = (key: string, p: DayPart<(typeof txs)[number]>) => {
+    const emitPart = (
+      key: string,
+      p: { txs: (typeof txs)[number][]; events: { date: string; amount: number }[] },
+      cadence: Recurring["cadence"] = "monthly"
+    ) => {
       const lastDate = p.events[p.events.length - 1].date;
       const categoryId = modalCategory(p.txs);
       const rec = {
         merchant: key,
         categoryId,
         avgAmount: Number(currentAmount(p.events.map((e) => e.amount)).toFixed(2)),
-        cadence: "monthly" as const,
+        cadence,
         lastDate,
-        nextDate: addCadence(lastDate, "monthly"),
+        nextDate: addCadence(lastDate, cadence),
         count: p.events.length,
       };
       const info = insert.run(rec);
@@ -426,6 +475,20 @@ export function detectRecurrings(): Recurring[] {
         if (!settings[mainKey]) setRecurringSetting(mainKey, own);
       }
       for (const p of parts) emitPart(partKey(merchant, p, parts), p);
+      created.add(merchant);
+    };
+    const emitInterleaved = (parts: NonNullable<ReturnType<typeof interleavedAmountParts<(typeof txs)[number]>>>) => {
+      const own = settings[merchant];
+      if (own) {
+        const main = parts.reduce((a, b) => (b.txs.length > a.txs.length ? b : a));
+        const mainKey = seriesKey(merchant, amountLabel(main.amount));
+        if (!settings[mainKey]) setRecurringSetting(mainKey, own);
+      }
+      for (const p of parts) {
+        const key = seriesKey(merchant, amountLabel(p.amount));
+        if (rawOverrides[key] === "mute") continue;
+        emitPart(key, { txs: p.txs, events: p.txs.map((t) => ({ date: t.date, amount: t.amount })) }, p.cadence);
+      }
       created.add(merchant);
     };
     const concurrent = concurrentParts(allParts, txs.length);
@@ -453,6 +516,13 @@ export function detectRecurrings(): Recurring[] {
         } else emitSplit(dayParts.filter((p) => rawOverrides[partKey(merchant, p, dayParts)] !== "mute"));
         continue;
       }
+    }
+
+    // Two jobs taking turns (Rosy's: $240 / $270 every other week).
+    const turns = interleavedAmountParts(txs);
+    if (turns) {
+      emitInterleaved(turns);
+      continue;
     }
 
     // Amounts must be roughly consistent — measured by coefficient of variation
