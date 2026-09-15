@@ -167,9 +167,10 @@ export default function DashboardPage() {
               sub={
                 data.projectedIncome != null ? (
                   // Income posts late in the month, so a vs-prior delta on the
-                  // amount-so-far is noise — show what's expected instead.
+                  // amount-so-far is noise — show what's expected instead. The
+                  // word qualifies the forward-looking figure; no symbol.
                   <span className="text-xs text-[var(--muted)]">
-                    ≈ {usd(data.projectedIncome, { cents: false })} expected
+                    {usd(data.projectedIncome, { cents: false })} expected
                   </span>
                 ) : (
                   <DeltaLine
@@ -926,7 +927,7 @@ function CategoryBars({
                   style={{ left: pct(Math.min(r.recurringBaseline, max)) }}
                 >
                   <HoverTip
-                    label={`Recurring ≈ ${fmt(r.recurringBaseline)}/mo`}
+                    label={`Recurring bills: ${fmt(r.recurringBaseline)}/mo expected`}
                     onlyIfTruncated={false}
                     className="flex h-2 w-2 cursor-help justify-center"
                   >

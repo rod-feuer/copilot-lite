@@ -104,9 +104,10 @@ and §3 carry over unchanged.
   filters, sort), and it must *look* interactive (visible affordance). Custom
   dropdowns only when the content is rich (the combine picker, the emoji grid).
   No disguised controls. *(One-pattern, Anchor)*
-- **Forward-looking figures are qualified.** Mid-month net is shown projected with
-  a "so far" actual; income reads "≈ expected"; projections are withheld until
-  enough of the month has elapsed. *(Honest)*
+- **Forward-looking figures are qualified — by a word, not a symbol.** Mid-month
+  net is shown projected with a "so far" actual; income reads "$X expected";
+  bills read "paid so far of $X expected"; projections are withheld until
+  enough of the month has elapsed. No ≈ or ~ in front of a figure. *(Honest)*
 - **Review queues** surface low-confidence work (uncategorized, merge / name-cleanup
   candidates) for one-tap confirmation instead of auto-applying it. *(Correct-don't-configure)*
 - **Tokens & theme.** One accent, neutral grays, 8px (`lg`) card and control radii, dark
