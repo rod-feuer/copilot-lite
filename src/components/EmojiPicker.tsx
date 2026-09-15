@@ -21,7 +21,7 @@ export function EmojiPicker({ value, onPick }: { value?: string; onPick: (emoji:
     <button
       key={key}
       onClick={() => onPick(char)}
-      className={`flex h-7 w-7 items-center justify-center rounded text-lg hover:bg-[var(--background)] ${
+      className={`flex h-7 w-7 items-center justify-center rounded text-lg hover:bg-[var(--hover)] ${
         value === char ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/40" : ""
       }`}
     >

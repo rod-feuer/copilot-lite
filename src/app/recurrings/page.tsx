@@ -432,7 +432,7 @@ export default function RecurringsPage() {
                         className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${ROW_FOCUS} ${
                           shelfActive.isMerchant(s.merchant)
                             ? "bg-[var(--accent)]/10"
-                            : "hover:bg-[var(--background)]"
+                            : "hover:bg-[var(--hover)]"
                         }`}
                       >
                         <CategoryBadge icon={s.category?.icon} color={s.category?.color} fallback={s.displayName} size="xs" plain />
@@ -457,7 +457,7 @@ export default function RecurringsPage() {
                             e.stopPropagation();
                             addSuggestion(s);
                           }}
-                          className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium hover:bg-[var(--background)]"
+                          className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium hover:bg-[var(--hover)]"
                         >
                           Add
                         </button>
@@ -613,7 +613,7 @@ function BillList({
                 {section.recs.length}
               </span>
               <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--foreground)]">
-                {usd(sectionTotal(section.recs), { cents: false })}
+                {usd(sectionTotal(section.recs))}
               </span>
             </div>
           )}
@@ -631,7 +631,7 @@ function BillList({
                 onOpen
                   ? shelfActive.isMerchant(r.vendor)
                     ? "cursor-pointer bg-[var(--accent)]/10"
-                    : "cursor-pointer hover:bg-[var(--background)]"
+                    : "cursor-pointer hover:bg-[var(--hover)]"
                   : ""
               }`}
             >
@@ -686,7 +686,7 @@ function BillList({
                   over the label — still native, still keyboard, caret visible. */}
               <div className="hidden w-44 shrink-0 justify-end sm:flex">
                 {editable && cats && onRecategorize ? (
-                  <span className="group/cat relative inline-flex max-w-full items-center gap-1 rounded-md py-1 pl-1.5 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40">
+                  <span className="group/cat relative inline-flex max-w-full items-center gap-1 rounded-md py-1 pl-1.5 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40">
                     <span className={`truncate ${r.categoryId == null ? "italic" : ""}`}>
                       {r.categoryId != null ? `${r.categoryIcon ?? ""} ${r.categoryName ?? ""}`.trim() : "Uncategorized"}
                     </span>

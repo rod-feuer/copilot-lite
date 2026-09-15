@@ -544,6 +544,19 @@ async function recurringsRow(browser) {
     record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
+    // A hovered row takes the hover token — a wash of the card surface, not the
+    // page grey behind it. Hover media is not available in headless Linux CI.
+    {
+      const canHover = await page.evaluate(() => matchMedia("(hover: hover)").matches);
+      if (canHover) {
+        const row = await page.$("[data-drawer-row]");
+        await row.hover(); await new Promise((r) => setTimeout(r, 150));
+        const c = await page.evaluate(() => { const el = document.querySelector("[data-drawer-row]"); const cs = getComputedStyle(el).backgroundColor; const root = getComputedStyle(document.documentElement); return { row: cs, page: root.getPropertyValue("--background").trim(), card: root.getPropertyValue("--card").trim() }; });
+        const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; };
+        const rowHex = hex(c.row);
+        record("recurrings row", "hovered row is a wash of the card, not the page grey", rowHex !== c.page.toLowerCase() && rowHex !== c.card.toLowerCase() && rowHex !== "#000000", `row ${rowHex}, page ${c.page}, card ${c.card}`);
+      }
+    }
     // A count in the status line jumps to its section.
     {
       const before = await page.evaluate(() => document.querySelector("[data-bill-section='up']")?.getBoundingClientRect().top ?? null);

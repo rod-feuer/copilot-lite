@@ -58,7 +58,7 @@ export function RowMenu({ label = "More actions", children }: { label?: string; 
           aria-label={label}
           aria-haspopup="menu"
           aria-expanded={open}
-          className={`rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+          className={`rounded-md px-1 py-1 text-base leading-none transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)] ${
             open ? "bg-[var(--background)] text-[var(--foreground)]" : "text-[var(--muted)]"
           }`}
         >
@@ -92,7 +92,7 @@ export function RowMenuItem({ label, onSelect, className = "" }: { label: string
         close();
         onSelect();
       }}
-      className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[var(--background)] ${className}`.trim()}
+      className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[var(--hover)] ${className}`.trim()}
     >
       {label}
     </button>

@@ -7,6 +7,9 @@
   --muted: #6b7280;
   --border: #e8eaed;
   --accent: #6d5efc;
+  /* A hover/active wash is a modulation of the surface it sits on, never the
+     page behind it: one step darker than the page grey on a white card. */
+  --hover: #eef0f3;
 }
 
 [data-theme="dark"] {
@@ -16,6 +19,7 @@
   --muted: #969ba5;
   --border: #2a2c31;
   --accent: #8071fd;
+  --hover: #222428; /* one step lighter than the card */
 }
 
 @theme inline {
@@ -25,6 +29,7 @@
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-accent: var(--accent);
+  --color-hover: var(--hover);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -48,7 +53,7 @@ body {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
   }
   .nav-link {
-    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)];
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)];
   }
   .nav-link-active {
     @apply bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent)];
@@ -59,7 +64,7 @@ body {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--background)];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--hover)];
   }
 }
 

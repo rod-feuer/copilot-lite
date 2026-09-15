@@ -465,7 +465,7 @@ function Group({
               key={c.id}
               data-drawer-row
               {...rowButtonProps(() => openCategory(c.id, month, { onChange }))}
-              className={`group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--background)] ${ROW_FOCUS}`}
+              className={`group flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-[var(--hover)] ${ROW_FOCUS}`}
             >
               <EditableCategoryBadge
                 icon={c.icon}
@@ -569,7 +569,7 @@ function Group({
                           className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                             c.excludeFromTotals
                               ? "bg-amber-500/15 text-amber-600"
-                              : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 hover:bg-[var(--background)]"
+                              : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 hover:bg-[var(--hover)]"
                           }`}
                         >
                           {c.excludeFromTotals ? "excluded from totals ✓" : "exclude from totals"}
@@ -828,7 +828,7 @@ function BudgetInput({
           placeholder="—"
           inputMode="decimal"
           aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
-          className="rounded bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--background)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+          className="rounded bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
         />
       </Tooltip>
       <Tooltip
@@ -837,7 +837,7 @@ function BudgetInput({
       >
         <button
           onClick={togglePeriod}
-          className="rounded px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+          className="rounded px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
         >
           {unit}
         </button>
