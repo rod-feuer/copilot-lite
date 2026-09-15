@@ -1423,3 +1423,32 @@ test("detector splits amounts that take turns into their own series; a price cha
   assert.equal(ww[0].merchant, "Window Washer");
   assert.equal(ww[0].cadence, "biweekly");
 });
+
+// The shelf on ONE plan of a vendor that carries two: figures, next due, the
+// price-change check, and the charge list come from that plan's own charges,
+// and overrides live under the plan's key. The vendor-level summary is
+// unchanged for a vendor with one plan.
+test("merchantSummary scoped to a series answers for that plan only", () => {
+  const home = addCat("Lake House (529)");
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 8; m++) {
+    tx("In 529 Dir Ach Contrib", { amount: -200, date: `${ym(m)}-18`, categoryId: home });
+    tx("In 529 Dir Ach Contrib", { amount: -300, date: `${ym(m)}-18`, categoryId: home, account: "Savings" });
+  }
+  detectRecurrings();
+  const key200 = "In 529 Dir Ach Contrib · $200";
+  const plan = merchantSummary("In 529 Dir Ach Contrib", key200);
+  assert.equal(plan.series, key200);
+  assert.equal(plan.settingsKey, key200, "overrides from this shelf land on the plan");
+  assert.equal(plan.plans, 2);
+  assert.equal(plan.count, 8, "only this plan's charges");
+  assert.equal(plan.recurringDetail?.perCharge, 200);
+  assert.equal(plan.recurringDetail?.annualized, 2400);
+  assert.equal(plan.priceChange, null, "two plans alternating is not a price change");
+  assert.ok(plan.recent.every((r) => r.amount === -200), "Recent lists the plan's charges");
+  assert.equal(plan.displayName, key200);
+  const vendor = merchantSummary("In 529 Dir Ach Contrib");
+  assert.equal(vendor.series, null);
+  assert.equal(vendor.count, 16, "the vendor view still sees every charge");
+  assert.equal(vendor.settingsKey, "In 529 Dir Ach Contrib");
+});

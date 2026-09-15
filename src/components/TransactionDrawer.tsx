@@ -31,9 +31,9 @@ type Vendor = { merchant: string; displayName: string }; // the Combine picker's
 type Summary = MerchantSummary;
 type CatSummary = CategorySummary;
 
-type OpenOpts = { onChange?: () => void; amountHint?: number | null };
+type OpenOpts = { onChange?: () => void; amountHint?: number | null; series?: string }; // series: one plan of a multi-plan vendor
 type Target =
-  | { kind: "merchant"; merchant: string }
+  | { kind: "merchant"; merchant: string; series?: string }
   | { kind: "category"; categoryId: number; month: string };
 
 type Shelf = {
@@ -55,7 +55,8 @@ export const useCategoryShelf = () => useContext(Ctx).openCategory;
 export const useShelfActive = () => {
   const { active } = useContext(Ctx);
   return {
-    isMerchant: (m: string) => active?.kind === "merchant" && active.merchant === m,
+    isMerchant: (m: string, series?: string) =>
+      active?.kind === "merchant" && active.merchant === m && (active.series ?? null) === (series ?? null),
     isCategory: (id: number, month: string) =>
       active?.kind === "category" && active.categoryId === id && active.month === month,
   };
@@ -92,10 +93,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // `loading` below is derived from missing data, so without this flag a
   // failed fetch would pulse forever.
   const [loadError, setLoadError] = useState(false);
-  const fetchMerchant = useCallback((m: string) => {
+  const fetchMerchant = useCallback((m: string, series?: string) => {
     setMData(null);
     setLoadError(false);
-    getJson<Summary>(`/api/merchant?name=${encodeURIComponent(m)}`)
+    getJson<Summary>(`/api/merchant?name=${encodeURIComponent(m)}${series ? `&series=${encodeURIComponent(series)}` : ""}`)
       .then(setMData)
       .catch(() => setLoadError(true));
   }, []);
@@ -117,7 +118,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     (m: string, opts?: OpenOpts) => {
       // Re-clicking the row whose detail is already showing toggles the shelf
       // shut (matches the in-place, non-modal feel — the trigger stays in view).
-      if (target?.kind === "merchant" && target.merchant === m) {
+      if (target?.kind === "merchant" && target.merchant === m && (target.series ?? null) === (opts?.series ?? null)) {
         close();
         return;
       }
@@ -125,8 +126,8 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       setAmountHint(opts?.amountHint ?? null);
       setBack(null);
       setCData(null);
-      setTarget({ kind: "merchant", merchant: m });
-      fetchMerchant(m);
+      setTarget({ kind: "merchant", merchant: m, series: opts?.series });
+      fetchMerchant(m, opts?.series);
     },
     [target, close, fetchMerchant]
   );
@@ -210,14 +211,16 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   async function recategorize(categoryId: number | null) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
+    const series = target.series;
     if (
       await mutate(
-        () => postJson("/api/recurrings/recategorize", { merchant, categoryId }),
+        // One plan of several recategorizes only its own charges.
+        () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId: mData?.seriesId ?? undefined }),
         { success: `Recategorized "${merchant}"`, error: "Couldn't recategorize — please try again" },
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant);
+      fetchMerchant(merchant, series);
       onChange.current?.();
     }
   }
@@ -240,14 +243,16 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   ) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
+    const series = target.series;
     if (
       await mutate(
-        () => postJson("/api/recurrings/settings", { merchant, ...patch }),
+        // Overrides live under the plan's key when the shelf is on one plan.
+        () => postJson("/api/recurrings/settings", { merchant: mData?.settingsKey ?? merchant, ...patch }),
         { success: message, error: "Couldn't save — please try again" },
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant);
+      fetchMerchant(merchant, series);
       onChange.current?.();
     }
   }
@@ -292,7 +297,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant);
+      fetchMerchant(merchant, target.series);
       onChange.current?.();
     }
   }
@@ -300,10 +305,12 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   async function toggleRecurring() {
     if (target?.kind !== "merchant" || !mData) return;
     const merchant = target.merchant;
+    const series = target.series;
     const makeIt = !mData.recurring;
     if (
       await mutate(
-        () => postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" }),
+        // "Not recurring" on one plan mutes that plan, not the vendor.
+        () => postJson("/api/recurrings/override", { merchant: mData.settingsKey ?? merchant, status: makeIt ? "force" : "mute" }),
         {
           success: makeIt ? "Marked recurring" : "No longer recurring",
           error: "Couldn't update — please try again",
@@ -311,7 +318,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant);
+      fetchMerchant(merchant, series);
       onChange.current?.();
     }
   }
@@ -324,7 +331,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // Re-read whichever detail is open after a per-charge write.
   const refreshTarget = () => {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month);
-    else if (target?.kind === "merchant") fetchMerchant(target.merchant);
+    else if (target?.kind === "merchant") fetchMerchant(target.merchant, target.series);
   };
   async function txRecategorize(txId: number, categoryId: number | null) {
     if (
@@ -433,7 +440,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 what={target.kind === "merchant" ? "this vendor" : "this category"}
                 onRetry={() =>
                   target.kind === "merchant"
-                    ? fetchMerchant(target.merchant)
+                    ? fetchMerchant(target.merchant, target.series)
                     : fetchCategory(target.categoryId, target.month)
                 }
               />
