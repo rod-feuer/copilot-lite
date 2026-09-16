@@ -582,8 +582,9 @@ async function recurringsRow(browser) {
       record("keyboard rows", "↓ / ↑ move the open shelf to the adjacent row", names.length >= 2 && t0 !== t1 && t1.startsWith(names[1].slice(0, 6)) && t2 === t0, `${t0} → ${t1} → ${t2}`);
       await page.keyboard.press("Escape");
     }
-    // The vendor shelf's Recent rows carry a labelled membership pill: "In
-    // series" toggles the charge out ("Left out") and back — no menu.
+    // The vendor shelf's Recent rows carry one two-state pill: "In plan"
+    // flips to "Not in plan" (with an edited tag: the user decided) and back
+    // — no menu.
     {
       await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
       await page.waitForSelector("[data-drawer-row]");
@@ -591,15 +592,18 @@ async function recurringsRow(browser) {
       await page.waitForSelector("[data-shelf] button[data-membership]");
       const pillText = () => page.$eval("[data-shelf] button[data-membership]", (b) => b.textContent.trim());
       const menus = await page.$$eval("[data-shelf] button[aria-label='Edit transaction']", (bs) => bs.length);
+      const pillEdited = () => page.$eval("[data-shelf] button[data-membership]", (b) => b.getAttribute("data-edited") === "1");
       const t1 = await pillText();
+      const e1 = await pillEdited();
       // The toggle must not blank the shelf (no skeleton) while it re-reads.
       const flashed = await page.evaluate(async () => { let seen = false; const b = document.querySelector("[data-shelf] button[data-membership]"); b.click(); const t0 = Date.now(); while (Date.now() - t0 < 1200) { if (document.querySelector("[data-shelf] .animate-pulse")) seen = true; await new Promise((r) => setTimeout(r, 30)); } return seen; });
       await page.waitForSelector("[data-shelf] button[data-membership]");
       const t2 = await pillText();
+      const e2 = await pillEdited();
       await page.click("[data-shelf] button[data-membership]"); await new Promise((r) => setTimeout(r, 1200));
       await page.waitForSelector("[data-shelf] button[data-membership]");
       const t3 = await pillText();
-      record("shelf", "Recent rows: a labelled membership pill toggles a charge out and back; no row menu", menus === 0 && t1 === "In series" && t2 === "Left out" && t3 === "In series", `menus ${menus}; ${t1} → ${t2} → ${t3}`);
+      record("shelf", "Recent rows: one two-state pill flips a charge out (edited) and back (auto); no row menu", menus === 0 && t1 === "In plan" && !e1 && t2 === "Not in plan" && e2 && t3 === "In plan", `menus ${menus}; ${t1}${e1 ? " (edited)" : ""} → ${t2}${e2 ? " (edited)" : ""} → ${t3}`);
       record("shelf", "toggling a pill re-reads without blanking the shelf", !flashed, flashed ? "skeleton flashed" : "no skeleton");
       await page.keyboard.press("Escape");
     }

@@ -349,14 +349,17 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       onChange.current?.();
     }
   }
-  // One charge in or out of its vendor's series (a device purchase under
+  // One charge in or out of its plan (a device purchase under
   // "Apple" is not the subscription). The server rebuilds detection.
-  async function txSetOneOff(txId: number, excluded: boolean) {
+  async function txSetMembership(txId: number, put: "in" | "out", plan: string | null) {
     if (
       await mutate(
-        () => patchJson(`/api/transactions/${txId}`, { recurringExcluded: excluded }),
+        () =>
+          put === "out"
+            ? patchJson(`/api/transactions/${txId}`, { recurringExcluded: true })
+            : patchJson(`/api/transactions/${txId}`, { recurringIncluded: plan }),
         {
-          success: excluded ? "Charge excluded from its series" : "Charge added back to its series",
+          success: put === "out" ? "Charge taken out of the plan" : "Charge put in the plan",
           error: "Couldn't update — please try again",
         },
         { refresh: "never" }
@@ -460,7 +463,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 cats={cats}
                 onAddCategory={addCat}
                 onRecategorize={recategorize}
-                onTxSetOneOff={txSetOneOff}
+                onTxSetMembership={txSetMembership}
                 onToggleRecurring={toggleRecurring}
                 onSaveSettings={saveMerchantSettings}
                 amountHint={amountHint}
@@ -644,7 +647,7 @@ function MerchantBody({
   cats,
   onAddCategory,
   onRecategorize,
-  onTxSetOneOff,
+  onTxSetMembership,
   onToggleRecurring,
   onSaveSettings,
   amountHint,
@@ -655,7 +658,7 @@ function MerchantBody({
   cats: Cat[];
   onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
-  onTxSetOneOff: (txId: number, excluded: boolean) => void;
+  onTxSetMembership: (txId: number, put: "in" | "out", plan: string | null) => void;
   onToggleRecurring: () => void;
   onSaveSettings: (
     patch: {
@@ -897,10 +900,11 @@ function MerchantBody({
           charges are on screen, so the charges come first. */}
       <div>
         <div className="stat-label mb-1.5">Recent</div>
-        {/* Each charge carries a labelled membership pill — "In series",
-            "Left out" (by you), "Not detected" (by the detector) — that
-            toggles it in or out of this plan (a
-            device purchase under "Apple" is not the subscription). No menu:
+        {/* Each charge carries one two-state pill — "In plan" / "Not in
+            plan" — and clicking always flips it. An "edited" tag beside it
+            says the user decided (took it out, or put in a charge the
+            detector left out); no tag means the detector did (a device
+            purchase under "Apple" is not the subscription). No menu:
             recategorizing a single charge is the Transactions tab's job.
             The text slot shows only what VARIES across these rows — the
             descriptor a charge posted under, else its category — and nothing
@@ -918,9 +922,17 @@ function MerchantBody({
               muted={r.excluded === 1}
               excluded={!!r.excluded || !!r.categoryExcluded}
               recurring={recurringState(r)}
-              // A charge excluded from totals was never eligible for a series;
+              // A charge excluded from totals was never eligible for a plan;
               // it carries no membership control, just what it is.
-              membership={r.excluded === 1 ? undefined : { kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
+              membership={
+                r.excluded === 1
+                  ? undefined
+                  : {
+                      kind: "charge",
+                      edited: r.recurringExcluded === 1 || r.recurringIncluded === 1,
+                      onToggle: () => onTxSetMembership(r.id, r.recurringId != null ? "out" : "in", data.planKey),
+                    }
+              }
               note={r.excluded === 1 ? "not counted" : undefined}
               flush
               unsignedDebits
@@ -1236,7 +1248,7 @@ type RowEdit = {
 // The row's membership control: a labelled pill that says its state and
 // toggles it. "charge": this charge in or out of its plan (the vendor shelf).
 // "vendor": the whole vendor recurring or not (the category shelf).
-type Membership = { kind: "charge" | "vendor"; onToggle: () => void };
+type Membership = { kind: "charge" | "vendor"; onToggle: () => void; edited?: boolean };
 function ShelfRow({
   date,
   name,
@@ -1304,44 +1316,47 @@ function ShelfRow({
         </span>
         {!membership && note && <span className="shrink-0 text-[11px] text-[var(--muted)]">{note}</span>}
         {membership &&
-          // A labelled state that toggles, beside the amount: auto width, so
-          // "In series" stays small and the date / name columns keep their
-          // edges; the amount stays flush right.
+          // One two-state pill beside the amount, auto width so the date /
+          // name columns keep their edges and the amount stays flush right.
+          // Clicking always flips the state; an "edited" tag says the user
+          // decided it.
           (() => {
+            const inPlan = recurring === "in";
             const text =
               membership.kind === "charge"
-                ? recurring === "in" ? "In series" : recurring === "out" ? "Left out" : "Not detected"
-                : recurring === "in" ? "Recurring" : recurring === "out" ? "Left out" : "Not recurring";
+                ? inPlan ? "In plan" : "Not in plan"
+                : inPlan ? "Recurring" : "Not recurring";
             const action =
               membership.kind === "charge"
-                ? recurring === "out" ? "Add this charge back to the series" : "Not part of this recurring"
-                : recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring";
-            // Quiet when the state is the default (in the series / a recurring
-            // vendor) — every row would say it; loud when a charge is out of
-            // its plan, which is the state to notice.
-            // Quiet for the default (in the series) and for what the detector
-            // left out on its own (unlinked usage under a plan); amber only for
-            // a charge the user excluded — the one state they chose.
-            const tone =
-              recurring === "in"
-                ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
-                : recurring === "out" && membership.kind === "charge"
-                  ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
-                  : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+                ? inPlan ? "Take this charge out of the plan" : "Put this charge in the plan"
+                : inPlan ? "Mark vendor not recurring" : "Mark vendor recurring";
+            // Quiet for the default (in) — every row would say it; a charge
+            // the user took out wears amber, the one state they chose to
+            // notice; what the detector left out on its own is plain grey.
+            const edited = !!membership.edited;
+            const tone = inPlan
+              ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+              : edited && membership.kind === "charge"
+                ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
+                : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
             return (
-              <button
-                type="button"
-                data-membership={recurring}
-                aria-label={action}
-                title={action}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  membership.onToggle();
-                }}
-                className={`shrink-0 rounded-full px-1.5 py-px text-[11px] font-medium transition-colors ${tone}`}
-              >
-                {text}
-              </button>
+              <span className="flex shrink-0 items-center gap-1">
+                {edited && <StateTag edited />}
+                <button
+                  type="button"
+                  data-membership={recurring}
+                  data-edited={edited ? "1" : undefined}
+                  aria-label={action}
+                  title={action}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    membership.onToggle();
+                  }}
+                  className={`shrink-0 rounded-full px-1.5 py-px text-[11px] font-medium transition-colors ${tone}`}
+                >
+                  {text}
+                </button>
+              </span>
             );
           })()}
         {/* A fixed amount column, so a pill beside it lands on one edge in every row. */}

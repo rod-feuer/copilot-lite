@@ -131,6 +131,7 @@ function init(db: Database.Database) {
   ensureMerchantLinks(db);
   ensureCleanupLog(db);
   ensureRecurringTxExclusions(db);
+  ensureRecurringTxInclusions(db);
   ensureMergeDismissals(db);
 }
 
@@ -140,6 +141,12 @@ function init(db: Database.Database) {
 // the live connection so the feature works without a dev-server restart.
 export function ensureRecurringTxExclusions(db: Database.Database) {
   db.exec("CREATE TABLE IF NOT EXISTS recurring_tx_exclusions (hash TEXT PRIMARY KEY)");
+}
+
+// The mirror: a charge the user put INTO a plan the detector left out (keyed
+// by the plan's series name — the recurrings.merchant it links to on rebuild).
+export function ensureRecurringTxInclusions(db: Database.Database) {
+  db.exec("CREATE TABLE IF NOT EXISTS recurring_tx_inclusions (hash TEXT PRIMARY KEY, plan TEXT NOT NULL)");
 }
 
 // Merge suggestions the user rejected, keyed by the proposed canonical name, so

@@ -8,6 +8,7 @@ import {
   recurringMonthlyByCategory,
   getRecurringOverrides,
   getRecurringTxExclusions,
+  getRecurringTxInclusions,
   getMerchantLinks,
   canonicalMerchant,
   linkedAliases,
@@ -582,7 +583,9 @@ export function detectRecurrings(): Recurring[] {
     if (overrides[canon] === "force") continue; // force wins a force/mute clash
     overrides[canon] = status;
   }
-  const excluded = getRecurringTxExclusions(); // charges flagged as one-offs
+  const excluded = getRecurringTxExclusions(); // charges the user took out
+  const included = getRecurringTxInclusions(); // charges the user put in: hash → plan
+  const rowByHash = new Map(rows.map((r) => [r.hash, r]));
   const settings = getRecurringSettings();
   const created = new Set<string>();
   const out: Recurring[] = [];
@@ -732,6 +735,15 @@ export function detectRecurrings(): Recurring[] {
 
   const commit = (p: Plan) => {
     if (p.inherit && settings[p.inherit] && !settings[p.key]) setRecurringSetting(p.key, settings[p.inherit]);
+    // A charge the user put into this plan joins it as its own event, wherever
+    // the detector's rules left it (a stray, a held fee, an off-day payment).
+    for (const [hash, plan] of included) {
+      const r = rowByHash.get(hash);
+      if (plan !== p.key || !r || p.txs.includes(r)) continue;
+      p.txs.push(r);
+      p.events.push({ date: r.date, amount: r.amount });
+    }
+    p.events.sort((a, b) => a.date.localeCompare(b.date));
     const lastDate = p.events[p.events.length - 1].date;
     const categoryId = modalCategory(p.txs);
     const rec = {
