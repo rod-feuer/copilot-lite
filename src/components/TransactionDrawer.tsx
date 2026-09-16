@@ -727,7 +727,7 @@ function MerchantBody({
               per-year figure it drives. */}
           <div className="grid grid-cols-2 gap-2">
             <PropertyCard label="Per charge" edited={data.expectedAmount != null}>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center">
                 <span className="text-sm font-semibold text-[var(--muted)]">$</span>
                 <CommitInput
                   key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
@@ -763,21 +763,46 @@ function MerchantBody({
               />
             </PropertyCard>
           </div>
+          {/* The plan's other properties on one line: category, cadence (the
+              value first, its auto/edited state beside it, like the cards), and
+              the per-year figure the cadence drives. */}
           <div className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
-            <select
+            <CaptionSelect
+              label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
+              value={data.categoryId ?? ""}
+              aria-label="Category"
+              onChange={(e) => {
+                if (e.target.value === NEW_CATEGORY) {
+                  newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
+                  return;
+                }
+                onRecategorize(e.target.value ? Number(e.target.value) : null);
+              }}
+            >
+              <option value="">Uncategorized</option>
+              {cats.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon} {c.name}
+                </option>
+              ))}
+              <NewCategoryOption />
+            </CaptionSelect>
+            {newCat.popover}
+            <span>·</span>
+            <CaptionSelect
+              label={(data.cadence ?? data.detectedCadence) ? CADENCE_LABELS[data.cadence ?? data.detectedCadence ?? ""] ?? (data.cadence ?? data.detectedCadence ?? "") : "Auto"}
               aria-label="Cadence"
               value={data.cadence ?? "__auto"}
               onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value }, e.target.value === "__auto" ? "Cadence reset to auto" : "Cadence updated")}
-              className="select-caret cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pl-1 pr-5 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)]"
             >
-              <option value="__auto">Auto{data.detectedCadence ? ` · ${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence}` : ""}</option>
+              <option value="__auto">{data.detectedCadence ? `${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence} (auto)` : "Auto"}</option>
               {Object.entries(CADENCE_LABELS).map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}
                 </option>
               ))}
-            </select>
-            {data.cadence != null && <StateTag edited />}
+            </CaptionSelect>
+            <StateTag edited={data.cadence != null} />
             <span>·</span>
             <span>{usd(d.annualized, { cents: false })} per year expected</span>
             {data.received > 0 && (
@@ -796,13 +821,11 @@ function MerchantBody({
         </div>
       )}
 
-      {/* Category is the most-used correction, so it is a property card with
-          the others, not a control at the bottom. A vendor that isn't
-          recurring gets its Expected editor beside it. */}
-      <div className={`grid gap-2 ${d ? "grid-cols-1" : "grid-cols-2"}`}>
-        {!d && (
+      {!d && (
+        <>
+          <div className="grid grid-cols-1 gap-2">
           <PropertyCard label="Expected" edited={data.expectedAmount != null}>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center">
               <span className="text-sm font-semibold text-[var(--muted)]">$</span>
               <CommitInput
                 key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
@@ -824,31 +847,32 @@ function MerchantBody({
               />
             </div>
           </PropertyCard>
-        )}
-        <PropertyCard label="Category">
-          <select
-            value={data.categoryId ?? ""}
-            aria-label="Category"
-            onChange={(e) => {
-              if (e.target.value === NEW_CATEGORY) {
-                newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
-                return;
-              }
-              onRecategorize(e.target.value ? Number(e.target.value) : null);
-            }}
-            className="select-caret w-full cursor-pointer appearance-none bg-transparent pr-6 text-sm font-semibold focus:outline-none"
-          >
-            <option value="">Uncategorized</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.icon} {c.name}
-              </option>
-            ))}
-            <NewCategoryOption />
-          </select>
-          {newCat.popover}
-        </PropertyCard>
-      </div>
+          </div>
+          <div className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
+            <CaptionSelect
+              label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
+              value={data.categoryId ?? ""}
+              aria-label="Category"
+              onChange={(e) => {
+                if (e.target.value === NEW_CATEGORY) {
+                  newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
+                  return;
+                }
+                onRecategorize(e.target.value ? Number(e.target.value) : null);
+              }}
+            >
+              <option value="">Uncategorized</option>
+              {cats.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon} {c.name}
+                </option>
+              ))}
+              <NewCategoryOption />
+            </CaptionSelect>
+            {newCat.popover}
+          </div>
+        </>
+      )}
 
       {data.priceChange && (
         <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
@@ -863,13 +887,16 @@ function MerchantBody({
       <div>
         <div className="stat-label mb-1.5">Recent</div>
         {/* Each charge carries a labelled membership pill — "In series",
-            "Excluded", "Unlinked" — that toggles it in or out of this plan (a
+            "Excluded", "Not detected" — that toggles it in or out of this plan (a
             device purchase under "Apple" is not the subscription). No menu:
             recategorizing a single charge is the Transactions tab's job.
             The text slot shows only what VARIES across these rows — the
             descriptor a charge posted under, else its category — and nothing
             when every row would say the same thing. */}
-        <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
+        {/* No box: the list sits on the panel's edges like the titles and the
+            by-year figures, so dates and amounts share one edge all the way
+            down. Only the property cards are boxes. */}
+        <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list>
           {data.recent.map((r) => (
             <ShelfRow
               key={r.id}
@@ -880,6 +907,7 @@ function MerchantBody({
               excluded={!!r.excluded || !!r.categoryExcluded}
               recurring={recurringState(r)}
               membership={{ kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
+              flush
             />
           ))}
         </ul>
@@ -1191,6 +1219,7 @@ function ShelfRow({
   onClick,
   editable,
   membership,
+  flush = false,
 }: {
   date: string;
   name?: string; // omitted when every row in the list would say the same thing
@@ -1202,6 +1231,7 @@ function ShelfRow({
   onClick?: () => void;
   editable?: RowEdit; // the ⋯ editor (recategorize) — the category shelf only
   membership?: Membership;
+  flush?: boolean; // no horizontal padding: the list sits on the panel's edges
 }) {
   const [editing, setEditing] = useState(false);
   // "+ New category…" in the row's Recategorize picker.
@@ -1214,7 +1244,7 @@ function ShelfRow({
     <li>
       <div
         {...(onClick ? rowButtonProps(onClick) : {})}
-        className={`group flex w-full items-center gap-2 px-3 py-2 text-xs ${
+        className={`group flex w-full items-center gap-2 py-2 text-xs ${flush ? "" : "px-3"} ${
           onClick ? `cursor-pointer hover:bg-[var(--hover)] ${ROW_FOCUS}` : ""
         }`}
       >
@@ -1243,7 +1273,7 @@ function ShelfRow({
           (() => {
             const text =
               membership.kind === "charge"
-                ? recurring === "in" ? "In series" : recurring === "out" ? "Excluded" : "Unlinked"
+                ? recurring === "in" ? "In series" : recurring === "out" ? "Excluded" : "Not detected"
                 : recurring === "in" ? "Recurring" : recurring === "out" ? "Excluded" : "Not recurring";
             const action =
               membership.kind === "charge"
@@ -1643,6 +1673,24 @@ function MatchCorrection({
 }
 
 
+
+// A select on a caption line: a visible label with its caret right beside it
+// (a native select sizes to its widest option, which strands the caret), and
+// the real <select> laid transparently over the label — still native, still
+// keyboard, caret visible. The same pattern the recurrings row uses.
+function CaptionSelect({ label, className = "", children, ...select }: { label: string; className?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span className={`relative inline-flex max-w-[11rem] items-center gap-0.5 rounded-md py-0.5 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>
+      <span className="truncate">{label}</span>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+      <select {...select} className="absolute inset-0 w-full cursor-pointer opacity-0">
+        {children}
+      </select>
+    </span>
+  );
+}
 
 // A stat that is its own editor: the value on top, the label and its
 // auto/edited state beneath, in the same box the read-only metrics use.
