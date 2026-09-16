@@ -203,7 +203,7 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
 // math. When one cluster holds most of the vendor's charges and the whole
 // descriptor doesn't classify as monthly, that cluster IS the bill.
 const MONTH_DAYS = 30.44;
-type DayPart<T> = { day: number; amount: number | null; txs: T[]; events: { date: string; amount: number }[] };
+type DayPart<T> = { day: number; amount: number | null; label?: string; txs: T[]; events: { date: string; amount: number }[] };
 function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): DayPart<T>[] {
   if (txs.length < 4) return [];
   const dayOf = (t: T) => Number(t.date.slice(8, 10));
@@ -234,14 +234,37 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
       clusters.splice(i, 1);
     }
   }
-  // Same-day debits of consistently different amounts are different bills:
+  // Same-day charges of consistently different amounts are different bills:
   // group a cluster's charges by amount (within 10%); when ≥2 groups CO-OCCUR
   // — each shares ≥3 months with the largest — each is its own part. A price
   // change is not a second bill: its eras never share a month, and each era
-  // folds into the concurrent group nearest in amount. Deposits never split —
-  // two deposits on a payday are one paycheck.
-  const amountGroups = (c: T[]): { amount: number | null; txs: T[] }[] => {
-    if (c.some((t) => t.amount > 0)) return [{ amount: null, txs: c }];
+  // folds into the concurrent group nearest in amount. Deposits split the
+  // same way: two paychecks on one payday are two paychecks. A cluster that
+  // mixes debits and credits is left whole.
+  const amountGroups = (c: T[]): { amount: number | null; label?: string; txs: T[] }[] => {
+    if (c.some((t) => t.amount > 0) && c.some((t) => t.amount < 0)) return [{ amount: null, txs: c }];
+    // A day that consistently carries k charges (two paychecks every payday)
+    // is k bills even when amount bands can't cut it cleanly — two people's
+    // raises cross in amount. Then the bills are ranked by size on each day:
+    // the larger deposit is one paycheck, the smaller the other, whatever the
+    // amounts do over time.
+    const perMonth = new Map<string, T[]>();
+    for (const t of c) (perMonth.get(t.date.slice(0, 7)) ?? perMonth.set(t.date.slice(0, 7), []).get(t.date.slice(0, 7))!).push(t);
+    const counts = [...perMonth.values()].map((g) => g.length);
+    const modalK = [...new Set(counts)].sort((a, b) => counts.filter((x) => x === b).length - counts.filter((x) => x === a).length)[0] ?? 1;
+    const byRank = (): { amount: number | null; label?: string; txs: T[] }[] | null => {
+      if (modalK < 2 || counts.filter((x) => x === modalK).length < 0.8 * counts.length) return null;
+      const ranks: T[][] = Array.from({ length: modalK }, () => []);
+      for (const g of perMonth.values()) {
+        if (g.length !== modalK) continue; // an odd month (a bonus) stays out of the ranks
+        [...g].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).forEach((t, i) => ranks[i].push(t));
+      }
+      const labels = modalK === 2 ? ["larger", "smaller"] : ranks.map((_, i) => `${i + 1}${["st", "nd", "rd"][i] ?? "th"}`);
+      return ranks.map((g, i) => {
+        const byDate = [...g].sort((a, b) => a.date.localeCompare(b.date));
+        return { amount: Number(currentAmount(byDate.map((t) => t.amount)).toFixed(2)), label: labels[i], txs: byDate };
+      });
+    };
     const groups: T[][] = [];
     for (const t of [...c].sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount))) {
       const g = groups[groups.length - 1];
@@ -252,6 +275,14 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     const main = groups.reduce((a, b) => (b.length > a.length ? b : a));
     const mainMonths = monthsOf(main);
     const bills = groups.filter((g) => g === main || [...monthsOf(g)].filter((m) => mainMonths.has(m)).length >= 3);
+    // Rank only when the charges come in at least two real sizes: two
+    // identical policies on the 1st are one bill (summed), not "larger" and
+    // "smaller".
+    const sizes = groups.filter((g) => monthsOf(g).size >= 3).length;
+    if (sizes >= 2 && bills.length !== modalK) {
+      const ranked = byRank();
+      if (ranked) return ranked;
+    }
     if (bills.length < 2) return [{ amount: null, txs: c }];
     const median = (g: T[]) => Math.abs(g[g.length >> 1].amount);
     for (const g of groups) {
@@ -265,7 +296,14 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     });
   };
   const parts: DayPart<T>[] = [];
-  for (const cluster of clusters) for (const { amount, txs: c } of amountGroups(cluster)) {
+  for (const cluster of clusters) {
+    // The cluster's typical day names every part cut from it, so two
+    // paychecks on the 31st are "· 31st · $A" and "· 31st · $B", not one of
+    // them "· 30th" because its own slips happened to skew.
+    const n0 = new Map<number, number>();
+    for (const t of cluster) n0.set(dayOf(t), (n0.get(dayOf(t)) ?? 0) + 1);
+    const clusterDay = [...n0.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
+    for (const { amount, label, txs: c } of amountGroups(cluster)) {
     const byMonth = new Map<string, { date: string; amount: number }>();
     for (const t of [...c].sort((a, b) => a.date.localeCompare(b.date))) {
       const m = t.date.slice(0, 7);
@@ -281,10 +319,8 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     for (let i = 1; i < events.length; i++)
       gaps.push((Date.parse(events[i].date) - Date.parse(events[i - 1].date)) / DAY);
     if (classifyCadence(medianGap(gaps)) !== "monthly" || onGridFraction(gaps, MONTH_DAYS) < 0.6) continue;
-    const n = new Map<number, number>();
-    for (const t of c) n.set(dayOf(t), (n.get(dayOf(t)) ?? 0) + 1);
-    const day = [...n.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
-    parts.push({ day, amount, txs: c, events });
+    parts.push({ day: clusterDay, amount, label, txs: c, events });
+    }
   }
   return parts;
 }
@@ -352,7 +388,7 @@ function regularCore<T extends { date: string; amount: number }>(
   const groups: T[][] = [];
   for (const t of [...txs].sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount))) {
     const g = groups[groups.length - 1];
-    if (g && Math.abs(Math.abs(t.amount) - Math.abs(g[0].amount)) <= 0.1 * Math.abs(g[0].amount)) g.push(t);
+    if (g && Math.abs(Math.abs(t.amount) - Math.abs(g[0].amount)) <= 0.05 * Math.abs(g[0].amount)) g.push(t); // a plan's price is exact
     else groups.push([t]);
   }
   const byDate = (g: T[]) => [...g].sort((a, b) => a.date.localeCompare(b.date));
@@ -379,14 +415,49 @@ function regularCore<T extends { date: string; amount: number }>(
   // more charges that are not regular. Anything less is a coincidence (six
   // similar-priced lunches) or a price change (one odd charge), and the
   // whole-descriptor path handles both.
-  const largest = groups.reduce((a, b) => (b.length > a.length ? b : a));
-  if (largest.length < 6 || largest.length < 0.45 * txs.length) return null;
-  const cadence = regular(largest, 0.8);
-  if (!cadence || !consecutive(largest, CADENCE_DAYS[cadence])) return null;
-  const rest = txs.filter((t) => !largest.includes(t));
-  if (rest.length < 3) return null;
-  if (regular(rest, 0.6)) return null; // the rest is a bill too — not this rule's case
-  return { cadence, txs: byDate(largest) };
+  // The core is the CURRENT plan: among groups that qualify, the one charged
+  // most recently — not the largest. Anthropic's $20 plan ran through 2024
+  // (ten charges) and then became a ~$100 plan; the largest group was the
+  // dead one, and the series ended in 2024.
+  const last = (g: T[]) => byDate(g)[g.length - 1].date;
+  const first = (g: T[]) => byDate(g)[0].date;
+  const monthsOf = (g: T[]) => new Set(g.map((t) => t.date.slice(0, 7))).size;
+  // A plan must own most of the MONTHS since it began — not most of the
+  // charges, which usage swamps (a $100 plan beside ten $15 top-ups).
+  const ownsItsMonths = (g: T[]) => monthsOf(g) >= 0.6 * monthsOf(txs.filter((t) => t.date >= first(g)));
+  // And it must still be running: a plan whose last charge is more than two
+  // periods before the vendor's latest activity has ended — it is history,
+  // not the vendor's bill (Anthropic's $20 plan through 2024, with 2026 usage).
+  const latest = byDate(txs)[txs.length - 1].date;
+  const stillRunning = (g: T[], period: number) => (Date.parse(latest) - Date.parse(last(g))) / DAY <= 2 * period;
+  const candidates = groups
+    .filter((g) => g.length >= 6 && ownsItsMonths(g))
+    .sort((a, b) => last(b).localeCompare(last(a)));
+  for (const core of candidates) {
+    const cadence = regular(core, 0.8);
+    // A plan with usage on top bills monthly or longer; a biweekly run of
+    // similar gas fill-ups is a coincidence, not a plan.
+    if (!cadence || cadence === "weekly" || cadence === "biweekly" || !consecutive(core, CADENCE_DAYS[cadence])) continue;
+    if (!stillRunning(core, CADENCE_DAYS[cadence])) continue;
+    const rest = txs.filter((t) => !core.includes(t));
+    // What ran ALONGSIDE the plan must be usage: three or more charges that
+    // are not a rival bill (a rival runs in consecutive periods; four service
+    // calls over a year are not one just because 238 days is "17 periods").
+    // Fewer than three is a price change or an odd charge — the ordinary
+    // path handles that whole.
+    const alongside = rest.filter((t) => t.date >= first(core));
+    if (alongside.length < 3) return null;
+    const rival = regular(alongside, 0.6);
+    if (rival && consecutive(alongside, CADENCE_DAYS[rival])) return null;
+    // An earlier era (the $20 plan before the $100 one) is the same bill at
+    // an old price: it stays in the series as history. An era is itself a
+    // regular amount group; charges before the plan began that belong to no
+    // such group are usage, and leave with the rest.
+    const eras = groups.filter((g) => g !== core && regular(g, 0.6));
+    const history = rest.filter((t) => t.date < first(core) && eras.some((g) => g.includes(t)));
+    return { cadence, txs: byDate([...core, ...history]) };
+  }
+  return null;
 }
 
 // "<vendor> · 23rd" when parts differ by day; "· $200" when they share a day
@@ -394,9 +465,10 @@ function regularCore<T extends { date: string; amount: number }>(
 function partKey<T>(vendor: string, p: DayPart<T>, all: DayPart<T>[]): string {
   const sameDay = all.filter((q) => q.day === p.day).length > 1;
   const oneDay = all.every((q) => q.day === p.day);
-  if (!sameDay || p.amount == null) return seriesKey(vendor, dayLabel(p.day));
-  if (oneDay) return seriesKey(vendor, amountLabel(p.amount));
-  return seriesKey(vendor, `${dayLabel(p.day)}${" · "}${amountLabel(p.amount)}`);
+  if (!sameDay || (p.amount == null && !p.label)) return seriesKey(vendor, dayLabel(p.day));
+  const what = p.label ?? amountLabel(p.amount as number); // a rank survives raises; an amount names a fixed plan
+  if (oneDay) return seriesKey(vendor, what);
+  return seriesKey(vendor, `${dayLabel(p.day)}${" · "}${what}`);
 }
 
 // Which monthly day-parts of a descriptor stand as separate bills. Concurrent,
