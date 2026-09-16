@@ -602,7 +602,19 @@ export function merchantSummary(merchant: string, series?: string | null) {
          t.categoryId, t.recurringId,
          (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
-       WHERE ${seriesId != null ? `t.merchant IN (${ph}) AND (t.recurringId = ? OR t.recurringId IS NULL)` : `t.merchant IN (${ph})`}
+       WHERE ${
+         seriesId != null
+           ? // A plan's list: its own charges plus the vendor's charges in no
+             // plan (so one can be pulled in or flagged out), never a charge
+             // in another plan or one excluded from totals, which can't join.
+             `t.merchant IN (${ph}) AND t.excluded = 0 AND (t.recurringId = ? OR t.recurringId IS NULL)`
+           : `t.merchant IN (${ph})`
+       }
+         -- A split parent is not a charge any more: its parts are, and they
+         -- live under their own descriptors ("Chubb — Carmel Home"). On the
+         -- Chubb shelf the $1,115.55 parents read as "not counted" noise
+         -- between the plan's own charges.
+         AND NOT EXISTS (SELECT 1 FROM transactions s WHERE s.hash LIKE t.hash || ':s%')
        ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
     )
     .all(...scopeArgs) as {

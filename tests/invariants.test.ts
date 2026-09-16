@@ -1469,9 +1469,23 @@ test("merchantSummary scoped to a series answers for that plan only", () => {
   assert.equal(plan.priceChange, null, "two plans alternating is not a price change");
   assert.ok(plan.recent.every((r) => r.amount === -200), "Recent lists the plan's charges");
   assert.equal(plan.displayName, key200);
+  // The plan's list also carries the vendor's charges in no plan, so one can
+  // be pulled in or flagged out — but never a charge excluded from totals,
+  // which can't join. A split parent is off every shelf, plan or vendor: it
+  // is not a charge any more, its parts are (Chubb's $1,115.55 parents sat on
+  // the Lake Home shelf as "not counted" noise between the plan's charges).
+  tx("In 529 Dir Ach Contrib", { amount: -500, date: "2026-09-02", categoryId: home, excluded: 1, hash: "p529" });
+  tx("In 529 Dir Ach Contrib — A", { amount: -250, date: "2026-09-02", categoryId: home, hash: "p529:s1" });
+  tx("In 529 Dir Ach Contrib — B", { amount: -250, date: "2026-09-02", categoryId: home, hash: "p529:s2" });
+  tx("In 529 Dir Ach Contrib", { amount: -90, date: "2026-09-04", categoryId: home, excluded: 1 });
+  tx("In 529 Dir Ach Contrib", { amount: -75, date: "2026-09-03", categoryId: home });
+  const again = merchantSummary("In 529 Dir Ach Contrib", key200);
+  assert.ok(!again.recent.some((r) => r.excluded === 1), "nothing excluded from totals sits on a plan's shelf");
+  assert.ok(again.recent.some((r) => r.amount === -75 && r.recurringId == null), "a stray in no plan does, so it can be pulled in");
   const vendor = merchantSummary("In 529 Dir Ach Contrib");
   assert.equal(vendor.series, null);
-  assert.equal(vendor.count, 16, "the vendor view still sees every charge");
+  assert.ok(!vendor.recent.some((r) => r.amount === -500), "a split parent is off the vendor shelf too");
+  assert.ok(vendor.recent.some((r) => r.amount === -90 && r.excluded === 1), "a charge the user excluded from totals stays, as 'not counted'");
   assert.equal(vendor.settingsKey, "In 529 Dir Ach Contrib");
 });
 
