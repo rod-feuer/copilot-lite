@@ -612,7 +612,7 @@ export function merchantSummary(merchant: string, series?: string | null) {
     | undefined;
   const recent = db
     .prepare(
-      `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.amount, t.account, t.excluded,
+      `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.merchant, t.amount, t.account, t.excluded,
          COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName,
          t.categoryId, t.recurringId,
          (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
@@ -623,6 +623,7 @@ export function merchantSummary(merchant: string, series?: string | null) {
     .all(...scopeArgs) as {
     id: number;
     date: string;
+    merchant: string; // the descriptor this charge posted under
     amount: number;
     account: string;
     excluded: 0 | 1;
@@ -671,13 +672,18 @@ export function merchantSummary(merchant: string, series?: string | null) {
   ).map((r) => ({ year: r.year, spent: Number(r.spent.toFixed(2)) }));
 
   // Recurring detail (via the linked recurring, even if its name drifted).
+  // A vendor whose descriptor changed carries two series (WSJ: "D J*wsj"
+  // through May, "D J" since). The page folds them and takes the newer
+  // one's dates; the shelf must agree, so the most recently charged series
+  // speaks for the vendor — not whichever row a LIMIT 1 found first.
   const rec =
     seriesRow ??
     (db
       .prepare(
         `SELECT cadence, avgAmount, nextDate, lastDate FROM recurrings
-         WHERE id = (SELECT recurringId FROM transactions
-                     WHERE merchant IN (${ph}) AND recurringId IS NOT NULL LIMIT 1)`
+         WHERE id IN (SELECT DISTINCT recurringId FROM transactions
+                      WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
+         ORDER BY lastDate DESC LIMIT 1`
       )
       .get(...variants) as
       | { cadence: string; avgAmount: number; nextDate: string; lastDate: string }
@@ -721,7 +727,10 @@ export function merchantSummary(merchant: string, series?: string | null) {
       Math.abs(Math.abs(charges[i - 1].amount) - latest) <= Math.max(0.5, latest * 0.01)
     )
       i--;
-    if (i > 0)
+    // News, not history: after three charges at the new price the change is
+    // the price, and the banner would be a permanent stripe about the past.
+    const runLength = charges.length - i;
+    if (i > 0 && runLength <= 3)
       priceChange = {
         from: Number(Math.abs(charges[i - 1].amount).toFixed(2)),
         to: Number(latest.toFixed(2)),

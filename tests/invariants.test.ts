@@ -1459,3 +1459,29 @@ test("merchantSummary scoped to a series answers for that plan only", () => {
   assert.equal(vendor.count, 16, "the vendor view still sees every charge");
   assert.equal(vendor.settingsKey, "In 529 Dir Ach Contrib");
 });
+
+// A vendor whose descriptor changed carries two series. The page folds them
+// and takes the newer one's dates; the shelf must agree — the most recently
+// charged series speaks for the vendor, not whichever row is found first.
+// And a price change is news, not history: the banner leaves after three
+// charges at the new price.
+test("the vendor shelf follows the newer series of a folded vendor, and a price change expires", () => {
+  const subs = addCat("Subscriptions (wsj)");
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 5; m++) tx("D J*wsj", { amount: -38.99, date: `${ym(m)}-25`, categoryId: subs });
+  for (let m = 6; m <= 8; m++) tx("D J", { amount: -38.99, date: `${ym(m)}-18`, categoryId: subs });
+  detectRecurrings();
+  const shelf = merchantSummary("D J*wsj");
+  assert.equal(shelf.recurringDetail?.nextDate.slice(0, 7), "2026-09");
+  assert.equal(shelf.recurringDetail?.nextDate.slice(8), "18", "next due follows the newer descriptor's charges, not the stale series");
+  assert.equal(shelf.priceChange, null, "no change to report");
+
+  // A promo price then five charges at the real price: the change is old news.
+  for (let m = 1; m <= 6; m++) tx("Paper", { amount: m === 1 ? -4 : -38.99, date: `${ym(m)}-05`, categoryId: subs });
+  detectRecurrings();
+  assert.equal(merchantSummary("Paper").priceChange, null, "five charges at the new price: the banner has expired");
+  // Two charges at the new price: still news.
+  for (let m = 1; m <= 5; m++) tx("Mag", { amount: m <= 3 ? -10 : -12, date: `${ym(m)}-05`, categoryId: subs });
+  detectRecurrings();
+  assert.deepEqual(merchantSummary("Mag").priceChange, { from: 10, to: 12, since: "2026-04-05" });
+});
