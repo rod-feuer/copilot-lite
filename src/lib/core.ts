@@ -204,7 +204,10 @@ function modalCategory(txs: { categoryId: number | null }[]): number | null {
 // math. When one cluster holds most of the vendor's charges and the whole
 // descriptor doesn't classify as monthly, that cluster IS the bill.
 const MONTH_DAYS = 30.44;
-type DayPart<T> = { day: number; amount: number | null; label?: string; txs: T[]; events: { date: string; amount: number }[] };
+// `held`: charges on the part's billing day that the day explains but the
+// plan does not own (see the guard in amountGroups). They count toward how
+// much of the vendor the day-parts cover, and stay unlinked.
+type DayPart<T> = { day: number; amount: number | null; label?: string; txs: T[]; held: T[]; events: { date: string; amount: number }[] };
 function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): DayPart<T>[] {
   if (txs.length < 4) return [];
   const dayOf = (t: T) => Number(t.date.slice(8, 10));
@@ -242,8 +245,8 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
   // folds into the concurrent group nearest in amount. Deposits split the
   // same way: two paychecks on one payday are two paychecks. A cluster that
   // mixes debits and credits is left whole.
-  const amountGroups = (c: T[]): { amount: number | null; label?: string; txs: T[] }[] => {
-    if (c.some((t) => t.amount > 0) && c.some((t) => t.amount < 0)) return [{ amount: null, txs: c }];
+  const amountGroups = (c: T[]): { amount: number | null; label?: string; txs: T[]; held: T[] }[] => {
+    if (c.some((t) => t.amount > 0) && c.some((t) => t.amount < 0)) return [{ amount: null, txs: c, held: [] }];
     // A day that consistently carries k charges (two paychecks every payday)
     // is k bills even when amount bands can't cut it cleanly — two people's
     // raises cross in amount. Then the bills are ranked by size on each day:
@@ -253,7 +256,7 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     for (const t of c) (perMonth.get(t.date.slice(0, 7)) ?? perMonth.set(t.date.slice(0, 7), []).get(t.date.slice(0, 7))!).push(t);
     const counts = [...perMonth.values()].map((g) => g.length);
     const modalK = [...new Set(counts)].sort((a, b) => counts.filter((x) => x === b).length - counts.filter((x) => x === a).length)[0] ?? 1;
-    const byRank = (): { amount: number | null; label?: string; txs: T[] }[] | null => {
+    const byRank = (): { amount: number | null; label?: string; txs: T[]; held: T[] }[] | null => {
       if (modalK < 2 || counts.filter((x) => x === modalK).length < 0.8 * counts.length) return null;
       const ranks: T[][] = Array.from({ length: modalK }, () => []);
       for (const g of perMonth.values()) {
@@ -263,17 +266,38 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
       const labels = modalK === 2 ? ["larger", "smaller"] : ranks.map((_, i) => `${i + 1}${["st", "nd", "rd"][i] ?? "th"}`);
       return ranks.map((g, i) => {
         const byDate = [...g].sort((a, b) => a.date.localeCompare(b.date));
-        return { amount: Number(currentAmount(byDate.map((t) => t.amount)).toFixed(2)), label: labels[i], txs: byDate };
+        return { amount: Number(currentAmount(byDate.map((t) => t.amount)).toFixed(2)), label: labels[i], txs: byDate, held: [] };
       });
     };
-    const groups: T[][] = [];
+    let groups: T[][] = [];
     for (const t of [...c].sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount))) {
       const g = groups[groups.length - 1];
       if (g && Math.abs(Math.abs(t.amount) - Math.abs(g[0].amount)) <= 0.1 * Math.abs(g[0].amount)) g.push(t);
       else groups.push([t]);
     }
     const monthsOf = (g: T[]) => new Set(g.map((t) => t.date.slice(0, 7)));
+    const median = (g: T[]) => Math.abs(g[g.length >> 1].amount);
     const main = groups.reduce((a, b) => (b.length > a.length ? b : a));
+    // The billing day alone does not make a charge the bill. On a fixed-price
+    // plan (one amount band holds most of the day's charges) a lone charge
+    // more than half off that price is a stray that happened to post on the
+    // day — a $16.85 fee on tuition day, which then read as "the price
+    // changed $16.85 → $353". A new price is a price once the vendor has
+    // charged it twice, anywhere in its history (the new season's $353
+    // posted on the 14th, then on the 4th); until then the charge is held:
+    // explained by the day, owned by no plan. A variable bill (a utility,
+    // whose months rarely repeat) has no majority band and keeps every charge.
+    const held: T[] = [];
+    if (main.length >= 0.6 * c.length) {
+      const price = median(main);
+      const repeated = (t: T) =>
+        txs.some((o) => o !== t && Math.abs(Math.abs(o.amount) - Math.abs(t.amount)) <= 0.1 * Math.abs(t.amount));
+      groups = groups.filter((g) => {
+        const stray = g.length === 1 && Math.abs(Math.abs(g[0].amount) - price) > 0.5 * price && !repeated(g[0]);
+        if (stray) held.push(g[0]);
+        return !stray;
+      });
+    }
     const mainMonths = monthsOf(main);
     const bills = groups.filter((g) => g === main || [...monthsOf(g)].filter((m) => mainMonths.has(m)).length >= 3);
     // Rank only when the charges come in at least two real sizes: two
@@ -284,16 +308,16 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
       const ranked = byRank();
       if (ranked) return ranked;
     }
-    if (bills.length < 2) return [{ amount: null, txs: c }];
-    const median = (g: T[]) => Math.abs(g[g.length >> 1].amount);
+    if (bills.length < 2) return [{ amount: null, txs: groups.flat(), held }];
     for (const g of groups) {
       if (bills.includes(g)) continue;
       const home = bills.reduce((a, b) => (Math.abs(median(b) - median(g)) < Math.abs(median(a) - median(g)) ? b : a));
       home.push(...g);
     }
+    // The held strays ride with the largest bill, for coverage only.
     return bills.map((g) => {
       const byDate = [...g].sort((a, b) => a.date.localeCompare(b.date));
-      return { amount: Number(currentAmount(byDate.map((t) => t.amount)).toFixed(2)), txs: byDate };
+      return { amount: Number(currentAmount(byDate.map((t) => t.amount)).toFixed(2)), txs: byDate, held: g === main ? held : [] };
     });
   };
   const parts: DayPart<T>[] = [];
@@ -304,7 +328,7 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     const n0 = new Map<number, number>();
     for (const t of cluster) n0.set(dayOf(t), (n0.get(dayOf(t)) ?? 0) + 1);
     const clusterDay = [...n0.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
-    for (const { amount, label, txs: c } of amountGroups(cluster)) {
+    for (const { amount, label, txs: c, held } of amountGroups(cluster)) {
     const byMonth = new Map<string, { date: string; amount: number }>();
     for (const t of [...c].sort((a, b) => a.date.localeCompare(b.date))) {
       const m = t.date.slice(0, 7);
@@ -320,7 +344,7 @@ function monthlyDayParts<T extends { date: string; amount: number }>(txs: T[]): 
     for (let i = 1; i < events.length; i++)
       gaps.push((Date.parse(events[i].date) - Date.parse(events[i - 1].date)) / DAY);
     if (classifyCadence(medianGap(gaps)) !== "monthly" || onGridFraction(gaps, MONTH_DAYS) < 0.6) continue;
-    parts.push({ day: clusterDay, amount, label, txs: c, events });
+    parts.push({ day: clusterDay, amount, label, txs: c, held, events });
     }
   }
   return parts;
@@ -483,7 +507,7 @@ function concurrentParts<T extends { date: string; amount: number }>(parts: DayP
   const anchor = monthsOf(parts.reduce((a, b) => (b.events.length > a.events.length ? b : a)));
   const overlapping = parts.filter((p) => [...monthsOf(p)].filter((m) => anchor.has(m)).length >= 2);
   if (overlapping.length < 2) return null;
-  const covered = overlapping.reduce((n, p) => n + p.txs.length, 0);
+  const covered = overlapping.reduce((n, p) => n + p.txs.length + p.held.length, 0);
   return covered >= 0.8 * total ? overlapping : null;
 }
 
@@ -661,7 +685,7 @@ export function detectRecurrings(): Recurring[] {
     // and the strays stay unlinked. If the whole descriptor already reads
     // monthly, the ordinary path below keeps every charge.
     const oneDay = dayParts.length >= 1 && new Set(dayParts.map((p) => p.day)).size === 1;
-    if (oneDay && dayParts.reduce((n, p) => n + p.txs.length, 0) >= 0.6 * txs.length) {
+    if (oneDay && dayParts.reduce((n, p) => n + p.txs.length + p.held.length, 0) >= 0.6 * txs.length) {
       const all = txs.map((t) => Date.parse(t.date + "T00:00:00Z"));
       const allGaps = all.slice(1).map((d, i) => (d - all[i]) / DAY);
       if (classifyCadence(medianGap(allGaps)) !== "monthly") {

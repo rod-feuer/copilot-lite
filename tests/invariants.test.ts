@@ -1652,3 +1652,50 @@ test("month view pays a bill only with its own vendor's charge", () => {
   assert.equal(liquid?.paid, true, "the same vendor under a relabeled descriptor is");
   assert.equal(liquid?.paidAmount, 52.48);
 });
+
+// The billing day alone does not make a charge the bill. The dance academy
+// bills tuition on the 4th: nine months of $195, then a $16.85 fee that
+// happened to post on Jun 5, then the new season's $353 on Sep 4 (its first
+// $353 posted on Aug 14). Membership by day alone took the fee, and the shelf
+// announced "price changed $16.85 → $353". A lone charge on the day, more
+// than half off a fixed-price plan and never repeated anywhere in the vendor's
+// history, is held out — but still counts as explained by the day, so the
+// plan survives the same strays that made it need rescuing. The $353 joins:
+// the vendor has charged it twice. A variable bill keeps every charge.
+test("detector holds a lone off-price charge off a fixed-price plan's billing day", () => {
+  const kids = addCat("Dance");
+  const home = addCat("Gas Utility");
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  const v = "Central Indiana Academ";
+  // nine tuition charges on the 4th (Sep 2025 – May 2026)
+  for (let m = 9; m <= 12; m++) tx(v, { amount: -195, date: `2025-${m}-04`, categoryId: kids });
+  for (let m = 1; m <= 5; m++) tx(v, { amount: -195, date: `${ym(m)}-04`, categoryId: kids });
+  // strays: registration, costumes, a fee on tuition day, the ensemble
+  tx(v, { amount: -235, date: "2025-08-13", categoryId: kids });
+  tx(v, { amount: -164.8, date: "2025-10-28", categoryId: kids });
+  tx(v, { amount: -112.15, date: "2025-11-29", categoryId: kids });
+  tx(v, { amount: -300, date: "2026-05-18", categoryId: kids });
+  tx(v, { amount: -832.5, date: "2026-05-29", categoryId: kids });
+  tx(v, { amount: -16.85, date: "2026-06-05", categoryId: kids });
+  tx(v, { amount: -65, date: "2026-07-31", categoryId: kids });
+  // the new season: $353, first off the day, then on it
+  tx(v, { amount: -353, date: "2026-08-14", categoryId: kids });
+  tx(v, { amount: -353, date: "2026-09-04", categoryId: kids });
+  // a utility on the 4th whose amounts swing with the season: every charge is the bill
+  const gas = [210, 190, 120, 80, 60, 55, 70, 110, 160];
+  gas.forEach((a, i) => tx("Vectren Gas", { amount: -a, date: `${ym(i + 1)}-04`, categoryId: home }));
+  const recs = detectRecurrings();
+  const dance = recs.find((r) => r.merchant === v);
+  assert.ok(dance, "the tuition plan survives its strays");
+  assert.equal(dance.count, 10, "nine tuition charges and the repeated $353; not the $16.85 fee");
+  // One charge at the new price is not a settled price yet, so the per-charge
+  // figure is the median; it becomes $353 once October's posts.
+  assert.equal(dance.avgAmount, -195);
+  const member = (amount: number, date: string) =>
+    (getDb().prepare("SELECT recurringId FROM transactions WHERE merchant = ? AND amount = ? AND date = ?").get(v, amount, date) as { recurringId: number | null }).recurringId;
+  assert.equal(member(-16.85, "2026-06-05"), null, "the fee on tuition day is held out");
+  assert.equal(member(-353, "2026-09-04"), dance.id, "the repeated new price is in");
+  assert.equal(member(-353, "2026-08-14"), null, "the off-day charge stays a stray");
+  const utility = recs.find((r) => r.merchant === "Vectren Gas");
+  assert.equal(utility?.count, gas.length, "a variable bill keeps every charge");
+});
