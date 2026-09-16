@@ -550,8 +550,13 @@ function MerchantHeader({
       ) : (
         <div className="truncate text-sm font-semibold">{merchant}</div>
       )}
-      {data && data.displayName !== data.merchant && (
+      {/* The descriptor only when a name makes it differ from the title; a
+          plan says what a plan shelf needs to say — that the vendor has more. */}
+      {data && data.alias != null && data.displayName !== data.merchant && (
         <div className="truncate text-[11px] text-[var(--muted)]">{data.merchant}</div>
+      )}
+      {data && data.series && data.plans > 1 && (
+        <div className="truncate text-[11px] text-[var(--muted)]">One of {data.plans} plans under this vendor</div>
       )}
       {data && (
         <div className="text-xs text-[var(--muted)]">
@@ -576,7 +581,6 @@ function MerchantHeader({
               </Tooltip>
             </>
           ) : null}
-          {data.recurring ? " · recurring ↻" : ""}
         </div>
       )}
       {data && showNames && data.names.length > 1 && (
@@ -750,23 +754,33 @@ function MerchantBody({
               </div>
             </PropertyCard>
             <PropertyCard label="Next due" edited={data.nextDate != null}>
-              <input
-                type="date"
-                aria-label="Next due"
-                value={data.nextDate ?? d.nextDate ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null }, v === "" ? "Next due reset to auto" : "Next due reset to auto");
-                  else if (v !== data.nextDate) onSaveSettings({ nextDate: v }, "Next due updated");
-                }}
-                className="w-full min-w-0 cursor-pointer bg-transparent text-sm font-semibold tabular-nums focus:outline-none"
-              />
+              {/* The app writes dates as "Sep 18"; the native picker (its own
+                  locale format) is laid transparently over that and opens on
+                  click. */}
+              <span className="relative flex items-center justify-between">
+                <span className="text-sm font-semibold tabular-nums">{shortDate(data.nextDate ?? d.nextDate)}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
+                  <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+                </svg>
+                <input
+                  type="date"
+                  aria-label="Next due"
+                  value={data.nextDate ?? d.nextDate ?? ""}
+                  onClick={(e) => (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null }, "Next due reset to auto");
+                    else if (v !== data.nextDate) onSaveSettings({ nextDate: v }, "Next due updated");
+                  }}
+                  className="absolute inset-0 w-full cursor-pointer opacity-0"
+                />
+              </span>
             </PropertyCard>
           </div>
           {/* The plan's other properties on one line: category, cadence (the
               value first, its auto/edited state beside it, like the cards), and
               the per-year figure the cadence drives. */}
-          <div className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
+          <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
             <CaptionSelect
               label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
               value={data.categoryId ?? ""}
@@ -788,28 +802,27 @@ function MerchantBody({
               <NewCategoryOption />
             </CaptionSelect>
             {newCat.popover}
-            <span>·</span>
-            <CaptionSelect
-              label={(data.cadence ?? data.detectedCadence) ? CADENCE_LABELS[data.cadence ?? data.detectedCadence ?? ""] ?? (data.cadence ?? data.detectedCadence ?? "") : "Auto"}
-              aria-label="Cadence"
-              value={data.cadence ?? "__auto"}
-              onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value }, e.target.value === "__auto" ? "Cadence reset to auto" : "Cadence updated")}
-            >
-              <option value="__auto">{data.detectedCadence ? `${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence} (auto)` : "Auto"}</option>
-              {Object.entries(CADENCE_LABELS).map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </CaptionSelect>
-            <StateTag edited={data.cadence != null} />
-            <span>·</span>
-            <span>{usd(d.annualized, { cents: false })} per year expected</span>
+            {/* Items are separated by space, not dots: a wrap can then never
+                strand a separator at either end of a line. */}
+            <span className="inline-flex items-center whitespace-nowrap">
+              <CaptionSelect
+                label={(data.cadence ?? data.detectedCadence) ? CADENCE_LABELS[data.cadence ?? data.detectedCadence ?? ""] ?? (data.cadence ?? data.detectedCadence ?? "") : "Auto"}
+                tag={<StateTag edited={data.cadence != null} />}
+                aria-label="Cadence"
+                value={data.cadence ?? "__auto"}
+                onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value }, e.target.value === "__auto" ? "Cadence reset to auto" : "Cadence updated")}
+              >
+                <option value="__auto">{data.detectedCadence ? `${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence} (auto)` : "Auto"}</option>
+                {Object.entries(CADENCE_LABELS).map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </CaptionSelect>
+            </span>
+            <span className="whitespace-nowrap">{usd(d.annualized, { cents: false })} per year expected</span>
             {data.received > 0 && (
-              <>
-                <span>·</span>
-                <span>{usd(data.received, { cents: false })} received all time</span>
-              </>
+              <span className="whitespace-nowrap">{usd(data.received, { cents: false })} received all time</span>
             )}
           </div>
         </>
@@ -908,9 +921,19 @@ function MerchantBody({
               recurring={recurringState(r)}
               membership={{ kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
               flush
+              unsignedDebits
             />
           ))}
         </ul>
+        {/* The continuation sits where the list ends, not at the panel's foot. */}
+        {data.count > data.recent.length && (
+          <Link
+            href={`/transactions?vendor=${encodeURIComponent(data.merchant)}`}
+            className="mt-2 inline-block text-[11px] font-medium text-[var(--accent)] hover:underline"
+          >
+            {data.series ? "All this vendor's charges →" : `Show all ${data.count} →`}
+          </Link>
+        )}
       </div>
 
       {data.byYear.length > 1 && (
@@ -921,7 +944,11 @@ function MerchantBody({
               const max = Math.max(...data.byYear.map((y) => y.spent), 1);
               return data.byYear.map((y) => (
                 <div key={y.year} className="flex items-center gap-2 text-xs">
-                  <span className="w-9 shrink-0 text-[var(--muted)]">{y.year}</span>
+                  {/* A partial year says so — the honesty rule for figures mid-flight. */}
+                  <span className="w-[4.6rem] shrink-0 text-[var(--muted)]">
+                    {y.year}
+                    {y.year === String(new Date().getUTCFullYear()) ? " so far" : ""}
+                  </span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--background)]">
                     <div
                       className="h-full rounded-full bg-[var(--accent)]"
@@ -1220,6 +1247,7 @@ function ShelfRow({
   editable,
   membership,
   flush = false,
+  unsignedDebits = false,
 }: {
   date: string;
   name?: string; // omitted when every row in the list would say the same thing
@@ -1232,6 +1260,7 @@ function ShelfRow({
   editable?: RowEdit; // the ⋯ editor (recategorize) — the category shelf only
   membership?: Membership;
   flush?: boolean; // no horizontal padding: the list sits on the panel's edges
+  unsignedDebits?: boolean; // a plan's charges are debits by definition — no minus on every row
 }) {
   const [editing, setEditing] = useState(false);
   // "+ New category…" in the row's Recategorize picker.
@@ -1287,7 +1316,7 @@ function ShelfRow({
             // a charge the user excluded — the one state they chose.
             const tone =
               recurring === "in"
-                ? "border border-[var(--border)] text-[var(--muted)] opacity-60 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+                ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
                 : recurring === "out" && membership.kind === "charge"
                   ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
                   : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
@@ -1301,7 +1330,7 @@ function ShelfRow({
                   e.stopPropagation();
                   membership.onToggle();
                 }}
-                className={`shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium transition-colors ${tone}`}
+                className={`shrink-0 rounded-full px-1.5 py-px text-[11px] font-medium transition-colors ${tone}`}
               >
                 {text}
               </button>
@@ -1309,9 +1338,13 @@ function ShelfRow({
           })()}
         {/* A fixed amount column, so a pill beside it lands on one edge in every row. */}
         {muted ? (
-          <span className="w-20 shrink-0 text-right tabular-nums text-[var(--muted)]">{usd(amount, { sign: !!sign })}</span>
+          <span className="w-20 shrink-0 text-right tabular-nums text-[var(--muted)]">
+            {usd(unsignedDebits && amount < 0 ? -amount : amount, { sign: !!sign })}
+          </span>
+        ) : unsignedDebits && amount < 0 ? (
+          <span className="w-20 shrink-0 text-right tabular-nums text-[var(--foreground)]">{usd(-amount)}</span>
         ) : (
-          <Money value={amount} sign={!!sign} excluded={excluded} className="w-20 shrink-0 text-right" />
+          <Money value={amount} sign={!!sign || (unsignedDebits && amount > 0)} excluded={excluded} className="w-20 shrink-0 text-right" />
         )}
         {editable && (
           <button
@@ -1590,11 +1623,11 @@ function CombineControl({
 // value or one the user changed — so corrections are visible and trusted.
 function StateTag({ edited }: { edited?: boolean }) {
   return edited ? (
-    <span className="rounded-full bg-[var(--accent)]/15 px-1.5 text-[10px] font-medium text-[var(--accent)]">
+    <span className="rounded-full bg-[var(--accent)]/15 px-1.5 text-[11px] font-medium text-[var(--accent)]">
       edited
     </span>
   ) : (
-    <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">auto</span>
+    <span className="text-[11px] uppercase tracking-wide text-[var(--muted)]">auto</span>
   );
 }
 
@@ -1644,7 +1677,7 @@ function MatchCorrection({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select aria-label="Match rule" value={mode} onChange={(e) => { setMode(e.target.value); save(e.target.value, text, tol); }} className={sel}>
-          <option value="">Auto</option>
+          <option value="">vendor exactly, or its category and amount</option>
           <option value="exact">vendor exactly</option>
           <option value="contains">descriptor contains…</option>
         </select>
@@ -1678,13 +1711,14 @@ function MatchCorrection({
 // (a native select sizes to its widest option, which strands the caret), and
 // the real <select> laid transparently over the label — still native, still
 // keyboard, caret visible. The same pattern the recurrings row uses.
-function CaptionSelect({ label, className = "", children, ...select }: { label: string; className?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+function CaptionSelect({ label, tag, className = "", children, ...select }: { label: string; tag?: ReactNode; className?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <span className={`relative inline-flex max-w-[11rem] items-center gap-0.5 rounded-md py-0.5 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>
       <span className="truncate">{label}</span>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
         <path d="M6 9l6 6 6-6" />
       </svg>
+      {tag && <span className="ml-1 shrink-0">{tag}</span>}
       <select {...select} className="absolute inset-0 w-full cursor-pointer opacity-0">
         {children}
       </select>
@@ -1699,7 +1733,7 @@ function PropertyCard({ label, edited, children }: { label: string; edited?: boo
     <div className="rounded-xl bg-[var(--background)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
       {children}
       <div className="mt-0.5 flex items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{label}</span>
+        <span className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{label}</span>
         {/* Only properties with a detected value carry an auto/edited state. */}
         {edited !== undefined && <StateTag edited={edited} />}
       </div>
@@ -1719,7 +1753,7 @@ function Metric({
   return (
     <div className="rounded-xl bg-[var(--background)] py-2">
       <div className={`text-sm font-semibold tabular-nums ${valueClass ?? ""}`}>{value}</div>
-      <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{label}</div>
     </div>
   );
 }
