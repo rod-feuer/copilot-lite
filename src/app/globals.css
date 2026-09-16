@@ -70,13 +70,19 @@ body {
   .nav-link-active {
     @apply bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent)];
   }
-  /* btn-primary / btn-ghost are used standalone in JSX, so each carries the full
-     base — Tailwind v4 can't @apply one custom component class inside another. */
+  /* Three button tiers (DESIGN.md §2): primary — accent fill, at most one per
+     page; secondary (btn-ghost) — bordered; link (btn-link) — text with an
+     arrow, for navigation only. Destructive: secondary with --bad text, in a
+     shelf. Each class carries its full base — Tailwind v4 can't @apply one
+     custom component class inside another. */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--hover)];
+  }
+  .btn-link {
+    @apply inline-flex items-center gap-1 text-xs font-medium text-[var(--accent)] hover:underline;
   }
 }
 

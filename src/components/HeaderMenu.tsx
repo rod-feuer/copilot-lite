@@ -23,7 +23,7 @@ export function HeaderMenu({ children }: { children: React.ReactNode }) {
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div
             onClick={() => setOpen(false)}
-            className="absolute right-0 z-40 mt-1 flex flex-col items-stretch gap-1 rounded-xl border border-[var(--border)] bg-card p-1 shadow-lg"
+            className="absolute right-0 z-40 mt-1 flex flex-col items-stretch gap-1 rounded-lg border border-[var(--border)] bg-card p-1 shadow-lg"
           >
             {children}
           </div>

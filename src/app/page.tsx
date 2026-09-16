@@ -124,9 +124,9 @@ export default function DashboardPage() {
       title="Dashboard"
       // No subtitle: the month picker already shows the month (it was duplicated
       // as "June 2026" both here and in the picker below).
+      month={<MonthPicker months={months} value={month} onChange={changeMonth} />}
       actions={
         <>
-          <MonthPicker months={months} value={month} onChange={changeMonth} />
           {/* Sync / Import inline on desktop; tucked behind a ⋯ on mobile so these
               rare actions don't crowd the top of a phone screen. */}
           <span className="hidden items-center gap-2 sm:flex">
@@ -518,10 +518,7 @@ function DrillChevron({ className = "" }: { className?: string }) {
 // One consistent "See all →" link for every truncated list on the dashboard.
 function SeeAll({ href }: { href: string }) {
   return (
-    <Link
-      href={href}
-      className="text-xs font-medium text-[var(--accent)] hover:underline"
-    >
+    <Link href={href} className="btn-link">
       See all →
     </Link>
   );
@@ -799,7 +796,7 @@ function UncategorizedResolver({
         {hasMore && (
           <Link
             href={`/transactions?category=none${month ? `&month=${month}` : ""}`}
-            className="ml-auto text-sm font-medium text-[var(--warn)] hover:underline"
+            className="btn-link ml-auto text-[var(--warn)]"
           >
             Review all →
           </Link>

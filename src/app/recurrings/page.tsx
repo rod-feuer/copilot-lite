@@ -263,9 +263,17 @@ export default function RecurringsPage() {
   return (
     <Shell
       title="Recurrings"
+      month={<MonthPicker months={months} value={month} onChange={changeMonth} />}
       actions={
-        // One toolbar for every view control; the rare action (Re-scan) is in
-        // the header's ⋯, not a peer of the month picker.
+        // The rare action (Re-scan) is in the header's ⋯, not a peer of the
+        // month picker.
+        <HeaderMenu>
+          <button className="btn-ghost" disabled={busy} onClick={recompute}>
+            {busy ? "Scanning…" : "Re-scan"}
+          </button>
+        </HeaderMenu>
+      }
+      toolbar={
         <>
           <SearchBox value={q} onChange={setQ} placeholder="Search…" className="w-full sm:w-48" />
           <select
@@ -284,12 +292,6 @@ export default function RecurringsPage() {
               </option>
             ))}
           </select>
-          <MonthPicker months={months} value={month} onChange={changeMonth} />
-          <HeaderMenu>
-            <button className="btn-ghost" disabled={busy} onClick={recompute}>
-              {busy ? "Scanning…" : "Re-scan"}
-            </button>
-          </HeaderMenu>
         </>
       }
     >

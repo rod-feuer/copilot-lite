@@ -573,9 +573,9 @@ export default function TransactionsPage() {
     <Shell
       title="Transactions"
       subtitle={`${totalCount} shown · net ${usd(netTotal, { sign: true })}${isCurrentMonth(month) ? " so far" : ""}`}
+      month={<MonthPicker months={months} value={month} onChange={setMonth} allowAll />}
       actions={
         <>
-          <MonthPicker months={months} value={month} onChange={setMonth} allowAll />
           {/* Import is rare — inline on desktop, behind a ⋯ on mobile so it
               doesn't wear a primary-button costume at the top of a phone. */}
           <span className="hidden sm:inline-flex">
@@ -588,8 +588,8 @@ export default function TransactionsPage() {
           </span>
         </>
       }
-    >
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      toolbar={
+        <>
         {/* On mobile, search owns the row and sort+filter collapse into one
             trailing icon (sm:contents dissolves this wrapper on desktop, where
             the inline +Filter and sort controls return). */}
@@ -739,8 +739,9 @@ export default function TransactionsPage() {
           <option value="amount-asc">Smallest amount</option>
           <option value="merchant-asc">Merchant A–Z</option>
         </select>
-      </div>
-
+        </>
+      }
+    >
       {showQueues && (
         <>
           <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />

@@ -159,11 +159,7 @@ export function CategorizeQueue({ onChange }: { onChange?: () => void }) {
               <span>
                 {needsModel} vendor{needsModel === 1 ? "" : "s"} need a closer look.
               </span>
-              <button
-                onClick={suggestAI}
-                disabled={busy != null}
-                className="font-medium text-[var(--accent)] hover:underline disabled:opacity-50"
-              >
+              <button onClick={suggestAI} disabled={busy != null} className="btn-ghost py-1 text-xs">
                 {busy === "__ai" ? "Asking AI…" : "Suggest with AI"}
               </button>
             </>
