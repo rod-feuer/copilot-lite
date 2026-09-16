@@ -172,7 +172,11 @@ Then sections: a small-caps title above one card of rows.
 where the vendor is. Name in 13/500 with a 12/400 meta line only when it
 varies row to row. Category as a quiet property with a chevron. Amount right,
 tabular, in one of three states: settled (600, foreground), provisional (500,
-muted), overdue (600, warn). No row menu: verbs live in the shelf.
+muted), overdue (600, warn). No row menu: verbs live in the shelf. The one
+written exception: the Transactions row keeps its ⋯ for the charge overlays
+(note, effective date, exclude from totals, split, membership) until the
+charge has a shelf of its own. The cells are shared code (`RowCells.tsx`:
+`CategoryProperty`, `AmountCell`).
 
 **Shelf anatomy** — header (name, descriptor, count and since); at most two
 property cards, each marked auto or edited; one caption line; evidence as a

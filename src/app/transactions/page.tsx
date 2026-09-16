@@ -18,7 +18,7 @@ import { RowMenu, RowMenuItem, RowMenuDivider } from "@/components/RowMenu";
 import { CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
-import { Money } from "@/components/Money";
+import { AmountCell, CategoryProperty } from "@/components/RowCells";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { MonthPicker, ImportButton } from "@/components/Actions";
@@ -1054,69 +1054,6 @@ function MobileSortFilter({
 // carries the icon + color, so repeating the icon here is redundant. The OPEN
 // dropdown keeps icons (they speed up scanning ~27 categories). Lazy options
 // (full list mounted only once active) preserved.
-function CategorySelect({
-  t,
-  cats,
-  active,
-  onActivate,
-  onDeactivate,
-  onChange,
-  variant,
-}: {
-  t: Tx;
-  cats: Cat[];
-  active: boolean;
-  onActivate: () => void;
-  onDeactivate: () => void;
-  onChange: (categoryId: number | null) => void;
-  variant: "pill" | "chip";
-}) {
-  const set = t.categoryId != null;
-  const visibility = variant === "pill" ? "hidden sm:inline-block" : "sm:hidden";
-  const sizing =
-    variant === "pill"
-      ? "max-w-[9rem] py-1 pl-2.5 pr-6 text-xs"
-      : "max-w-[10rem] py-0.5 pl-2 pr-4 text-[11px]";
-  // The pill (desktop) keeps the standard caret; the chip (mobile, on every row)
-  // uses the quieter small caret so the edit affordance stays without the noise.
-  const caretClass = variant === "pill" ? "select-caret" : "select-caret-sm";
-  const tone = set
-    ? `text-[var(--foreground)]${
-        variant === "pill" ? " group-hover:ring-1 group-hover:ring-inset group-hover:ring-[var(--border)]" : ""
-      }`
-    : "border border-dashed border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
-  return (
-    <select
-      value={t.categoryId ?? ""}
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={onActivate}
-      onFocus={onActivate}
-      onBlur={onDeactivate}
-      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-      className={`${visibility} ${caretClass} shrink-0 cursor-pointer appearance-none truncate rounded-full font-medium transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 ${sizing} ${tone}`}
-      // backgroundColor (not the `background` shorthand) so the .select-caret
-      // chevron's background-image isn't reset.
-      style={set ? { backgroundColor: (t.categoryColor ?? "#94a3b8") + "22" } : undefined}
-    >
-      {active ? (
-        <>
-          <option value="">Uncategorized</option>
-          {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.icon} {c.name}
-            </option>
-          ))}
-        </>
-      ) : set ? (
-        // Resting: name only — the row's badge already shows the icon + color.
-        <option value={t.categoryId as number}>{t.categoryName}</option>
-      ) : (
-        <option value="">Uncategorized</option>
-      )}
-    </select>
-  );
-}
-
 // One transaction row, memoized so an edit or keystroke elsewhere in the list
 // doesn't re-render every row. Receives per-row flags (computed by the parent
 // from a single piece of state, e.g. isEditingDate) and stable
@@ -1212,7 +1149,7 @@ const TxRow = memo(function TxRow({
                                 e.stopPropagation();
                                 setEditingDateId(t.id);
                               }}
-                              className="whitespace-nowrap text-sm font-medium hover:underline"
+                              className="whitespace-nowrap text-[13px] font-medium hover:underline"
                             >
                               {longDate(t.effectiveDate ?? t.date)}
                             </button>
@@ -1232,14 +1169,16 @@ const TxRow = memo(function TxRow({
                           the desktop pill is hidden on small screens, and suppressed
                           when the row matches the vendor's category. */}
                       <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
-                        <CategorySelect
-                          variant="chip"
-                          t={t}
+                        <CategoryProperty
+                          categoryId={t.categoryId}
+                          categoryName={t.categoryName}
+                          categoryIcon={t.categoryIcon}
                           cats={cats}
                           active={isCatActive}
                           onActivate={() => setActiveCatSelect(t.id)}
                           onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
                           onChange={(id) => setCategory(t.id, id)}
+                          className="sm:hidden"
                         />
                           {!sameAcct && <span className="whitespace-nowrap">{t.account}</span>}
                           {t.effectiveDate && t.effectiveDate !== t.date && (
@@ -1263,7 +1202,7 @@ const TxRow = memo(function TxRow({
                   ) : (
                     <>
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{t.displayName}</span>
+                    <span className="truncate text-[13px] font-medium">{t.displayName}</span>
                     {/* Passive recurring marker — glanceable state; the toggle
                         lives in the ⋯ menu (so the icon isn't a cryptic control). */}
                     {recState !== "none" && (
@@ -1285,14 +1224,16 @@ const TxRow = memo(function TxRow({
                     {/* Mobile: the category as a compact chip inline in the
                         subtitle (denser than a full-width pill row). Desktop uses
                         the right-side pill above. */}
-                    <CategorySelect
-                      variant="chip"
-                      t={t}
+                    <CategoryProperty
+                      categoryId={t.categoryId}
+                      categoryName={t.categoryName}
+                      categoryIcon={t.categoryIcon}
                       cats={cats}
                       active={isCatActive}
                       onActivate={() => setActiveCatSelect(t.id)}
                       onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
                       onChange={(id) => setCategory(t.id, id)}
+                      className="sm:hidden"
                     />
                     {headed ? (
                       <>
@@ -1408,24 +1349,23 @@ const TxRow = memo(function TxRow({
                     </Tooltip>
                   ) : null}
                 </div>
-                {/* Desktop: the right-side category pill (hidden on mobile, where
-                    the compact chip in the subtitle handles it instead). */}
+                {/* Desktop: the category as a quiet property in its own column
+                    (hidden on a phone, where it sits in the meta line instead). */}
                 {(!modal || !sameCat) && (
-                  <CategorySelect
-                    variant="pill"
-                    t={t}
-                    cats={cats}
-                    active={isCatActive}
-                    onActivate={() => setActiveCatSelect(t.id)}
-                    onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
-                    onChange={(id) => setCategory(t.id, id)}
-                  />
+                  <span className="hidden w-44 shrink-0 justify-end sm:flex">
+                    <CategoryProperty
+                      categoryId={t.categoryId}
+                      categoryName={t.categoryName}
+                      categoryIcon={t.categoryIcon}
+                      cats={cats}
+                      active={isCatActive}
+                      onActivate={() => setActiveCatSelect(t.id)}
+                      onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
+                      onChange={(id) => setCategory(t.id, id)}
+                    />
+                  </span>
                 )}
-                <Money
-                  value={t.amount}
-                  excluded={!!t.excluded || !!t.categoryExcluded}
-                  className="block w-24 text-right text-[15px] font-semibold"
-                />
+                <AmountCell value={t.amount} excluded={!!t.excluded || !!t.categoryExcluded} className="w-24 shrink-0" />
                 <RowActionsMenu
                   recState={recState}
                   hasNote={!!t.note}

@@ -3,7 +3,8 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
-import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
+import { useNewCategory } from "@/components/NewCategoryOption";
+import { AmountCell, CategoryProperty } from "@/components/RowCells";
 import { withoutAmountQualifier, isSeriesKey } from "@/lib/series";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
@@ -631,47 +632,20 @@ function BillList({
                   </Tooltip>
                 )}
               </div>
-              {/* Category as a quiet property: icon + name, no tint; still a
-                  native select with its caret (a visible affordance), editing
-                  in place. Hidden on a phone, where the row opens the shelf. */}
-              {/* The category property: a visible label with its chevron right
-                  beside it (a native select sizes to its widest option, which
-                  stranded the chevron), and the real <select> laid transparently
-                  over the label — still native, still keyboard, caret visible. */}
-              {/* The category property needs ~176px. With the sidebar up, the
-                  content column is only ~330px wide until the lg breakpoint, so
-                  the property waits for lg; below that the shelf carries it. */}
+              {/* The category as a quiet property (a shared cell). It needs
+                  ~176px; with the sidebar up, the content column is only ~330px
+                  wide until the lg breakpoint, so the property waits for lg;
+                  below that the shelf carries it. */}
               <div className="hidden w-44 shrink-0 justify-end lg:flex">
                 {editable && cats && onRecategorize ? (
-                  <span className="group/cat relative inline-flex max-w-full items-center gap-1 rounded-md py-1 pl-1.5 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40">
-                    <span className={`truncate ${r.categoryId == null ? "italic" : ""}`}>
-                      {r.categoryId != null ? `${r.categoryIcon ?? ""} ${r.categoryName ?? ""}`.trim() : "Uncategorized"}
-                    </span>
-                    <svg data-category-caret width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
-                    <select
-                      value={r.categoryId ?? ""}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        if (e.target.value === NEW_CATEGORY) {
-                          newCat.open(e.currentTarget, r, `New category for ${r.displayName}`);
-                          return;
-                        }
-                        onRecategorize(r, e.target.value ? Number(e.target.value) : null);
-                      }}
-                      aria-label="Category"
-                      className="absolute inset-0 w-full cursor-pointer opacity-0"
-                    >
-                      <option value="">Uncategorized</option>
-                      {cats.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.icon} {c.name}
-                        </option>
-                      ))}
-                      <NewCategoryOption />
-                    </select>
-                  </span>
+                  <CategoryProperty
+                    categoryId={r.categoryId}
+                    categoryName={r.categoryName}
+                    categoryIcon={r.categoryIcon}
+                    cats={cats}
+                    onChange={(id) => onRecategorize(r, id)}
+                    onNewCategory={(anchor) => newCat.open(anchor, r, `New category for ${r.displayName}`)}
+                  />
                 ) : (
                   r.categoryName && (
                     <span className="truncate text-xs text-[var(--muted)]">
@@ -685,37 +659,20 @@ function BillList({
               {/* No row menu. Mark ended / Reactivate / Not recurring are rare
                   verbs and live in the shelf — the control surface — which the
                   row opens on click, tap, or Enter. */}
-              {/* The amount says what kind of number it is: a posted charge is
-                  settled (bold, foreground); an expected one is provisional
-                  (medium, muted — the app's qualifier colour); an overdue one
-                  wears the row's amber. A paid row that differed from its
-                  expected shows the difference — the one fact a paid row can
-                  tell you that you didn't already know. */}
               {(() => {
-                const state = r.paid ? "paid" : st === "od" ? "overdue" : "expected";
+                const state = r.paid ? "settled" : st === "od" ? "overdue" : "provisional";
                 const delta =
                   r.paid && r.paidAmount != null && Math.abs(r.paidAmount - r.expectedAmount) >= 0.5
                     ? r.paidAmount - r.expectedAmount
                     : null;
                 return (
-                  <div
-                    data-amount-state={state}
-                    className={`w-32 shrink-0 text-right tabular-nums ${
-                      state === "paid"
-                        ? "font-semibold text-[var(--foreground)]"
-                        : state === "overdue"
-                          ? "font-semibold text-[var(--warn)]"
-                          : "font-medium text-[var(--muted)]"
-                    }`}
-                  >
-                    {delta != null && (
-                      <span className="mr-1.5 text-[10px] font-medium text-[var(--muted)]">
-                        {delta > 0 ? "+" : "−"}
-                        {usd(Math.abs(delta))}
-                      </span>
-                    )}
-                    {usd(amount)}
-                  </div>
+                  <AmountCell
+                    value={amount}
+                    unsigned
+                    state={state}
+                    delta={delta}
+                    className="w-32 shrink-0"
+                  />
                 );
               })()}
             </div>
