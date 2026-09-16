@@ -15,8 +15,8 @@ export function recurringState(t: { recurringId: number | null; recurringExclude
 }
 
 export const RECURRING_LABEL: Record<RecurringState, string> = {
-  in: "Part of a recurring series",
-  out: "Excluded from its recurring series",
+  in: "In a plan",
+  out: "Taken out of its plan",
   none: "Not recurring",
 };
 

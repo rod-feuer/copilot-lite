@@ -5,6 +5,7 @@ import {
   ensureRecurringSettings,
   ensureMerchantLinks,
   ensureRecurringTxExclusions,
+  ensureRecurringTxInclusions,
 } from "./db";
 import type { TransactionWithCategory, Recurring, Category } from "./types";
 import { nameAffinity, LOW_MATCH } from "./similarity";
@@ -426,9 +427,35 @@ export function setTransactionRecurringExcluded(id: number, excluded: boolean) {
     | { hash: string }
     | undefined;
   if (!row) return;
-  if (excluded)
+  if (excluded) {
     db.prepare("INSERT OR IGNORE INTO recurring_tx_exclusions (hash) VALUES (?)").run(row.hash);
-  else db.prepare("DELETE FROM recurring_tx_exclusions WHERE hash = ?").run(row.hash);
+    // Out means out: a charge the user once put in is no longer pinned in.
+    ensureRecurringTxInclusions(db);
+    db.prepare("DELETE FROM recurring_tx_inclusions WHERE hash = ?").run(row.hash);
+  } else db.prepare("DELETE FROM recurring_tx_exclusions WHERE hash = ?").run(row.hash);
+}
+
+// Charges the user put into a plan the detector left out: hash → the plan's
+// series name. Read by detectRecurrings, which adds each to its plan on rebuild.
+export function getRecurringTxInclusions(): Map<string, string> {
+  const db = getDb();
+  ensureRecurringTxInclusions(db);
+  const rows = db.prepare("SELECT hash, plan FROM recurring_tx_inclusions").all() as { hash: string; plan: string }[];
+  return new Map(rows.map((r) => [r.hash, r.plan]));
+}
+
+// Pin a single charge into a plan (or unpin it). Pinning also lifts a one-off
+// flag on the same charge — in means in. Callers re-run detectRecurrings.
+export function setTransactionRecurringIncluded(id: number, plan: string | null) {
+  const db = getDb();
+  ensureRecurringTxInclusions(db);
+  ensureRecurringTxExclusions(db);
+  const row = db.prepare("SELECT hash FROM transactions WHERE id = ?").get(id) as { hash: string } | undefined;
+  if (!row) return;
+  if (plan) {
+    db.prepare("INSERT OR REPLACE INTO recurring_tx_inclusions (hash, plan) VALUES (?, ?)").run(row.hash, plan);
+    db.prepare("DELETE FROM recurring_tx_exclusions WHERE hash = ?").run(row.hash);
+  } else db.prepare("DELETE FROM recurring_tx_inclusions WHERE hash = ?").run(row.hash);
 }
 
 // Clear every per-charge "one-off" exclusion for a merchant. Used when a vendor
@@ -437,8 +464,12 @@ export function setTransactionRecurringExcluded(id: number, excluded: boolean) {
 export function clearRecurringTxExclusionsForMerchant(merchant: string) {
   const db = getDb();
   ensureRecurringTxExclusions(db);
+  ensureRecurringTxInclusions(db);
   db.prepare(
     "DELETE FROM recurring_tx_exclusions WHERE hash IN (SELECT hash FROM transactions WHERE merchant = ?)"
+  ).run(merchant);
+  db.prepare(
+    "DELETE FROM recurring_tx_inclusions WHERE hash IN (SELECT hash FROM transactions WHERE merchant = ?)"
   ).run(merchant);
 }
 
@@ -538,8 +569,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
   const seriesRow =
     series && isSeriesKey(series)
       ? (db
-          .prepare("SELECT id, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
-          .get(series) as { id: number; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
+          .prepare("SELECT id, merchant, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
+          .get(series) as { id: number; merchant: string; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
       : undefined;
   const seriesId = seriesRow?.id ?? null;
   // Scope: the vendor's descriptors, and — for one plan — only its linked charges.
@@ -600,7 +631,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
       `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.merchant, t.amount, t.account, t.excluded,
          COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName,
          t.categoryId, t.recurringId,
-         (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded
+         (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded,
+         (t.hash IN (SELECT hash FROM recurring_tx_inclusions)) AS recurringIncluded
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
        WHERE ${
          seriesId != null
@@ -628,7 +660,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
     categoryName: string | null;
     categoryId: number | null;
     recurringId: number | null;
-    recurringExcluded: 0 | 1; // flagged as a one-off: not part of this vendor's series
+    recurringExcluded: 0 | 1; // the user took it out of its plan
+    recurringIncluded: 0 | 1; // the user put it into a plan the detector left out
   }[];
 
   // Trailing-12-months spend + count (the drawer's box row uses this window).
@@ -677,13 +710,13 @@ export function merchantSummary(merchant: string, series?: string | null) {
     seriesRow ??
     (db
       .prepare(
-        `SELECT id, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings
+        `SELECT id, merchant, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings
          WHERE id IN (SELECT DISTINCT recurringId FROM transactions
                       WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
          ORDER BY lastDate DESC LIMIT 1`
       )
       .get(...variants) as
-      | { id: number; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string }
+      | { id: number; merchant: string; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string }
       | undefined);
   const cat =
     (rec && "categoryId" in rec && rec.categoryId != null
@@ -751,6 +784,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
     merchant,
     series: seriesRow ? (series as string) : null, // the plan this summary is scoped to, if any
     seriesId,
+    planKey: rec?.merchant ?? null, // the plan a charge on this shelf is put into
+
     settingsKey, // where alias / expected / cadence / ended / match live for this shelf
     plans,
     displayName: seriesRow ? (sett?.alias ?? displayMerchant(series as string)) : merchantDisplayName(merchant, settings, links),

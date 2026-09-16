@@ -93,10 +93,15 @@ and §3 carry over unchanged.
   right-side shelf, where its evidence (recent charges, totals, history) is on
   screen — not in a modal, not on a separate page. Drill down via the shelf; keep
   the user on the current page. *(serves: Correct-don't-configure, Anchor)*
-- **Correction vocabulary.** Plain verbs the user owns: **Combine / Separate**
-  (merge or split vendors), **Mark ended / Reactivate** (subscriptions),
-  **not recurring** (never was a pattern), **exclude from totals**. No jargon, no
-  "configure." *(Teach, One-pattern)*
+- **Correction vocabulary.** One noun: a **plan** (a detected recurring bill or
+  deposit; a vendor may carry several). Plain verbs the user owns, and no
+  others: **In plan / Not in plan** (one toggle on a charge; an "edited" tag
+  says the user decided, no tag means the detector did), **Mark ended /
+  Reactivate** (a plan stopped, or is back), **Not recurring** (never was a
+  pattern: drop the plan), **Combine / Separate** (bank names that are one
+  vendor). **Exclude from totals** and **split** are money verbs and live on
+  the Transactions tab; the shelf only shows "not counted". Never "series",
+  "excluded", "not detected" or "configure" in the UI. *(Teach, One-pattern)*
 - **Auto vs. edited is always legible.** A field shows whether it holds the
   system's detected value or one the user set ("Auto · Monthly"; an "edited"
   tag). *(Correct-don't-configure, Honest)*

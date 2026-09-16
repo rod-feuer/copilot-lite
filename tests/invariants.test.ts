@@ -14,6 +14,9 @@ import {
   categoriesWithTotals,
   setRecurringSetting,
   setTransactionRecurringExcluded,
+  setTransactionRecurringIncluded,
+  getRecurringTxExclusions,
+  getRecurringTxInclusions,
   clearRecurringTxExclusionsForMerchant,
   recurringsForMonth,
   setSeriesCategory,
@@ -1698,4 +1701,37 @@ test("detector holds a lone off-price charge off a fixed-price plan's billing da
   assert.equal(member(-353, "2026-08-14"), null, "the off-day charge stays a stray");
   const utility = recs.find((r) => r.merchant === "Vectren Gas");
   assert.equal(utility?.count, gas.length, "a variable bill keeps every charge");
+});
+
+// One toggle on a charge. "Not in plan" → "In plan" puts a charge the detector
+// left out into the plan (the dance academy's Aug 14 $353, off the billing
+// day): it is pinned, survives rebuilds, and counts. "In plan" → "Not in plan"
+// takes it out again and drops the pin — out means out, whichever state the
+// detector would pick. Marking the vendor not recurring clears both marks.
+test("a charge the user put into a plan stays in it across rebuilds until taken out", () => {
+  const kids = addCat("Dance Tuition");
+  const v = "Dance Academy";
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 8; m++) tx(v, { amount: -195, date: `${ym(m)}-04`, categoryId: kids });
+  tx(v, { amount: -832.5, date: "2026-05-29", categoryId: kids }); // the ensemble
+  tx(v, { amount: -65, date: "2026-07-31", categoryId: kids }); // a costume
+  tx(v, { amount: -353, date: "2026-08-14", categoryId: kids, hash: "stray353" });
+  const db = getDb();
+  const stray = () => db.prepare("SELECT id, recurringId FROM transactions WHERE hash = 'stray353'").get() as { id: number; recurringId: number | null };
+  let plan = detectRecurrings().find((r) => r.merchant === v)!;
+  assert.equal(stray().recurringId, null, "off the billing day, the detector leaves it out");
+  assert.equal(plan.count, 8);
+  setTransactionRecurringIncluded(stray().id, v);
+  plan = detectRecurrings().find((r) => r.merchant === v)!;
+  assert.equal(stray().recurringId, plan.id, "put in by the user, it is a member");
+  assert.equal(plan.count, 9, "and it counts");
+  assert.equal(plan.lastDate, "2026-08-14", "the plan's last charge is now the pinned one");
+  setTransactionRecurringExcluded(stray().id, true);
+  plan = detectRecurrings().find((r) => r.merchant === v)!;
+  assert.equal(stray().recurringId, null, "taken out again");
+  assert.equal(getRecurringTxInclusions().has("stray353"), false, "out drops the pin");
+  setTransactionRecurringIncluded(stray().id, v);
+  assert.equal(getRecurringTxExclusions().has("stray353"), false, "in lifts the one-off flag");
+  clearRecurringTxExclusionsForMerchant(v);
+  assert.equal(getRecurringTxInclusions().has("stray353"), false, "not recurring clears the pin too");
 });

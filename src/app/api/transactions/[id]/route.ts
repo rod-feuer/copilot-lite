@@ -3,10 +3,12 @@ import {
   setTransactionCategory,
   setTransactionEffectiveDate,
   setTransactionRecurringExcluded,
+  setTransactionRecurringIncluded,
   setTransactionExcluded,
   setTransactionNote,
 } from "@/lib/queries";
 import { detectRecurrings } from "@/lib/core";
+import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +26,27 @@ export async function PATCH(
     setTransactionRecurringExcluded(Number(id), !!body.recurringExcluded);
     detectRecurrings();
     return NextResponse.json({ ok: true });
+  }
+
+  // Put this single charge into a plan. First just lift any one-off flag and
+  // let the detector decide; if its rules still leave the charge out, pin it
+  // (the "edited" state). `pinned` tells the caller which happened.
+  if ("recurringIncluded" in body) {
+    const plan = body.recurringIncluded == null ? null : String(body.recurringIncluded);
+    if (plan === null) {
+      setTransactionRecurringIncluded(Number(id), null);
+      detectRecurrings();
+      return NextResponse.json({ ok: true, pinned: false });
+    }
+    setTransactionRecurringExcluded(Number(id), false);
+    detectRecurrings();
+    const row = getDb().prepare("SELECT recurringId FROM transactions WHERE id = ?").get(Number(id)) as
+      | { recurringId: number | null }
+      | undefined;
+    if (row?.recurringId != null) return NextResponse.json({ ok: true, pinned: false });
+    setTransactionRecurringIncluded(Number(id), plan);
+    detectRecurrings();
+    return NextResponse.json({ ok: true, pinned: true });
   }
 
   // Exclude/include this single charge from all totals (a manual one-off, the
