@@ -1252,10 +1252,13 @@ function ShelfRow({
             // Quiet when the state is the default (in the series / a recurring
             // vendor) — every row would say it; loud when a charge is out of
             // its plan, which is the state to notice.
+            // Quiet for the default (in the series) and for what the detector
+            // left out on its own (unlinked usage under a plan); amber only for
+            // a charge the user excluded — the one state they chose.
             const tone =
               recurring === "in"
                 ? "border border-[var(--border)] text-[var(--muted)] opacity-60 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
-                : membership.kind === "charge"
+                : recurring === "out" && membership.kind === "charge"
                   ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
                   : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
             return (
