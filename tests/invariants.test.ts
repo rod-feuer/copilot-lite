@@ -1610,3 +1610,31 @@ test("detector joins a renamed descriptor to its vendor only when the merge earn
     "a merge that links no more charges than the descriptors alone does not happen"
   );
 });
+
+// The month view's last-resort match pays a bill only with a charge on its own
+// vendor key. It used to accept any charge of the same category within 5% of
+// the amount: Rosy's $240 cleaning read as paid — "$249, +$9" — by a $249
+// irrigation bill filed under the same home, while Rosy's own charge was still
+// two weeks out. A relabeled descriptor on the same key ("Sp Liquid I.v" billed
+// as "Liquid I.v") still pays.
+test("month view pays a bill only with its own vendor's charge", () => {
+  const home = addCat("Carmel Home Bills");
+  const db = getDb();
+  const ins = db.prepare(
+    `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
+     VALUES (?, ?, ?, 'monthly', ?, ?, 9)`
+  );
+  const last = daysAgo(20);
+  const next = daysFromNow(10);
+  const month = next.slice(0, 7);
+  ins.run("Zelle Payment To Rosy's Cleaning · $240", home, -240, last, next);
+  ins.run("Sp Liquid I.v", home, -52.48, last, next);
+  tx("Barthuly Irrigat", { amount: -249, date: next, categoryId: home });
+  tx("Liquid I.v", { amount: -52.48, date: next, categoryId: home });
+  const rows = recurringsForMonth(month);
+  const rosy = rows.find((r) => r.merchant.startsWith("Zelle Payment To Rosy"));
+  assert.equal(rosy?.paid, false, "another vendor's charge of the same category and amount is not this bill");
+  const liquid = rows.find((r) => r.merchant === "Sp Liquid I.v");
+  assert.equal(liquid?.paid, true, "the same vendor under a relabeled descriptor is");
+  assert.equal(liquid?.paidAmount, 52.48);
+});
