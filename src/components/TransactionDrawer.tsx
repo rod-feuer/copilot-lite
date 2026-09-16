@@ -19,6 +19,7 @@ import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson } from "@/lib/http";
 import { LoadError } from "@/components/LoadState";
+import { InfoHint } from "@/components/InfoHint";
 import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
 import type { MerchantSummary, CategorySummary, MatchRule } from "@/lib/queries";
 import type { Category } from "@/lib/types";
@@ -500,7 +501,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
 // The shelf's heading name, click-to-edit in place (no separate Name field).
 // Typing the underlying bank name clears the override. Commits on Enter/blur,
 // reverts on Escape, and flushes on unmount so closing the shelf mid-edit keeps
-// the change (same teardown guard as ShelfEditField).
+// the change (same teardown guard as the property cards' CommitInput).
 function EditableName({
   value,
   underlying,
@@ -684,6 +685,24 @@ function MerchantBody({
     d?.perCharge ??
     amountHint ??
     (data.recent[0] ? Number(Math.abs(data.recent[0].amount).toFixed(2)) : null);
+  // What varies across the Recent rows, if anything: the descriptor (shown as
+  // the part after the names' shared prefix, so three "Healthy Paws Pet Ins…"
+  // don't all truncate alike), else the category.
+  const rowText = (() => {
+    const descriptors = [...new Set(data.recent.map((r) => r.merchant))];
+    const categories = new Set(data.recent.map((r) => r.categoryName ?? "Uncategorized"));
+    if (descriptors.length > 1) {
+      const words = descriptors.map((m) => m.split(" "));
+      let n = 0;
+      while (words.every((w) => w.length > n + 1 && w[n] === words[0][n])) n++;
+      // Trim only a prefix worth trimming (two words or more); "D J" / "D J*wsj"
+      // read better whole than as "…J" / "…J*wsj".
+      if (n < 2) return (r: { merchant: string }) => r.merchant;
+      return (r: { merchant: string }) => `…${r.merchant.split(" ").slice(n).join(" ")}`;
+    }
+    if (categories.size > 1) return (r: { categoryName: string | null }) => r.categoryName ?? "Uncategorized";
+    return () => undefined;
+  })();
   const boxes = d
     ? [
         { label: "per charge", value: usd(d.perCharge, { cents: false }) },
@@ -777,6 +796,60 @@ function MerchantBody({
         </div>
       )}
 
+      {/* Category is the most-used correction, so it is a property card with
+          the others, not a control at the bottom. A vendor that isn't
+          recurring gets its Expected editor beside it. */}
+      <div className={`grid gap-2 ${d ? "grid-cols-1" : "grid-cols-2"}`}>
+        {!d && (
+          <PropertyCard label="Expected" edited={data.expectedAmount != null}>
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-semibold text-[var(--muted)]">$</span>
+              <CommitInput
+                key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
+                inputMode="decimal"
+                aria-label="Expected amount"
+                onCommit={(v) => {
+                  const t = v.trim();
+                  if (t === "") {
+                    if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                    return;
+                  }
+                  const n = Math.abs(Number(t));
+                  if (!Number.isFinite(n)) return;
+                  if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+                }}
+                className="w-full min-w-0 bg-transparent text-sm font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
+              />
+            </div>
+          </PropertyCard>
+        )}
+        <PropertyCard label="Category">
+          <select
+            value={data.categoryId ?? ""}
+            aria-label="Category"
+            onChange={(e) => {
+              if (e.target.value === NEW_CATEGORY) {
+                newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
+                return;
+              }
+              onRecategorize(e.target.value ? Number(e.target.value) : null);
+            }}
+            className="select-caret w-full cursor-pointer appearance-none bg-transparent pr-6 text-sm font-semibold focus:outline-none"
+          >
+            <option value="">Uncategorized</option>
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.icon} {c.name}
+              </option>
+            ))}
+            <NewCategoryOption />
+          </select>
+          {newCat.popover}
+        </PropertyCard>
+      </div>
+
       {data.priceChange && (
         <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
           {data.priceChange.to > data.priceChange.from ? "↑" : "↓"} price changed{" "}
@@ -792,15 +865,16 @@ function MerchantBody({
         {/* Each charge carries a labelled membership pill — "In series",
             "Excluded", "Unlinked" — that toggles it in or out of this plan (a
             device purchase under "Apple" is not the subscription). No menu:
-            recategorizing a single charge is the Transactions tab's job. */}
+            recategorizing a single charge is the Transactions tab's job.
+            The text slot shows only what VARIES across these rows — the
+            descriptor a charge posted under, else its category — and nothing
+            when every row would say the same thing. */}
         <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
           {data.recent.map((r) => (
             <ShelfRow
               key={r.id}
               date={r.date}
-              // A vendor with several descriptors: the row says which one this
-              // charge posted under (that varies); otherwise its category.
-              name={data.nameVariants > 1 ? r.merchant : r.categoryName ?? "Uncategorized"}
+              name={rowText(r)}
               amount={r.amount}
               muted={r.excluded === 1}
               excluded={!!r.excluded || !!r.categoryExcluded}
@@ -840,63 +914,23 @@ function MerchantBody({
           you reach for occasionally, not every visit. */}
       <div className="border-t border-[var(--border)]" />
 
-      <div className="flex flex-col gap-2.5">
-        <div className="flex flex-wrap gap-x-3 gap-y-2.5">
-          {!d && (
-            <div className="min-w-[140px] flex-1">
-              <ShelfEditField
-                label="Expected"
-                hint="Amount used for upcoming bills; past charges are unchanged."
-                edited={data.expectedAmount != null}
-                prefix="$"
-                inputMode="decimal"
-                defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
-                placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
-                onCommit={(v) => {
-                  const t = v.trim();
-                  if (t === "") {
-                    if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
-                    return;
-                  }
-                  const n = Math.abs(Number(t));
-                  if (!Number.isFinite(n)) return; // ignore non-numeric input
-                  if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
-                }}
-              />
-            </div>
-          )}
-          <div className="min-w-[140px] flex-1">
-            <div className="flex flex-col gap-1.5">
-              <label className="stat-label">Category</label>
-              <select
-                value={data.categoryId ?? ""}
-                aria-label="Category"
-                onChange={(e) => {
-                  if (e.target.value === NEW_CATEGORY) {
-                    newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
-                    return;
-                  }
-                  onRecategorize(e.target.value ? Number(e.target.value) : null);
-                }}
-                className="btn-ghost select-caret w-full cursor-pointer appearance-none pr-8 text-sm"
-              >
-                <option value="">Uncategorized</option>
-                {cats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.icon} {c.name}
-                  </option>
-                ))}
-                <NewCategoryOption />
-              </select>
-              {newCat.popover}
-            </div>
-          </div>
-        </div>
-
-        {data.recurring && (
+      <div className="flex flex-col gap-3">
+        {/* One labelled row for the rare control, with Reset on its line. */}
+        {data.recurring ? (
           <MatchCorrection
             key={JSON.stringify(data.matchRule)}
             rule={data.matchRule}
+            trailing={
+              data.hasSettings && (
+                <button
+                  type="button"
+                  onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
+                  className="text-xs text-[var(--muted)] hover:text-rose-500"
+                >
+                  Reset all overrides
+                </button>
+              )
+            }
             onSave={(r) =>
               onSaveSettings(
                 r
@@ -906,70 +940,56 @@ function MerchantBody({
               )
             }
           />
-        )}
-        {data.hasSettings && (
-          <button
-            type="button"
-            onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
-            className="self-start text-xs text-[var(--muted)] hover:text-rose-500"
-          >
-            Reset all overrides
-          </button>
+        ) : (
+          data.hasSettings && (
+            <button
+              type="button"
+              onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
+              className="self-start text-xs text-[var(--muted)] hover:text-rose-500"
+            >
+              Reset all overrides
+            </button>
+          )
         )}
 
-        {/* Two secondary actions, compact and side-by-side. Combine is a
-            disclosure — its panel drops below the row only while in use. */}
+        {data.recurring && data.ended && (
+          <Tooltip
+            label="Marked ended — no longer counts as upcoming or expected"
+            onlyIfTruncated={false}
+            className="inline-flex self-start rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+          >
+            Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
+          </Tooltip>
+        )}
+        {/* One actions row, one style: the §2 verbs. Combine is a disclosure —
+            its panel drops below the row only while in use. */}
         <div className="flex gap-2">
           <button onClick={onToggleRecurring} className="btn-ghost flex-1 text-xs">
-            {data.recurring ? "↻ Not recurring" : "↻ Make recurring"}
+            {data.recurring ? "Not recurring" : "Make recurring"}
           </button>
+          {data.recurring &&
+            (data.ended ? (
+              <button
+                onClick={() => onSaveSettings({ endedDate: null }, "Reactivated")}
+                className="btn-ghost flex-1 text-xs"
+              >
+                Reactivate
+              </button>
+            ) : (
+              <button
+                onClick={() => onSaveSettings({ endedDate: new Date().toISOString().slice(0, 10) }, "Marked ended")}
+                className="btn-ghost flex-1 text-xs"
+              >
+                Mark as ended
+              </button>
+            ))}
           <button
             onClick={() => setCombining((v) => !v)}
             className={`btn-ghost flex-1 text-xs ${combining ? "text-[var(--accent)]" : ""}`}
           >
-            ＋ Combine
+            Combine
           </button>
         </div>
-
-        {data.recurring && (
-          <div className="flex items-center justify-between px-0.5 text-xs">
-            {data.ended ? (
-              <>
-                <Tooltip
-                  label="Marked ended — no longer counts as upcoming or expected"
-                  onlyIfTruncated={false}
-                  className="inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
-                >
-                  Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
-                </Tooltip>
-                <button
-                  onClick={() => onSaveSettings({ endedDate: null }, "Reactivated")}
-                  className="text-[var(--accent)] hover:underline"
-                >
-                  Reactivate
-                </button>
-              </>
-            ) : (
-              <Tooltip
-                label="Mark this subscription as ended/canceled — keeps history, stops counting as upcoming"
-                onlyIfTruncated={false}
-                className="inline-flex"
-              >
-                <button
-                  onClick={() =>
-                    onSaveSettings(
-                      { endedDate: new Date().toISOString().slice(0, 10) },
-                      "Marked ended"
-                    )
-                  }
-                  className="text-[var(--muted)] hover:text-[var(--foreground)] hover:underline"
-                >
-                  Mark as ended
-                </button>
-              </Tooltip>
-            )}
-          </div>
-        )}
         {combining && (
           <CombineControl
             current={{
@@ -1173,7 +1193,7 @@ function ShelfRow({
   membership,
 }: {
   date: string;
-  name: string;
+  name?: string; // omitted when every row in the list would say the same thing
   amount: number;
   sign?: boolean;
   muted?: boolean;
@@ -1207,12 +1227,14 @@ function ShelfRow({
             <span className="w-3.5 shrink-0" aria-hidden />
           ) : null}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
-          <Tooltip
-            label={name}
-            className={`truncate font-medium ${muted ? "text-[var(--muted)]" : ""}`}
-          >
-            {name}
-          </Tooltip>
+          {name && (
+            <Tooltip
+              label={name}
+              className={`truncate font-medium ${muted ? "text-[var(--muted)]" : ""}`}
+            >
+              {name}
+            </Tooltip>
+          )}
         </span>
         {membership &&
           // A labelled state that toggles, beside the amount: auto width, so
@@ -1560,7 +1582,15 @@ const CADENCE_LABELS: Record<string, string> = {
 // so the mode is held locally and saved only once the rule is whole: Auto and
 // "exact" save at once; "contains" saves when its text is entered. The parent
 // remounts this on every server change (key), so local state never goes stale.
-function MatchCorrection({ rule, onSave }: { rule: MatchRule | null; onSave: (rule: MatchRule | null) => void }) {
+function MatchCorrection({
+  rule,
+  onSave,
+  trailing,
+}: {
+  rule: MatchRule | null;
+  onSave: (rule: MatchRule | null) => void;
+  trailing?: ReactNode; // e.g. "Reset all overrides", on the label line
+}) {
   const [mode, setMode] = useState<string>(rule?.matchMode ?? "");
   const [text, setText] = useState(rule?.matchText ?? "");
   const [tol, setTol] = useState(rule ? (rule.amountTolerance == null ? "any" : String(rule.amountTolerance)) : "0.05");
@@ -1576,9 +1606,8 @@ function MatchCorrection({ rule, onSave }: { rule: MatchRule | null; onSave: (ru
       <div className="flex items-center gap-2">
         <label className="stat-label">Match</label>
         <StateTag edited={rule != null} />
-      </div>
-      <div className="text-[11px] text-[var(--muted)]">
-        How a charge is recognised as this bill. Auto: the vendor exactly, or its category and amount.
+        <InfoHint text="How a charge is recognised as this bill. Auto: the vendor exactly, or its category and amount. A rule widens or narrows that." />
+        {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select aria-label="Match rule" value={mode} onChange={(e) => { setMode(e.target.value); save(e.target.value, text, tol); }} className={sel}>
@@ -1611,52 +1640,6 @@ function MatchCorrection({ rule, onSave }: { rule: MatchRule | null; onSave: (ru
 }
 
 
-// A labeled, self-evidently editable field for the merchant shelf. Uncontrolled:
-// Enter or blur commits, Escape reverts. Keyed on defaultValue so a refreshed
-// value (after a save elsewhere) reseeds the input. Crucially, a pending edit is
-// also flushed on unmount — closing the shelf (click-outside, Esc, ✕, switching
-// vendor) tears the field down before blur fires, so without this the typed
-// value would be silently dropped and the list never updates.
-function ShelfEditField({
-  label,
-  defaultValue,
-  placeholder,
-  prefix,
-  inputMode,
-  hint,
-  edited,
-  onCommit,
-}: {
-  label: string;
-  defaultValue: string;
-  placeholder?: string;
-  prefix?: string;
-  inputMode?: "decimal";
-  hint?: string;
-  edited?: boolean;
-  onCommit: (value: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <label className="stat-label">{label}</label>
-        <StateTag edited={edited} />
-      </div>
-      <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
-        {prefix && <span className="shrink-0 text-sm text-[var(--muted)]">{prefix}</span>}
-        <CommitInput
-          key={defaultValue}
-          defaultValue={defaultValue}
-          placeholder={placeholder}
-          inputMode={inputMode}
-          onCommit={onCommit}
-          className="w-full bg-transparent text-sm focus:outline-none"
-        />
-      </div>
-      {hint && <span className="text-[10px] text-[var(--muted)]">{hint}</span>}
-    </div>
-  );
-}
 
 // A stat that is its own editor: the value on top, the label and its
 // auto/edited state beneath, in the same box the read-only metrics use.
@@ -1666,7 +1649,8 @@ function PropertyCard({ label, edited, children }: { label: string; edited?: boo
       {children}
       <div className="mt-0.5 flex items-center gap-1.5">
         <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{label}</span>
-        <StateTag edited={edited} />
+        {/* Only properties with a detected value carry an auto/edited state. */}
+        {edited !== undefined && <StateTag edited={edited} />}
       </div>
     </div>
   );
