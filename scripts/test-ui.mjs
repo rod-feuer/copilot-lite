@@ -79,7 +79,7 @@ async function loadFixture() {
     [day(-1, 3), "Netflix", "-15.49", "Credit"],
     [day(0, 3), "Netflix", "-15.49", "Credit"],
     // A subscription with no charge yet this month, so the recurrings page has
-    // an Upcoming (or Overdue) section with a title, not only "Paid this month".
+    // an upcoming (or overdue) row, not only paid ones.
     [day(-3, 28), "Spotify", "-9.99", "Credit"],
     [day(-2, 28), "Spotify", "-9.99", "Credit"],
     [day(-1, 28), "Spotify", "-9.99", "Credit"],
@@ -527,8 +527,9 @@ async function recurringsRow(browser) {
         leadingGlyphs: rows.filter((li) => li.querySelector("[data-category-badge]")).length,
         gutterSameEdge: (() => { const t = document.querySelector("h1"); const d = rows[0] && rows[0].children[0]; return t && d ? Math.abs(x(t) - x(d)) : null; })(),
         cardInset: (() => { const li = rows[0]; const card = li && li.closest(".card"); return li && card ? Math.round(li.children[0].getBoundingClientRect().left - card.getBoundingClientRect().left) : null; })(),
-        totalOnAmountsColumn: (() => { const sec = document.querySelector("[data-bill-section] h3"); if (!sec) return null; const total = sec.parentElement.lastElementChild; const amount = sec.closest("[data-bill-section]").querySelector("[data-drawer-row]")?.lastElementChild; return total && amount ? Math.abs(Math.round(total.getBoundingClientRect().right - amount.getBoundingClientRect().right)) : null; })(),
-        titleAbove: (() => { const sec = document.querySelector("[data-bill-section] h3"); const card = sec && sec.closest("[data-bill-section]").querySelector(".card"); return sec && card ? sec.getBoundingClientRect().bottom <= card.getBoundingClientRect().top : null; })(),
+        // One list in date order with a Today divider: nothing overdue below
+        // it, nothing upcoming above it.
+        order: (() => { const list = document.querySelector("[data-bill-list]"); if (!list) return null; const items = [...list.querySelectorAll("[data-drawer-row], [data-bill-anchor='up']")]; const dues = items.filter((e) => e.hasAttribute("data-due")).map((e) => e.getAttribute("data-due")); const div = items.findIndex((e) => e.hasAttribute("data-bill-anchor")); const st = (e) => e.getAttribute("data-bill-status"); return { sorted: dues.every((d, i) => i === 0 || dues[i - 1] <= d), divider: div >= 0, odBelow: div >= 0 && items.slice(div + 1).some((e) => st(e) === "od"), upAbove: div >= 0 && items.slice(0, div).some((e) => st(e) === "up"), lists: document.querySelectorAll("[data-bill-list]").length, sections: document.querySelectorAll("[data-bill-section]").length }; })(),
         bar: (() => { const b = document.querySelector("[data-summary] [role='progressbar']"); return !!b && /%/.test(b.getAttribute("aria-label") || "") && b.getAttribute("aria-valuenow") !== null; })(),
         summary: !!document.querySelector("[data-summary] .stat-label") && [...document.querySelectorAll("[data-summary] .stat-label")].some((l) => /paid/i.test(l.textContent)) && /overdue/i.test(document.querySelector("[data-summary]").textContent),
       };
@@ -551,8 +552,7 @@ async function recurringsRow(browser) {
     record("recurrings row", "no name truncated at 1280px", r.truncated === 0, `${r.truncated} of ${r.names}`);
     record("recurrings row", "date and name columns share one x each", r.dateXs.length === 1 && r.nameXs.length === 1, `date x=${r.dateXs.join("/")}, name x=${r.nameXs.join("/")}`);
     record("recurrings row", "rows sit in section cards, text inset by the card's border + 16px padding", r.cardInset === 17, `inset ${r.cardInset}px`);
-    record("recurrings row", "section title sits above its card, not inside it", r.titleAbove === true, r.titleAbove === null ? "no titled section" : `above=${r.titleAbove}`);
-    record("recurrings row", "section total sits on the amounts column", r.totalOnAmountsColumn !== null && r.totalOnAmountsColumn <= 1, r.totalOnAmountsColumn === null ? "no titled section" : `Δ ${r.totalOnAmountsColumn}px`);
+    record("recurrings row", "one list in date order; the Today divider has nothing overdue below it or upcoming above it", !!r.order && r.order.sorted && r.order.sections === 0 && !r.order.odBelow && !r.order.upAbove, r.order ? `sorted=${r.order.sorted}, divider=${r.order.divider}, sections=${r.order.sections}` : "no list");
     record("recurrings row", "summary card shows paid, left to pay, and the status line", r.summary, r.summary ? "present" : "missing");
     record("recurrings row", "summary bar is a labelled progressbar", r.bar, r.bar ? "role + label + value" : "missing");
     // Escape in steps: the first closes the shelf and leaves the row focused
@@ -583,7 +583,7 @@ async function recurringsRow(browser) {
       await page.keyboard.press("Escape");
     }
     // The vendor shelf's Recent rows carry a labelled membership pill: "In
-    // series" toggles the charge out ("Excluded") and back — no menu.
+    // series" toggles the charge out ("Left out") and back — no menu.
     {
       await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
       await page.waitForSelector("[data-drawer-row]");
@@ -599,7 +599,7 @@ async function recurringsRow(browser) {
       await page.click("[data-shelf] button[data-membership]"); await new Promise((r) => setTimeout(r, 1200));
       await page.waitForSelector("[data-shelf] button[data-membership]");
       const t3 = await pillText();
-      record("shelf", "Recent rows: a labelled membership pill toggles a charge out and back; no row menu", menus === 0 && t1 === "In series" && t2 === "Excluded" && t3 === "In series", `menus ${menus}; ${t1} → ${t2} → ${t3}`);
+      record("shelf", "Recent rows: a labelled membership pill toggles a charge out and back; no row menu", menus === 0 && t1 === "In series" && t2 === "Left out" && t3 === "In series", `menus ${menus}; ${t1} → ${t2} → ${t3}`);
       record("shelf", "toggling a pill re-reads without blanking the shelf", !flashed, flashed ? "skeleton flashed" : "no skeleton");
       await page.keyboard.press("Escape");
     }
@@ -643,15 +643,16 @@ async function recurringsRow(browser) {
     }
     // A count in the status line jumps to its section.
     {
-      const before = await page.evaluate(() => document.querySelector("[data-bill-section='up']")?.getBoundingClientRect().top ?? null);
+      const target = "[data-bill-anchor='up'], [data-bill-status='up']";
+      const before = await page.evaluate((q) => document.querySelector(q)?.getBoundingClientRect().top ?? null, target);
       await page.evaluate(() => window.scrollTo(0, 0));
       const clicked = await page.$("[data-section-link='up']");
       if (clicked) { await clicked.click(); await new Promise((r) => setTimeout(r, 700)); }
       // On a page shorter than the viewport nothing can scroll; the section must
       // simply be in view. On a taller page it must land near the top.
-      const after = await page.evaluate(() => { const el = document.querySelector("[data-bill-section='up']"); const top = el ? el.getBoundingClientRect().top : null; return { top, scrollable: document.documentElement.scrollHeight > window.innerHeight + 10, vh: window.innerHeight }; });
+      const after = await page.evaluate((q) => { const el = document.querySelector(q); const top = el ? el.getBoundingClientRect().top : null; return { top, scrollable: document.documentElement.scrollHeight > window.innerHeight + 10, vh: window.innerHeight }; }, target);
       const ok = !!clicked && after.top !== null && after.top >= -2 && (after.scrollable ? after.top <= 120 : after.top <= after.vh);
-      record("recurrings row", "'N upcoming' in the summary scrolls to the Upcoming section", ok, clicked ? `section top ${before}px → ${after.top}px${after.scrollable ? "" : " (page fits the viewport)"}` : "no link");
+      record("recurrings row", "'N upcoming' in the summary scrolls to the Today divider (or the first upcoming row)", ok, clicked ? `target top ${before}px → ${after.top}px${after.scrollable ? "" : " (page fits the viewport)"}` : "no link");
     }
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);
