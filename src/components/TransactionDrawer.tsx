@@ -798,7 +798,9 @@ function MerchantBody({
             <ShelfRow
               key={r.id}
               date={r.date}
-              name={r.categoryName ?? "Uncategorized"}
+              // A vendor with several descriptors: the row says which one this
+              // charge posted under (that varies); otherwise its category.
+              name={data.nameVariants > 1 ? r.merchant : r.categoryName ?? "Uncategorized"}
               amount={r.amount}
               muted={r.excluded === 1}
               excluded={!!r.excluded || !!r.categoryExcluded}
@@ -1225,10 +1227,15 @@ function ShelfRow({
               membership.kind === "charge"
                 ? recurring === "out" ? "Add this charge back to the series" : "Not part of this recurring"
                 : recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring";
+            // Quiet when the state is the default (in the series / a recurring
+            // vendor) — every row would say it; loud when a charge is out of
+            // its plan, which is the state to notice.
             const tone =
-              recurring === "in" && !muted
-                ? "bg-[var(--accent)]/12 text-[var(--accent)] hover:bg-[var(--accent)]/20"
-                : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+              recurring === "in"
+                ? "border border-[var(--border)] text-[var(--muted)] opacity-60 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+                : membership.kind === "charge"
+                  ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
+                  : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
             return (
               <button
                 type="button"
