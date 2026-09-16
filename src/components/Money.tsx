@@ -21,7 +21,7 @@ export function Money({
 }) {
   const inflow = value >= 0 && !excluded;
   return (
-    <span className={`tabular-nums ${inflow ? "text-emerald-600" : "text-[var(--foreground)]"} ${className}`.trim()}>
+    <span className={`tabular-nums ${inflow ? "text-[var(--good)]" : "text-[var(--foreground)]"} ${className}`.trim()}>
       {usd(value, { sign, cents })}
     </span>
   );

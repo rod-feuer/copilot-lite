@@ -544,9 +544,9 @@ function Stat({
 }) {
   const valueColor =
     tone === "pos"
-      ? "text-emerald-600"
+      ? "text-[var(--good)]"
       : tone === "neg"
-        ? "text-rose-600"
+        ? "text-[var(--bad)]"
         : "text-[var(--foreground)]";
   const inner = (
     <>
@@ -608,12 +608,12 @@ function buildVerdict(
 function Verdict({ data, isCurrentMonth }: { data: Dash; isCurrentMonth: boolean }) {
   const v = buildVerdict(data, isCurrentMonth);
   const dot =
-    v.tone === "good" ? "bg-emerald-500" : v.tone === "bad" ? "bg-rose-500" : "bg-[var(--muted)]";
+    v.tone === "good" ? "bg-[var(--good)]" : v.tone === "bad" ? "bg-[var(--bad)]" : "bg-[var(--muted)]";
   const text =
     v.tone === "good"
-      ? "text-emerald-600"
+      ? "text-[var(--good)]"
       : v.tone === "bad"
-        ? "text-rose-600"
+        ? "text-[var(--bad)]"
         : "text-[var(--muted)]";
   return (
     <div className="flex items-center gap-2.5">
@@ -674,7 +674,7 @@ function DeltaLine({
   return (
     <div
       className={`mt-1 flex items-center gap-1 text-xs font-medium ${
-        favorable ? "text-emerald-600" : "text-rose-600"
+        favorable ? "text-[var(--good)]" : "text-[var(--bad)]"
       }`}
     >
       <span>{up ? "▲" : "▼"}</span>
@@ -711,7 +711,7 @@ function PaceDelta({
   return (
     <span
       className={`flex items-center gap-1 text-xs font-medium ${
-        under ? "text-emerald-600" : "text-rose-600"
+        under ? "text-[var(--good)]" : "text-[var(--bad)]"
       }`}
     >
       <span>{under ? "▼" : "▲"}</span>
@@ -789,17 +789,17 @@ function UncategorizedResolver({
   }
 
   return (
-    <div className="card border-amber-500/30 bg-amber-500/10 p-4">
+    <div className="card border-[var(--warn)]/30 bg-[var(--warn)]/10 p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className="text-base">⚠️</span>
-        <span className="text-sm font-medium text-amber-600">
+        <span className="text-sm font-medium text-[var(--warn)]">
           {count} transaction{count === 1 ? "" : "s"} need{count === 1 ? "s" : ""} a category this
           month
         </span>
         {hasMore && (
           <Link
             href={`/transactions?category=none${month ? `&month=${month}` : ""}`}
-            className="ml-auto text-sm font-medium text-amber-600 hover:underline"
+            className="ml-auto text-sm font-medium text-[var(--warn)] hover:underline"
           >
             Review all →
           </Link>
@@ -809,7 +809,7 @@ function UncategorizedResolver({
         {rows.map((t) => (
           <li
             key={t.id}
-            className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-[var(--card)] p-2.5"
+            className="flex items-center gap-3 rounded-xl border border-[var(--warn)]/20 bg-[var(--card)] p-2.5"
           >
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{t.displayName}</div>
@@ -890,7 +890,7 @@ function CategoryBars({
                     per-row readout, not a column to scan. Spent's left edge goes
                     ragged, but that's hidden in the gap after the category name. */}
                 <span className="whitespace-nowrap text-right tabular-nums">
-                  <span className={over ? "font-semibold text-rose-600" : "font-medium"}>
+                  <span className={over ? "font-semibold text-[var(--bad)]" : "font-medium"}>
                     {fmt(r.total)}
                   </span>
                   {r.budget != null && (
@@ -986,7 +986,7 @@ function BudgetSummary({
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium">Budgeted spend</span>
         <span>
-          <span className={overNow ? "font-semibold text-rose-600" : "font-semibold"}>
+          <span className={overNow ? "font-semibold text-[var(--bad)]" : "font-semibold"}>
             {usd(budget.spent, { cents: false })}
           </span>
           <span className="text-[var(--muted)]"> of {usd(budget.total, { cents: false })}</span>
@@ -1006,7 +1006,7 @@ function BudgetSummary({
         {budget.projected != null && projDelta != null ? (
           <>
             {" · "}projected {usd(budget.projected, { cents: false })}{" "}
-            <span className={projDelta > 0 ? "text-rose-600" : "text-emerald-600"}>
+            <span className={projDelta > 0 ? "text-[var(--bad)]" : "text-[var(--good)]"}>
               ({projDelta >= 0 ? "over" : "under"} by{" "}
               {usd(Math.abs(projDelta), { cents: false })})
             </span>

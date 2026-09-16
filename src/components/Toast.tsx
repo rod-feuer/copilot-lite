@@ -19,8 +19,8 @@ export const useToast = () => useContext(ToastCtx);
 
 let nextId = 1;
 const DOT: Record<ToastType, string> = {
-  success: "bg-emerald-500",
-  error: "bg-rose-500",
+  success: "bg-[var(--good)]",
+  error: "bg-[var(--bad)]",
   info: "bg-[var(--accent)]",
 };
 

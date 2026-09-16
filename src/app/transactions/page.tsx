@@ -1242,7 +1242,7 @@ const TxRow = memo(function TxRow({
                         />
                           {!sameAcct && <span className="whitespace-nowrap">{t.account}</span>}
                           {t.effectiveDate && t.effectiveDate !== t.date && (
-                            <span className="text-amber-600">
+                            <span className="text-[var(--warn)]">
                               {!sameAcct ? "· " : ""}posted {shortDate(t.date)}
                               <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
                                 <button
@@ -1299,7 +1299,7 @@ const TxRow = memo(function TxRow({
                             sheet); the date is already in the day-group header. */}
                         <span className="hidden whitespace-nowrap sm:inline">{t.account}</span>
                         {t.effectiveDate && t.effectiveDate !== t.date && (
-                          <span className="text-amber-600">
+                          <span className="text-[var(--warn)]">
                             · posted {shortDate(t.date)}
                             <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
                               <button
@@ -1355,7 +1355,7 @@ const TxRow = memo(function TxRow({
                           </Tooltip>
                         )}
                         {t.effectiveDate && t.effectiveDate !== t.date && (
-                          <span className="text-amber-600">
+                          <span className="text-[var(--warn)]">
                             · posted {shortDate(t.date)}
                             <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
                               <button
@@ -1562,7 +1562,7 @@ function SplitDialog({
           >
             + Add part
           </button>
-          <span className={Math.abs(remaining) > 0.01 ? "text-amber-600 tabular-nums" : "text-[var(--muted)] tabular-nums"}>
+          <span className={Math.abs(remaining) > 0.01 ? "text-[var(--warn)] tabular-nums" : "text-[var(--muted)] tabular-nums"}>
             {remaining === 0 ? "balanced" : `${usd(remaining)} left`}
           </span>
         </div>

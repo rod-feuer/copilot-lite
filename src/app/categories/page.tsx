@@ -35,7 +35,6 @@ export default function CategoriesPage() {
   // Attention filter, driven by clicking the summary counts: narrow the expense
   // list to the categories that need action (over budget / not yet budgeted).
   const [filter, setFilter] = useState<"over" | "unbudgeted" | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const toast = useToast();
 
   // "loading" until the first read lands; a failed read is "error", never the
@@ -77,32 +76,6 @@ export default function CategoriesPage() {
     load(m);
   }
 
-  // Two-step delete (no native confirm): first click arms it for 3s, second
-  // click within that window actually deletes, then a toast confirms.
-  async function remove(c: Cat) {
-    if (confirmingDelete !== c.id) {
-      setConfirmingDelete(c.id);
-      setTimeout(
-        () => setConfirmingDelete((cur) => (cur === c.id ? null : cur)),
-        3000
-      );
-      return;
-    }
-    setConfirmingDelete(null);
-    const res = await fetch(`/api/categories/${c.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      toast(`Couldn't delete "${c.name}" — please try again`, "error");
-      return;
-    }
-    toast(
-      `Deleted "${c.name}" · ${c.txCount} transaction${
-        c.txCount === 1 ? "" : "s"
-      } now uncategorized`,
-      "success"
-    );
-    load(month);
-  }
-
   async function saveBudget(
     id: number,
     amount: number | null,
@@ -111,14 +84,6 @@ export default function CategoriesPage() {
     await mutate(
       () => patchJson(`/api/categories/${id}`, { budget: amount, period }),
       { error: "Couldn't save budget — please try again" },
-      { refresh: "always" }
-    );
-  }
-
-  async function toggleExclude(id: number, excludeFromTotals: boolean) {
-    await mutate(
-      () => patchJson(`/api/categories/${id}`, { excludeFromTotals }),
-      { error: "Couldn't update category — please try again" },
       { refresh: "always" }
     );
   }
@@ -237,13 +202,10 @@ export default function CategoriesPage() {
         title={filter === "over" ? "Over budget" : filter === "unbudgeted" ? "Not budgeted" : "Expenses"}
         month={month}
         cats={shownExpense}
-        onDelete={remove}
         onBudget={saveBudget}
-        onToggleExclude={toggleExclude}
         onEditAppearance={saveAppearance}
         onRename={saveName}
         onChange={() => load(month)}
-        confirmingId={confirmingDelete}
       />
       {/* While an attention filter is active, hide unrelated sections to focus. */}
       {!filter && income.length > 0 && (
@@ -252,11 +214,9 @@ export default function CategoriesPage() {
             title="Income"
             month={month}
             cats={income}
-            onDelete={remove}
             onEditAppearance={saveAppearance}
             onRename={saveName}
             onChange={() => load(month)}
-            confirmingId={confirmingDelete}
           />
         </div>
       )}
@@ -267,12 +227,9 @@ export default function CategoriesPage() {
             hint="Not counted toward income or expenses — e.g. transfers, credit-card payments, reimbursements."
             month={month}
             cats={excluded}
-            onDelete={remove}
-            onToggleExclude={toggleExclude}
             onEditAppearance={saveAppearance}
             onRename={saveName}
             onChange={() => load(month)}
-            confirmingId={confirmingDelete}
           />
         </div>
       )}
@@ -361,7 +318,7 @@ function BudgetSummary({
             <Tooltip label="Show the categories over budget" onlyIfTruncated={false}>
               <button
                 onClick={() => onFilter("over")}
-                className={`font-medium text-rose-600 hover:underline ${filter === "over" ? "underline" : ""}`}
+                className={`font-medium text-[var(--bad)] hover:underline ${filter === "over" ? "underline" : ""}`}
               >
                 {overLabel}
               </button>
@@ -407,21 +364,16 @@ function Group({
   hint,
   month,
   cats,
-  onDelete,
   onBudget,
-  onToggleExclude,
   onEditAppearance,
   onRename,
   onChange,
-  confirmingId,
 }: {
   title: string;
   hint?: string;
   month: string;
   cats: Cat[];
-  onDelete: (c: Cat) => void;
   onBudget?: (id: number, amount: number | null, period: "monthly" | "annual") => void;
-  onToggleExclude?: (id: number, exclude: boolean) => void;
   onEditAppearance?: (
     id: number,
     patch: { icon?: string; color?: string; kind?: "expense" | "income" }
@@ -430,7 +382,6 @@ function Group({
   // Reload the list when a transaction is edited inside the category shelf, so
   // totals/budgets update in place instead of needing a manual refresh.
   onChange?: () => void;
-  confirmingId?: number | null;
 }) {
   const openCategory = useCategoryShelf();
   return (
@@ -493,9 +444,9 @@ function Group({
                     <span
                       className={`font-semibold tabular-nums ${
                         over
-                          ? "text-rose-600"
+                          ? "text-[var(--bad)]"
                           : atRisk
-                          ? "text-amber-600"
+                          ? "text-[var(--warn)]"
                           : c.excludeFromTotals
                           ? "text-[var(--muted)] line-through"
                           : ""
@@ -550,40 +501,22 @@ function Group({
                   </div>
                 )}
 
-                <div className="mt-1 flex items-center justify-between gap-2 text-xs text-[var(--muted)]">
-                  <span className="flex items-center gap-2">
-                    <span>
-                      {c.txCount} transaction{c.txCount === 1 ? "" : "s"}
-                    </span>
-                    {onToggleExclude && (
-                      <Tooltip
-                        label="Leaves this category out of your income and expense totals — for money movement like transfers, credit-card payments, and reimbursements."
-                        onlyIfTruncated={false}
-                        className="inline-flex"
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleExclude(c.id, !c.excludeFromTotals);
-                          }}
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                            c.excludeFromTotals
-                              ? "bg-amber-500/15 text-amber-600"
-                              : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 hover:bg-[var(--hover)]"
-                          }`}
-                        >
-                          {c.excludeFromTotals ? "excluded from totals ✓" : "exclude from totals"}
-                        </button>
-                      </Tooltip>
-                    )}
+                {/* Count left, money right. The verbs (exclude from totals,
+                    delete) live in the category shelf, which the row opens —
+                    a destructive verb on every row was the one place the app
+                    still put a verb outside the shelf, and on a phone the two
+                    links wrapped the row into a three-line stack. */}
+                <div className="mt-1 flex items-start justify-between gap-2 text-xs text-[var(--muted)]">
+                  <span className="shrink-0">
+                    {c.txCount} transaction{c.txCount === 1 ? "" : "s"}
                   </span>
                   {budgeted ? (
                     <span
-                      className={`font-medium ${
+                      className={`text-right font-medium ${
                         over
-                          ? "text-rose-600"
+                          ? "text-[var(--bad)]"
                           : atRisk
-                          ? "text-amber-600"
+                          ? "text-[var(--warn)]"
                           : "text-[var(--foreground)]"
                       }`}
                     >
@@ -602,7 +535,7 @@ function Group({
                         >
                           <span
                             className={`font-normal ${
-                              recur > budget ? "text-amber-600" : "text-[var(--muted)]"
+                              recur > budget ? "text-[var(--warn)]" : "text-[var(--muted)]"
                             }`}
                           >
                             {" · "}
@@ -619,20 +552,6 @@ function Group({
                 </div>
               </div>
 
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(c);
-                }}
-                className={`mt-0.5 shrink-0 text-xs transition-opacity ${
-                  confirmingId === c.id
-                    ? "font-semibold text-rose-600 opacity-100"
-                    : "text-[var(--muted)] opacity-60 focus-visible:opacity-100 group-hover:opacity-100 hover:text-rose-500"
-                }`}
-                aria-label={`Delete ${c.name}`}
-              >
-                {confirmingId === c.id ? "Confirm?" : "Delete"}
-              </button>
             </div>
           );
         })}

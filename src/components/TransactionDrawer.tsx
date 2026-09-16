@@ -17,7 +17,7 @@ import { RecurringGlyph, RECURRING_LABEL, recurringState, type RecurringState } 
 import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
-import { getJson, postJson, patchJson } from "@/lib/http";
+import { getJson, postJson, patchJson, deleteJson } from "@/lib/http";
 import { merchantKey } from "@/lib/merchant";
 import { LoadError } from "@/components/LoadState";
 import { InfoHint } from "@/components/InfoHint";
@@ -337,6 +337,42 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
     else if (target?.kind === "merchant") fetchMerchant(target.merchant, target.series, true);
   };
+  // The category's own verbs, in its shelf (the row only opens the shelf).
+  async function categorySetExcluded(id: number, excludeFromTotals: boolean) {
+    if (
+      await mutate(
+        () => patchJson(`/api/categories/${id}`, { excludeFromTotals }),
+        {
+          success: excludeFromTotals ? "Left out of totals" : "Counted in totals again",
+          error: "Couldn't update category — please try again",
+        },
+        { refresh: "never" }
+      )
+    ) {
+      refreshTarget();
+      onChange.current?.();
+    }
+  }
+  // Two-step delete, no native confirm: the first click arms the button for
+  // three seconds, the second deletes; the shelf closes on its category.
+  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
+  async function categoryDelete(c: CatSummary) {
+    if (confirmingDelete !== c.id) {
+      setConfirmingDelete(c.id);
+      setTimeout(() => setConfirmingDelete((cur) => (cur === c.id ? null : cur)), 3000);
+      return;
+    }
+    setConfirmingDelete(null);
+    if (
+      await mutate(() => deleteJson(`/api/categories/${c.id}`), {
+        success: `Deleted "${c.name}" · ${c.txCount} transaction${c.txCount === 1 ? "" : "s"} now uncategorized`,
+        error: `Couldn't delete "${c.name}" — please try again`,
+      }, { refresh: "never" })
+    ) {
+      close();
+      onChange.current?.();
+    }
+  }
   async function txRecategorize(txId: number, categoryId: number | null) {
     if (
       await mutate(
@@ -478,6 +514,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onOpenMerchant={drillToMerchant}
                 onTxRecategorize={txRecategorize}
                 onTxToggleRecurring={txToggleRecurring}
+                onSetExcluded={(exclude) => categorySetExcluded(cData.id, exclude)}
+                onDelete={() => categoryDelete(cData)}
+                confirmingDelete={confirmingDelete === cData.id}
               />
             ) : null}
           </div>
@@ -603,7 +642,7 @@ function MerchantHeader({
                 >
                   <button
                     onClick={() => onUnlink(n.name)}
-                    className="rounded px-1 text-[var(--muted)] hover:text-rose-500"
+                    className="rounded px-1 text-[var(--muted)] hover:text-[var(--bad)]"
                   >
                     ✕
                   </button>
@@ -889,7 +928,7 @@ function MerchantBody({
       )}
 
       {data.priceChange && (
-        <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
+        <div className="rounded-lg bg-[var(--warn)]/10 px-3 py-2 text-xs text-[var(--warn)]">
           {data.priceChange.to > data.priceChange.from ? "↑" : "↓"} price changed{" "}
           {usd(data.priceChange.from)} → {usd(data.priceChange.to)} since{" "}
           {monthDayYear(data.priceChange.since)}
@@ -994,7 +1033,7 @@ function MerchantBody({
                 <button
                   type="button"
                   onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
-                  className="text-xs text-[var(--muted)] hover:text-rose-500"
+                  className="text-xs text-[var(--muted)] hover:text-[var(--bad)]"
                 >
                   Reset all overrides
                 </button>
@@ -1014,7 +1053,7 @@ function MerchantBody({
             <button
               type="button"
               onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
-              className="self-start text-xs text-[var(--muted)] hover:text-rose-500"
+              className="self-start text-xs text-[var(--muted)] hover:text-[var(--bad)]"
             >
               Reset all overrides
             </button>
@@ -1025,7 +1064,7 @@ function MerchantBody({
           <Tooltip
             label="Marked ended — no longer counts as upcoming or expected"
             onlyIfTruncated={false}
-            className="inline-flex self-start rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+            className="inline-flex self-start rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--warn)]"
           >
             Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
           </Tooltip>
@@ -1086,6 +1125,9 @@ function CategoryBody({
   onOpenMerchant,
   onTxRecategorize,
   onTxToggleRecurring,
+  onSetExcluded,
+  onDelete,
+  confirmingDelete,
 }: {
   data: CatSummary;
   cats: Cat[];
@@ -1093,6 +1135,9 @@ function CategoryBody({
   onOpenMerchant: (merchant: string) => void;
   onTxRecategorize: (txId: number, categoryId: number | null) => void;
   onTxToggleRecurring: (merchant: string, makeIt: boolean) => void;
+  onSetExcluded: (exclude: boolean) => void;
+  onDelete: () => void;
+  confirmingDelete: boolean;
 }) {
   const isIncome = data.kind === "income";
   const isExcluded = data.excludeFromTotals === 1;
@@ -1125,7 +1170,7 @@ function CategoryBody({
           ? "—"
           : "new"
         : `${pct > 0 ? "↑ " : pct < 0 ? "↓ " : ""}${Math.abs(pct)}%`,
-    valueClass: hasTrend ? (better ? "text-emerald-600" : "text-amber-600") : undefined,
+    valueClass: hasTrend ? (better ? "text-[var(--good)]" : "text-[var(--warn)]") : undefined,
   };
   const cards: { label: string; value: string; valueClass?: string }[] = [card1, card2, card3];
 
@@ -1149,7 +1194,7 @@ function CategoryBody({
             <span className="min-w-0 flex-1 truncate">
               {usd(data.spent, { cents: false })} of {usd(data.budget, { cents: false })}
             </span>
-            <span className={`shrink-0 tabular-nums ${remaining < 0 ? "text-amber-600" : ""}`}>
+            <span className={`shrink-0 tabular-nums ${remaining < 0 ? "text-[var(--warn)]" : ""}`}>
               {remaining >= 0
                 ? `${usd(remaining, { cents: false })} left`
                 : `${usd(-remaining, { cents: false })} over`}
@@ -1157,7 +1202,7 @@ function CategoryBody({
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-[var(--muted)]/15">
             <div
-              className={`h-full rounded-full ${remaining < 0 ? "bg-rose-500" : "bg-[var(--accent)]"}`}
+              className={`h-full rounded-full ${remaining < 0 ? "bg-[var(--bad)]" : "bg-[var(--accent)]"}`}
               style={{ width: `${pctOfBudget}%` }}
             />
           </div>
@@ -1221,6 +1266,26 @@ function CategoryBody({
             ))}
           </ul>
         )}
+      </div>
+
+      {/* The category's verbs, in the shelf like the vendor's. Exclude from
+          totals is money movement (transfers, card payments, reimbursements);
+          delete needs a second click within three seconds. */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => onSetExcluded(!isExcluded)}
+          title="Leaves this category out of your income and expense totals — for money movement like transfers, credit-card payments, and reimbursements."
+          className={`btn-ghost flex-1 text-xs ${isExcluded ? "text-[var(--warn)]" : ""}`}
+        >
+          {isExcluded ? "Count in totals" : "Exclude from totals"}
+        </button>
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${data.name}`}
+          className={`btn-ghost flex-1 text-xs ${confirmingDelete ? "font-semibold text-[var(--bad)]" : ""}`}
+        >
+          {confirmingDelete ? "Confirm delete?" : "Delete category"}
+        </button>
       </div>
     </div>
   );
@@ -1337,7 +1402,7 @@ function ShelfRow({
             const tone = inPlan
               ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
               : edited && membership.kind === "charge"
-                ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
+                ? "bg-[var(--warn)]/15 text-[var(--warn)] hover:bg-[var(--warn)]/25"
                 : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
             return (
               <span className="flex shrink-0 items-center gap-1">

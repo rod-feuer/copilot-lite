@@ -331,7 +331,7 @@ export default function RecurringsPage() {
               status={
                 <>
                   {overdueCount > 0 ? (
-                    <SectionLink section="od" className="font-medium text-amber-600">
+                    <SectionLink section="od" className="font-medium text-[var(--warn)]">
                       {overdueCount} {isCurrentMonth ? "overdue" : "unpaid"}
                     </SectionLink>
                   ) : (
@@ -441,7 +441,7 @@ export default function RecurringsPage() {
                               e.stopPropagation();
                               dismissSuggestion(s);
                             }}
-                            className="rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-rose-500"
+                            className="rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
                           >
                             ✕
                           </button>
@@ -592,7 +592,7 @@ function BillList({
                   status colour: amber when overdue. */}
               <div
                 className={`w-12 shrink-0 text-xs tabular-nums ${
-                  st === "od" ? "font-medium text-amber-600" : "text-[var(--muted)]"
+                  st === "od" ? "font-medium text-[var(--warn)]" : "text-[var(--muted)]"
                 }`}
               >
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
@@ -623,7 +623,7 @@ function BillList({
                   <Tooltip
                     label="You marked this subscription ended — it no longer counts as upcoming or expected"
                     onlyIfTruncated={false}
-                    className="inline-flex shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+                    className="inline-flex shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--warn)]"
                   >
                     Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
                   </Tooltip>
@@ -702,7 +702,7 @@ function BillList({
                       state === "paid"
                         ? "font-semibold text-[var(--foreground)]"
                         : state === "overdue"
-                          ? "font-semibold text-amber-600"
+                          ? "font-semibold text-[var(--warn)]"
                           : "font-medium text-[var(--muted)]"
                     }`}
                   >

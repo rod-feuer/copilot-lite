@@ -34,7 +34,7 @@ export function SummaryCard({
         </div>
         {secondary && (
           <div className="text-right">
-            <div className={`text-2xl font-semibold tracking-tight ${secondary.alarm ? "text-rose-600" : ""}`}>
+            <div className={`text-2xl font-semibold tracking-tight ${secondary.alarm ? "text-[var(--bad)]" : ""}`}>
               {secondary.value}
             </div>
             <div className="stat-label">{secondary.label}</div>

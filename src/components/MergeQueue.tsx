@@ -102,7 +102,7 @@ export function MergeQueue({ onChange }: { onChange?: () => void }) {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{g.canonical}</span>
                   {g.lowConfidence && (
-                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-600">
+                    <span className="rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]">
                       possible match
                     </span>
                   )}
@@ -113,7 +113,7 @@ export function MergeQueue({ onChange }: { onChange?: () => void }) {
                 {g.note && (
                   <div
                     className={`mt-1 text-xs ${
-                      g.lowConfidence ? "text-amber-600" : "text-[var(--accent)]"
+                      g.lowConfidence ? "text-[var(--warn)]" : "text-[var(--accent)]"
                     }`}
                   >
                     {g.note}
