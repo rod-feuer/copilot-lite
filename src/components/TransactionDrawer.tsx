@@ -1679,12 +1679,12 @@ function MatchCorrection({
       <div className="flex items-center gap-2">
         <label className="stat-label">Match</label>
         <StateTag edited={rule != null} />
-        <InfoHint text="How a charge is recognised as this bill. Auto: the vendor exactly, or its category and amount. A rule widens or narrows that." />
+        <InfoHint text="How a charge is recognised as this bill. Auto: the vendor exactly, or the same vendor under a relabeled descriptor within 5% of the amount. A rule widens or narrows that." />
         {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select aria-label="Match rule" value={mode} onChange={(e) => { setMode(e.target.value); save(e.target.value, text, tol); }} className={sel}>
-          <option value="">vendor exactly, or its category and amount</option>
+          <option value="">vendor exactly, or relabeled within 5%</option>
           <option value="exact">vendor exactly</option>
           <option value="contains">descriptor contains…</option>
         </select>
