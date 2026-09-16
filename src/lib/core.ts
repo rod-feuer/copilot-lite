@@ -744,7 +744,13 @@ export function detectRecurrings(): Recurring[] {
         : canons.some((c) => overrides[c] === "mute")
           ? "mute"
           : undefined;
-      together = planVendor(name, canons.flatMap((c) => byCanon.get(c)!), status);
+      // Descriptors arrive one after another; the vendor's charges must be in
+      // date order for the gap math and the last/next charge.
+      together = planVendor(
+        name,
+        canons.flatMap((c) => byCanon.get(c)!).sort((a, b) => a.date.localeCompare(b.date)),
+        status
+      );
       if (linked(together) > linked(chosen) && together.length >= chosen.length) {
         chosen = together;
         // Settings live under the descriptor the user edited; carry them to

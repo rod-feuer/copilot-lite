@@ -1591,6 +1591,7 @@ test("detector joins a renamed descriptor to its vendor only when the merge earn
     .prepare("SELECT recurringId FROM transactions WHERE merchant = ?")
     .get("Cursor, Ai Powered Isan Francisco") as { recurringId: number | null };
   assert.equal(renamed.recurringId, cursor[0].id, "the renamed charge is a member, not 'not detected'");
+  assert.equal(cursor[0].lastDate, "2026-04-20", "the vendor's charges are read in date order across descriptors");
   // The month view pays the series with the renamed charge, not only with
   // charges on the series' own descriptor.
   const april = recurringsForMonth("2026-04").find((r) => r.merchant === "Cursor Ai Powered");
