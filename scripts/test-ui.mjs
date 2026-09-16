@@ -577,13 +577,15 @@ async function recurringsRow(browser) {
       const pillText = () => page.$eval("[data-shelf] button[data-membership]", (b) => b.textContent.trim());
       const menus = await page.$$eval("[data-shelf] button[aria-label='Edit transaction']", (bs) => bs.length);
       const t1 = await pillText();
-      await page.click("[data-shelf] button[data-membership]"); await new Promise((r) => setTimeout(r, 1200));
+      // The toggle must not blank the shelf (no skeleton) while it re-reads.
+      const flashed = await page.evaluate(async () => { let seen = false; const b = document.querySelector("[data-shelf] button[data-membership]"); b.click(); const t0 = Date.now(); while (Date.now() - t0 < 1200) { if (document.querySelector("[data-shelf] .animate-pulse")) seen = true; await new Promise((r) => setTimeout(r, 30)); } return seen; });
       await page.waitForSelector("[data-shelf] button[data-membership]");
       const t2 = await pillText();
       await page.click("[data-shelf] button[data-membership]"); await new Promise((r) => setTimeout(r, 1200));
       await page.waitForSelector("[data-shelf] button[data-membership]");
       const t3 = await pillText();
       record("shelf", "Recent rows: a labelled membership pill toggles a charge out and back; no row menu", menus === 0 && t1 === "In series" && t2 === "Excluded" && t3 === "In series", `menus ${menus}; ${t1} → ${t2} → ${t3}`);
+      record("shelf", "toggling a pill re-reads without blanking the shelf", !flashed, flashed ? "skeleton flashed" : "no skeleton");
       await page.keyboard.press("Escape");
     }
     // The inline editor raises no tooltip: hovering a name, or its ✎ cue, shows

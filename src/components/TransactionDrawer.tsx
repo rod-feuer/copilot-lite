@@ -93,15 +93,17 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // `loading` below is derived from missing data, so without this flag a
   // failed fetch would pulse forever.
   const [loadError, setLoadError] = useState(false);
-  const fetchMerchant = useCallback((m: string, series?: string) => {
-    setMData(null);
+  // `keep`: a re-read after a write keeps the current panel on screen until
+  // the new data lands — no skeleton, no scroll reset, no jump.
+  const fetchMerchant = useCallback((m: string, series?: string, keep = false) => {
+    if (!keep) setMData(null);
     setLoadError(false);
     getJson<Summary>(`/api/merchant?name=${encodeURIComponent(m)}${series ? `&series=${encodeURIComponent(series)}` : ""}`)
       .then(setMData)
       .catch(() => setLoadError(true));
   }, []);
-  const fetchCategory = useCallback((id: number, month: string) => {
-    setCData(null);
+  const fetchCategory = useCallback((id: number, month: string, keep = false) => {
+    if (!keep) setCData(null);
     setLoadError(false);
     getJson<CatSummary>(`/api/category?id=${id}&month=${encodeURIComponent(month)}`)
       .then(setCData)
@@ -220,7 +222,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant, series);
+      fetchMerchant(merchant, series, true);
       onChange.current?.();
     }
   }
@@ -252,7 +254,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant, series);
+      fetchMerchant(merchant, series, true);
       onChange.current?.();
     }
   }
@@ -297,7 +299,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant, target.series);
+      fetchMerchant(merchant, target.series, true);
       onChange.current?.();
     }
   }
@@ -318,7 +320,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      fetchMerchant(merchant, series);
+      fetchMerchant(merchant, series, true);
       onChange.current?.();
     }
   }
@@ -326,12 +328,12 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // Per-transaction edits from inside the category shelf. Refresh the shelf so
   // totals/lists update (e.g. recategorizing a row out of the category).
   const refreshCategory = () => {
-    if (target?.kind === "category") fetchCategory(target.categoryId, target.month);
+    if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
   };
   // Re-read whichever detail is open after a per-charge write.
   const refreshTarget = () => {
-    if (target?.kind === "category") fetchCategory(target.categoryId, target.month);
-    else if (target?.kind === "merchant") fetchMerchant(target.merchant, target.series);
+    if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
+    else if (target?.kind === "merchant") fetchMerchant(target.merchant, target.series, true);
   };
   async function txRecategorize(txId: number, categoryId: number | null) {
     if (
@@ -1145,44 +1147,13 @@ function ShelfRow({
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          {membership ? (
-            // A labelled state that toggles — readable at rest, no menu.
-            (() => {
-              const text =
-                membership.kind === "charge"
-                  ? recurring === "in" ? "In series" : recurring === "out" ? "Excluded" : "Unlinked"
-                  : recurring === "in" ? "Recurring" : recurring === "out" ? "Excluded" : "Not recurring";
-              const action =
-                membership.kind === "charge"
-                  ? recurring === "out" ? "Add this charge back to the series" : "Not part of this recurring"
-                  : recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring";
-              const tone =
-                recurring === "in" && !muted
-                  ? "bg-[var(--accent)]/12 text-[var(--accent)] hover:bg-[var(--accent)]/20"
-                  : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
-              return (
-                <button
-                  type="button"
-                  data-membership={recurring}
-                  aria-label={action}
-                  title={action}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    membership.onToggle();
-                  }}
-                  className={`w-[4.5rem] shrink-0 self-center rounded-full px-1.5 py-px text-center text-[10px] font-medium transition-colors ${tone}`}
-                >
-                  {text}
-                </button>
-              );
-            })()
-          ) : recurring !== "none" ? (
+          {recurring !== "none" && !membership ? (
             <Tooltip label={RECURRING_LABEL[recurring]} onlyIfTruncated={false} className="w-3.5 shrink-0">
               <RecurringGlyph state={recurring} muted={muted} className="block w-full text-center" />
             </Tooltip>
-          ) : (
+          ) : !membership ? (
             <span className="w-3.5 shrink-0" aria-hidden />
-          )}
+          ) : null}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
           <Tooltip
             label={name}
@@ -1191,10 +1162,44 @@ function ShelfRow({
             {name}
           </Tooltip>
         </span>
+        {membership &&
+          // A labelled state that toggles, beside the amount: auto width, so
+          // "In series" stays small and the date / name columns keep their
+          // edges; the amount stays flush right.
+          (() => {
+            const text =
+              membership.kind === "charge"
+                ? recurring === "in" ? "In series" : recurring === "out" ? "Excluded" : "Unlinked"
+                : recurring === "in" ? "Recurring" : recurring === "out" ? "Excluded" : "Not recurring";
+            const action =
+              membership.kind === "charge"
+                ? recurring === "out" ? "Add this charge back to the series" : "Not part of this recurring"
+                : recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring";
+            const tone =
+              recurring === "in" && !muted
+                ? "bg-[var(--accent)]/12 text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+            return (
+              <button
+                type="button"
+                data-membership={recurring}
+                aria-label={action}
+                title={action}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  membership.onToggle();
+                }}
+                className={`shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium transition-colors ${tone}`}
+              >
+                {text}
+              </button>
+            );
+          })()}
+        {/* A fixed amount column, so a pill beside it lands on one edge in every row. */}
         {muted ? (
-          <span className="shrink-0 tabular-nums text-[var(--muted)]">{usd(amount, { sign: !!sign })}</span>
+          <span className="w-20 shrink-0 text-right tabular-nums text-[var(--muted)]">{usd(amount, { sign: !!sign })}</span>
         ) : (
-          <Money value={amount} sign={!!sign} excluded={excluded} className="shrink-0" />
+          <Money value={amount} sign={!!sign} excluded={excluded} className="w-20 shrink-0 text-right" />
         )}
         {editable && (
           <button
