@@ -1509,6 +1509,9 @@ test("detector keeps the regular amount group and leaves irregular usage charges
   assert.equal(a.avgAmount, -20);
   const unlinked = (getDb().prepare("SELECT COUNT(*) n FROM transactions WHERE merchant = 'Anthropic' AND recurringId IS NULL").get() as { n: number }).n;
   assert.equal(unlinked, 9, "every top-up is left out of the series");
+  const shelf = merchantSummary("Anthropic");
+  assert.equal(shelf.recurringDetail?.perCharge, 20);
+  assert.equal(shelf.priceChange, null, "the price walk is over the series' charges, not the top-ups");
   const duke = recs.find((r) => r.merchant === "Duke Energy")!;
   assert.equal(duke.count, 8, "a variable bill on one grid stays whole");
 

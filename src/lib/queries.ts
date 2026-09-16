@@ -680,13 +680,13 @@ export function merchantSummary(merchant: string, series?: string | null) {
     seriesRow ??
     (db
       .prepare(
-        `SELECT cadence, avgAmount, nextDate, lastDate FROM recurrings
+        `SELECT id, cadence, avgAmount, nextDate, lastDate FROM recurrings
          WHERE id IN (SELECT DISTINCT recurringId FROM transactions
                       WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
          ORDER BY lastDate DESC LIMIT 1`
       )
       .get(...variants) as
-      | { cadence: string; avgAmount: number; nextDate: string; lastDate: string }
+      | { id: number; cadence: string; avgAmount: number; nextDate: string; lastDate: string }
       | undefined);
   // recurringDetail reflects the EFFECTIVE schedule (a cadence correction wins and
   // re-derives next-due), so the shelf's metrics match what the user just set.
@@ -709,14 +709,16 @@ export function merchantSummary(merchant: string, series?: string | null) {
   // Price-change detection — only meaningful for recurring fixed-price vendors
   // (variable merchants like coffee shops would flag spurious "changes").
   // Walk charges oldest→newest, find where the current amount run began.
+  // The walk is over the SERIES' charges: a vendor whose usage top-ups were
+  // left unlinked (Anthropic) must not read a $15 top-up as a price change.
   const charges = recurringDetail
     ? (db
         .prepare(
           `SELECT COALESCE(effectiveDate, date) AS date, amount FROM transactions
-           WHERE ${scope} AND amount < 0 AND excluded = 0
+           WHERE merchant IN (${ph}) AND recurringId = ? AND amount < 0 AND excluded = 0
            ORDER BY COALESCE(effectiveDate, date) ASC`
         )
-        .all(...scopeArgs) as { date: string; amount: number }[])
+        .all(...variants, (rec as { id: number }).id) as { date: string; amount: number }[])
     : [];
   let priceChange: { from: number; to: number; since: string } | null = null;
   if (charges.length >= 2) {
