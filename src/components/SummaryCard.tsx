@@ -1,10 +1,39 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 // The page-top summary: one big figure on the left with a small-caps label,
-// an optional counter-figure on the right, a thick progress bar, a status
-// line, and a one-sentence note. Categories ("spent of budgeted / left") and
-// Recurrings ("paid of expected / left to pay") share it, so the two tabs
-// read as one app and neither can drift.
+// one or more counter-figures on the right, a thick progress bar, a status
+// line, and a one-sentence note. Categories ("spent of budgeted / left"),
+// Recurrings ("paid of expected / left to pay") and the Dashboard ("net,
+// projected / income / expenses") share it, so the tabs read as one app and
+// none can drift.
+export type Figure = {
+  value: string;
+  label: ReactNode;
+  sub?: ReactNode; // a quiet line under the label, in normal case (a delta, "so far")
+  href?: string; // the figure drills into the list behind it
+  tone?: "good" | "bad";
+  alarm?: boolean; // = tone "bad"
+};
+function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" }) {
+  const colour =
+    f.alarm || f.tone === "bad" ? "text-[var(--bad)]" : f.tone === "good" ? "text-[var(--good)]" : "";
+  const inner = (
+    <>
+      <div className={`text-2xl font-semibold tracking-tight ${colour}`}>{f.value}</div>
+      <div className="stat-label">{f.label}</div>
+      {f.sub && <div className="text-xs text-[var(--muted)]">{f.sub}</div>}
+    </>
+  );
+  const cls = align === "right" ? "text-right" : "";
+  return f.href ? (
+    <Link href={f.href} className={`${cls} block rounded-lg hover:underline`}>
+      {inner}
+    </Link>
+  ) : (
+    <div className={cls}>{inner}</div>
+  );
+}
 export function SummaryCard({
   primary,
   secondary,
@@ -15,8 +44,8 @@ export function SummaryCard({
   note,
   className = "",
 }: {
-  primary: { value: string; label: ReactNode };
-  secondary?: { value: string; label: ReactNode; alarm?: boolean };
+  primary: Figure;
+  secondary?: Figure | Figure[];
   progress: number; // 0..1
   barLabel: string; // what the bar measures, for assistive tech ("70% of expected bills paid")
   alarm?: boolean; // the bar turns red (over budget)
@@ -27,17 +56,13 @@ export function SummaryCard({
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
   return (
     <div className={`card p-5 ${className}`.trim()} data-summary>
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="text-2xl font-semibold tracking-tight">{primary.value}</div>
-          <div className="stat-label">{primary.label}</div>
-        </div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <Fig f={primary} />
         {secondary && (
-          <div className="text-right">
-            <div className={`text-2xl font-semibold tracking-tight ${secondary.alarm ? "text-[var(--bad)]" : ""}`}>
-              {secondary.value}
-            </div>
-            <div className="stat-label">{secondary.label}</div>
+          <div className="flex flex-wrap items-end justify-end gap-6">
+            {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
+              <Fig key={i} f={f} align="right" />
+            ))}
           </div>
         )}
       </div>
