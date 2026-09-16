@@ -18,6 +18,7 @@ import { Money } from "@/components/Money";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson } from "@/lib/http";
+import { merchantKey } from "@/lib/merchant";
 import { LoadError } from "@/components/LoadState";
 import { InfoHint } from "@/components/InfoHint";
 import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
@@ -693,17 +694,13 @@ function MerchantBody({
   // the part after the names' shared prefix, so three "Healthy Paws Pet Ins…"
   // don't all truncate alike), else the category.
   const rowText = (() => {
-    const descriptors = [...new Set(data.recent.map((r) => r.merchant))];
+    // Descriptors count as different only when their vendor keys differ —
+    // genuinely different labels ("Central In Academy" / "Central Indiana
+    // Academ"), not one label with and without a trailing "Payment". Shown
+    // whole; a trimmed tail ("…Il Payment") read as junk.
+    const keys = new Set(data.recent.map((r) => merchantKey(r.merchant)));
     const categories = new Set(data.recent.map((r) => r.categoryName ?? "Uncategorized"));
-    if (descriptors.length > 1) {
-      const words = descriptors.map((m) => m.split(" "));
-      let n = 0;
-      while (words.every((w) => w.length > n + 1 && w[n] === words[0][n])) n++;
-      // Trim only a prefix worth trimming (two words or more); "D J" / "D J*wsj"
-      // read better whole than as "…J" / "…J*wsj".
-      if (n < 2) return (r: { merchant: string }) => r.merchant;
-      return (r: { merchant: string }) => `…${r.merchant.split(" ").slice(n).join(" ")}`;
-    }
+    if (keys.size > 1) return (r: { merchant: string }) => r.merchant;
     if (categories.size > 1) return (r: { categoryName: string | null }) => r.categoryName ?? "Uncategorized";
     return () => undefined;
   })();
@@ -729,30 +726,8 @@ function MerchantBody({
               one place. Per charge edits the expected amount; next due edits
               the date; the cadence select sits on the caption line with the
               per-year figure it drives. */}
+          {/* Date on the left, amount on the right — the rows' order. */}
           <div className="grid grid-cols-2 gap-2">
-            <PropertyCard label="Per charge" edited={data.expectedAmount != null}>
-              <div className="flex items-center">
-                <span className="text-sm font-semibold text-[var(--muted)]">$</span>
-                <CommitInput
-                  key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
-                  defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
-                  placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
-                  inputMode="decimal"
-                  aria-label="Expected amount"
-                  onCommit={(v) => {
-                    const t = v.trim();
-                    if (t === "") {
-                      if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
-                      return;
-                    }
-                    const n = Math.abs(Number(t));
-                    if (!Number.isFinite(n)) return; // ignore non-numeric input
-                    if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
-                  }}
-                  className="w-full min-w-0 bg-transparent text-sm font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
-                />
-              </div>
-            </PropertyCard>
             <PropertyCard label="Next due" edited={data.nextDate != null}>
               {/* The app writes dates as "Sep 18"; the native picker (its own
                   locale format) is laid transparently over that and opens on
@@ -775,6 +750,29 @@ function MerchantBody({
                   className="absolute inset-0 w-full cursor-pointer opacity-0"
                 />
               </span>
+            </PropertyCard>
+            <PropertyCard label="Per charge" edited={data.expectedAmount != null}>
+              <div className="flex items-center">
+                <span className="text-sm font-semibold text-[var(--muted)]">$</span>
+                <CommitInput
+                  key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                  defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                  placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
+                  inputMode="decimal"
+                  aria-label="Expected amount"
+                  onCommit={(v) => {
+                    const t = v.trim();
+                    if (t === "") {
+                      if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                      return;
+                    }
+                    const n = Math.abs(Number(t));
+                    if (!Number.isFinite(n)) return; // ignore non-numeric input
+                    if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+                  }}
+                  className="w-full min-w-0 bg-transparent text-sm font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
+                />
+              </div>
             </PropertyCard>
           </div>
           {/* The plan's other properties on one line: category, cadence (the
@@ -1283,13 +1281,16 @@ function ShelfRow({
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          {recurring !== "none" && !membership ? (
+          {/* The glyph gutter belongs to lists without a membership pill (the
+              shelf's Upcoming list); a flush list never renders it, or its
+              rows would indent by the gutter when a row has no pill. */}
+          {flush || membership ? null : recurring !== "none" ? (
             <Tooltip label={RECURRING_LABEL[recurring]} onlyIfTruncated={false} className="w-3.5 shrink-0">
               <RecurringGlyph state={recurring} muted={muted} className="block w-full text-center" />
             </Tooltip>
-          ) : !membership ? (
+          ) : (
             <span className="w-3.5 shrink-0" aria-hidden />
-          ) : null}
+          )}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
           {name && (
             <Tooltip

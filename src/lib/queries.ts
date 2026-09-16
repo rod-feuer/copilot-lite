@@ -1,5 +1,5 @@
 import { isSeriesKey, seriesVendor } from "./series";
-import { displayMerchant } from "./merchant";
+import { displayMerchant, merchantKey } from "./merchant";
 import {
   getDb,
   ensureRecurringSettings,
@@ -442,28 +442,9 @@ export function clearRecurringTxExclusionsForMerchant(merchant: string) {
   ).run(merchant);
 }
 
-// Normalize a bank-descriptor merchant string to a coarse vendor key so the
-// drawer can roll up descriptor drift — e.g. "Benjamin Franklin",
-// "Benjamin Franklin Plindianapolis In", "Benjamin Franklin Plumbin" all share
-// one vendor, as do "Culvers Of Franklin" and "Aplpay Culvers Of Frfranklin In".
-// Strips common wallet/processor prefixes, drops punctuation and pure-number
-// tokens, and keys on the first two significant tokens. Heuristic by design: it
-// under-merges (won't unify "Ben" vs "Benjamin") rather than risk lumping
-// distinct vendors together.
-//
-// Payment-rail and fee prefixes carry the payee AFTER them — "Zelle Payment To
-// Indy K-9", "Plan Fee - Ticketmaster" — so they're stripped too. Without this
-// every Zelle payee keyed to "zelle payment" and became one vendor: the shelf
-// rolled them up, the vendor filter showed them all, and "Not recurring" on one
-// payee muted all 38 (seen on real data).
-function merchantKey(name: string): string {
-  let s = name.toLowerCase().trim();
-  s = s.replace(/^(aplpay |sq ?\*|tst\* ?|sp |pp\*|paypal \*|gpc\*|pos )/, "");
-  s = s.replace(/^(zelle payment (to|from) |plan fee[\s-]+)/, "");
-  s = s.replace(/[^a-z0-9 ]+/g, " ");
-  const tokens = s.split(/\s+/).filter((t) => t && !/^\d+$/.test(t));
-  return tokens.slice(0, 2).join(" ");
-}
+// merchantKey lives in ./merchant (pure, no database) so client components can
+// share it; re-exported here for the callers that always imported it from queries.
+export { merchantKey } from "./merchant";
 
 // All distinct stored merchant strings that normalize to the same vendor as
 // `merchant`. Falls back to the exact name when the key is empty (e.g. all
