@@ -1279,7 +1279,7 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   // Two 529 contributions, $200 and $300, on the 18th each month (one per
   // account) — same day, different amounts: two bills, keyed by amount. July's
   // pair posted on the 20th (weekend slip, within the cluster's two days). Two
-  // deposits on a payday, though, are one paycheck: never split by amount.
+  // deposits of different amounts on a payday are two paychecks, split alike.
   // Real posting days: 16th, 17th, 18th, 18th, 20th … — the 20th is a weekend
   // slip two days past a cluster that began on the 16th; it must still join.
   for (let m = 1; m <= 8; m++) {
@@ -1309,7 +1309,7 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   assert.ok(!recs.some((r) => r.merchant.startsWith("Market District · ")), "a weekly store never splits into monthly bills");
   assert.deepEqual(
     recs.map((r) => r.merchant).filter((m) => !m.startsWith("Market District")).sort(),
-    ["Chubb Prs · $259.75", "Chubb Prs · $729.75", "Chubb · 17th", "Chubb · 1st", "Gym", "In 529 Dir Ach Contrib · $200", "In 529 Dir Ach Contrib · $300", "Netflix · 23rd", "Netflix · 26th", "Payroll", "Sofi · 1st", "Sofi · 21st", "Water"],
+    ["Chubb Prs · $259.75", "Chubb Prs · $729.75", "Chubb · 17th", "Chubb · 1st", "Gym", "In 529 Dir Ach Contrib · $200", "In 529 Dir Ach Contrib · $300", "Netflix · 23rd", "Netflix · 26th", "Payroll · $7,553.94", "Payroll · $9,738.55", "Sofi · 1st", "Sofi · 21st", "Water"],
     "two bills per descriptor become two series; a drifting biweekly and a bill that changed its day stay one"
   );
   assert.equal(by("Chubb · 1st")!.avgAmount, -989.5, "same-day charges are one event, summed");
@@ -1322,8 +1322,9 @@ test("detector splits a descriptor that carries two monthly bills into one serie
     "no 529 charge is left unlinked"
   );
   assert.equal(by("In 529 Dir Ach Contrib · $300")!.avgAmount, -300);
-  assert.equal(by("Payroll")!.avgAmount, 17292.49, "two deposits on a payday are one paycheck");
-  assert.equal(by("Payroll")!.count, 8);
+  assert.equal(by("Payroll · $9,738.55")!.count, 8, "two deposits of different amounts on a payday are two paychecks");
+  assert.equal(by("Payroll · $7,553.94")!.avgAmount, 7553.94);
+
   assert.equal(by("Chubb Prs · $729.75")!.count, 3, "the early pair on the 31st is not a member");
   assert.equal(by("Gym")!.cadence, "biweekly");
   assert.equal(by("Water")!.cadence, "monthly");
@@ -1360,6 +1361,20 @@ test("detector splits a descriptor that carries two monthly bills into one serie
     .all() as { date: string; categoryId: number }[];
   assert.ok(cats.filter((t) => t.date.endsWith("-26")).every((t) => t.categoryId === boat), "the 26th moved");
   assert.ok(cats.filter((t) => t.date.endsWith("-23")).every((t) => t.categoryId === subs), "the 23rd stayed");
+
+  // Two people's raises cross in amount: A 8,854 → 9,738 in June; B 7,480 →
+  // 8,295 → 8,177. Amount bands can't cut that into two; rank can — the
+  // larger deposit each payday is one paycheck, the smaller the other.
+  const A = [8854.62, 8854.62, 8854.62, 9738.55, 9738.55, 9738.55, 9738.55, 9738.55];
+  const B = [7480.78, 7480.78, 7480.78, 7480.78, 8295.23, 8177.01, 8177.01, 8177.01];
+  for (let m = 1; m <= 8; m++) {
+    tx("Acme Payroll", { amount: A[m - 1], date: `${ym(m)}-28`, categoryId: home });
+    tx("Acme Payroll", { amount: B[m - 1], date: `${ym(m)}-28`, categoryId: home, account: "Savings" });
+  }
+  const acme = detectRecurrings().filter((r) => r.merchant.startsWith("Acme Payroll"));
+  assert.deepEqual(acme.map((r) => r.merchant).sort(), ["Acme Payroll · larger", "Acme Payroll · smaller"], "ranked, not banded — the keys survive raises");
+  assert.equal(acme.find((r) => r.merchant.endsWith("larger"))!.avgAmount, 9738.55);
+  assert.equal(acme.find((r) => r.merchant.endsWith("smaller"))!.count, 8);
 });
 
 // One monthly plan plus strays. Benjamin Franklin bills $11.99 on the 8th; in
@@ -1514,6 +1529,21 @@ test("detector keeps the regular amount group and leaves irregular usage charges
   assert.equal(shelf.priceChange, null, "the price walk is over the series' charges, not the top-ups");
   const duke = recs.find((r) => r.merchant === "Duke Energy")!;
   assert.equal(duke.count, 8, "a variable bill on one grid stays whole");
+
+  // A plan that changed price: ten $20 months in 2024, then $100 months in
+  // 2026 with usage around them. The core is the CURRENT plan, not the
+  // largest group — the series must not end in 2024.
+  const ym25 = (i: number) => `2025-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 10; m++) tx("Claude", { amount: -20, date: `${ym25(m)}-18`, categoryId: subs });
+  for (let m = 3; m <= 8; m++) tx("Claude", { amount: -100, date: `${ym(m)}-18`, categoryId: subs });
+  for (const [m, d, amt] of [[3, 2, 15.06], [3, 5, 15.14], [5, 26, 107.59], [5, 29, 15.01], [7, 30, 15.2]] as [number, number, number][])
+    tx("Claude", { amount: -amt, date: `${ym(m)}-${String(d).padStart(2, "0")}`, categoryId: subs });
+  const claude = detectRecurrings().find((r) => r.merchant === "Claude")!;
+  assert.equal(claude.avgAmount, -100, "the current plan sets the price");
+  assert.equal(claude.lastDate, "2026-08-18");
+  assert.equal(claude.count, 16, "the $20 era is the same bill at an old price — history, not usage");
+  const claudeUnlinked = (getDb().prepare("SELECT COUNT(*) n FROM transactions WHERE merchant = 'Claude' AND recurringId IS NULL").get() as { n: number }).n;
+  assert.equal(claudeUnlinked, 5, "only the usage leaves");
 
   // Six similar-priced lunches that happen to skip months are not a bill.
   for (const [ym2, amt] of [["2025-01-10", 26.65], ["2025-02-04", 26.65], ["2025-04-01", 27.3], ["2025-04-22", 26.65], ["2025-06-30", 27.63], ["2025-10-20", 25.89], ["2025-03-03", 10.66], ["2025-05-15", 1.84], ["2025-08-01", 11.31], ["2025-09-09", 6.21]])
