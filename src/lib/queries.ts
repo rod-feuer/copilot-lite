@@ -557,8 +557,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
   const seriesRow =
     series && isSeriesKey(series)
       ? (db
-          .prepare("SELECT id, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
-          .get(series) as { id: number; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
+          .prepare("SELECT id, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
+          .get(series) as { id: number; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
       : undefined;
   const seriesId = seriesRow?.id ?? null;
   // Scope: the vendor's descriptors, and — for one plan — only its linked charges.
@@ -601,11 +601,15 @@ export function merchantSummary(merchant: string, series?: string | null) {
     months: number;
     recurring: number | null;
   };
-  const cat = db
+  // The vendor's category: the series' own (the detector's modal over its
+  // members) when there is one; otherwise the most common category among
+  // the charges that count. Excluded charges (split parents) don't vote —
+  // they tipped Chubb to "Carmel Home" over its Lake Home plan.
+  const modalCat = db
     .prepare(
       `SELECT c.id, c.name, c.color, c.icon, COUNT(*) AS n
        FROM transactions t JOIN categories c ON t.categoryId = c.id
-       WHERE ${scopeT} GROUP BY t.categoryId ORDER BY n DESC LIMIT 1`
+       WHERE ${scopeT} AND t.excluded = 0 GROUP BY t.categoryId ORDER BY n DESC LIMIT 1`
     )
     .get(...scopeArgs) as
     | { id: number; name: string; color: string; icon: string }
@@ -680,14 +684,20 @@ export function merchantSummary(merchant: string, series?: string | null) {
     seriesRow ??
     (db
       .prepare(
-        `SELECT id, cadence, avgAmount, nextDate, lastDate FROM recurrings
+        `SELECT id, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings
          WHERE id IN (SELECT DISTINCT recurringId FROM transactions
                       WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
          ORDER BY lastDate DESC LIMIT 1`
       )
       .get(...variants) as
-      | { id: number; cadence: string; avgAmount: number; nextDate: string; lastDate: string }
+      | { id: number; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string }
       | undefined);
+  const cat =
+    (rec && "categoryId" in rec && rec.categoryId != null
+      ? (db.prepare("SELECT id, name, color, icon FROM categories WHERE id = ?").get(rec.categoryId) as
+          | { id: number; name: string; color: string; icon: string }
+          | undefined)
+      : undefined) ?? modalCat;
   // recurringDetail reflects the EFFECTIVE schedule (a cadence correction wins and
   // re-derives next-due), so the shelf's metrics match what the user just set.
   // detectedCadence (raw) is exposed separately so the correction UI can show

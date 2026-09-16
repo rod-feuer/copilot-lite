@@ -919,7 +919,10 @@ function MerchantBody({
               muted={r.excluded === 1}
               excluded={!!r.excluded || !!r.categoryExcluded}
               recurring={recurringState(r)}
-              membership={{ kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
+              // A charge excluded from totals was never eligible for a series;
+              // it carries no membership control, just what it is.
+              membership={r.excluded === 1 ? undefined : { kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
+              note={r.excluded === 1 ? "not counted" : undefined}
               flush
               unsignedDebits
             />
@@ -1248,6 +1251,7 @@ function ShelfRow({
   membership,
   flush = false,
   unsignedDebits = false,
+  note,
 }: {
   date: string;
   name?: string; // omitted when every row in the list would say the same thing
@@ -1261,6 +1265,7 @@ function ShelfRow({
   membership?: Membership;
   flush?: boolean; // no horizontal padding: the list sits on the panel's edges
   unsignedDebits?: boolean; // a plan's charges are debits by definition — no minus on every row
+  note?: string; // quiet text in the pill's slot when there is no control (e.g. "not counted")
 }) {
   const [editing, setEditing] = useState(false);
   // "+ New category…" in the row's Recategorize picker.
@@ -1295,6 +1300,7 @@ function ShelfRow({
             </Tooltip>
           )}
         </span>
+        {!membership && note && <span className="shrink-0 text-[11px] text-[var(--muted)]">{note}</span>}
         {membership &&
           // A labelled state that toggles, beside the amount: auto width, so
           // "In series" stays small and the date / name columns keep their

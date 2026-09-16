@@ -567,10 +567,11 @@ function BillList({
           Overdue keeps the amber the dates already use. */}
       {sections.map((section) => (
         <section key={section.key} className="flex flex-col gap-2" data-bill-section={section.key}>
-          {/* Padded like the rows inside the card, so the section total sits
-              on the amounts column and the title on the date column. */}
+          {/* Padded to the card's inner edge (16px padding + 1px border), so
+              the section total sits exactly on the amounts column and the
+              title on the date column. */}
           {section.label && (
-            <div className="flex items-center gap-2 px-4">
+            <div className="flex items-center gap-2 px-[17px]">
               <h3 className={`stat-label ${section.key === "od" ? "text-amber-600" : "text-[var(--foreground)]"}`}>
                 {section.label}
               </h3>

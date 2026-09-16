@@ -22,6 +22,17 @@ export function rowButtonProps(onActivate: () => void) {
       // still knows where they are; pressed again on the bare row it drops
       // focus, and the focus ring with it. Browsers resume Tab from here.
       if (e.key === "Escape" && !document.querySelector("[data-shelf]")) e.currentTarget.blur();
+      // ↑ / ↓ move to the adjacent row; with the shelf open, the shelf follows
+      // (the list-and-detail convention: the panel shows the selected row).
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const rows = [...document.querySelectorAll<HTMLElement>("[data-drawer-row]")];
+        const next = rows[rows.indexOf(e.currentTarget) + (e.key === "ArrowDown" ? 1 : -1)];
+        if (!next) return;
+        next.focus();
+        next.scrollIntoView({ block: "nearest" });
+        if (document.querySelector("[data-shelf]")) next.click();
+      }
     },
   };
 }
