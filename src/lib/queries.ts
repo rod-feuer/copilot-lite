@@ -1024,21 +1024,29 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       }
     });
   });
-  // Pass 2 — category + amount-within-5% fallback (no custom rule, still unmatched).
-  // Skip INACTIVE recurrings here: this loose, cross-vendor match would otherwise
-  // let a long-stale recurring claim another vendor's charge of the same category
-  // and amount, falsely marking it "paid"/due instead of leaving it Inactive
-  // (the renamed-salon ghost: a 2023 "Mdg Carmel Hair…" grabbing a 2026 "Mdg
-  // Salons" charge). Exact-merchant passes above still let a real resume through.
+  // Pass 2 — the bank relabeled the bill: a charge on the same vendor key (the
+  // shelf's rollup: first two words, processor prefixes stripped) within 5% of
+  // the amount, not yet claimed (no custom rule, still unmatched). This used to
+  // be any charge of the same category and amount, from any vendor — and in
+  // three months it paid four bills with strangers (Rosy's $240 cleaning with
+  // a $249 irrigation bill, X Corp with the WSJ, an RH renewal with a Target
+  // run) and never once found a real relabel the vendor key would not.
+  // Skip INACTIVE recurrings here so a long-stale recurring can't claim a
+  // look-alike (the renamed-salon ghost: a 2023 "Mdg Carmel Hair…" grabbing a
+  // 2026 "Mdg Salons" charge). Exact-merchant passes above still let a real
+  // resume through.
   recs.forEach((r, ri) => {
     if (matched[ri] || matchRuleFor(r.merchant)) return;
     if (!isRecurringActive(r.lastDate, r.cadence)) return;
+    const vendor = seriesVendor(r.merchant);
+    const vendorKey = merchantKey(vendor);
     const expense = r.avgAmount < 0;
     const tol = Math.max(1, Math.abs(r.avgAmount) * 0.05);
     let bestIdx = -1;
     let bestDiff = Infinity;
     txns.forEach((t, i) => {
-      if (consumed.has(i) || t.categoryId !== r.categoryId) return;
+      if (consumed.has(i)) return;
+      if (vendorKey === "" || merchantKey(t.merchant) !== vendorKey) return;
       if (expense ? t.amount >= 0 : t.amount <= 0) return;
       const diff = Math.abs(Math.abs(t.amount) - Math.abs(r.avgAmount));
       if (diff <= tol && diff < bestDiff) {
