@@ -567,6 +567,21 @@ async function recurringsRow(browser) {
       const afterTwo = await page.evaluate(() => ({ rowFocused: document.activeElement?.hasAttribute("data-drawer-row"), tag: document.activeElement?.tagName }));
       record("keyboard rows", "Escape closes the shelf, then Escape drops the row's focus", !afterOne.shelf && afterOne.rowFocused && !afterTwo.rowFocused, `after 1: shelf=${afterOne.shelf} row=${afterOne.rowFocused}; after 2: row=${afterTwo.rowFocused} (${afterTwo.tag})`);
     }
+    // ↓ with the shelf open moves the shelf to the next row; ↑ moves it back.
+    {
+      await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      const names = await page.$$eval("[data-drawer-row]", (rows) => rows.map((r) => r.children[1].textContent.replace("✎", "").trim()));
+      await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]");
+      const title = () => page.$eval("[data-shelf] header", (h) => h.innerText.split("\n")[0].replace("✎", "").trim());
+      const t0 = await title();
+      await page.keyboard.press("ArrowDown"); await new Promise((r) => setTimeout(r, 700));
+      const t1 = await title();
+      await page.keyboard.press("ArrowUp"); await new Promise((r) => setTimeout(r, 700));
+      const t2 = await title();
+      record("keyboard rows", "↓ / ↑ move the open shelf to the adjacent row", names.length >= 2 && t0 !== t1 && t1.startsWith(names[1].slice(0, 6)) && t2 === t0, `${t0} → ${t1} → ${t2}`);
+      await page.keyboard.press("Escape");
+    }
     // The vendor shelf's Recent rows carry a labelled membership pill: "In
     // series" toggles the charge out ("Excluded") and back — no menu.
     {
