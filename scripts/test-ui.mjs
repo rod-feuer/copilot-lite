@@ -236,6 +236,29 @@ async function pageHeader(browser) {
   });
 }
 
+// The dashboard in the app's anatomy: one summary card (as Categories and
+// Recurrings), and the uncategorized queue as a section title above a card of
+// standard rows — never a card nested in a tinted card.
+async function dashboardAnatomy(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-summary]");
+    const r = await page.evaluate(() => {
+      const summary = document.querySelector("[data-summary]");
+      const figures = summary ? summary.querySelectorAll(".stat-label").length : 0;
+      const bar = !!summary?.querySelector("[role='progressbar']");
+      const q = document.querySelector("[data-uncategorized]");
+      const nested = document.querySelectorAll(".card .card").length;
+      const rows = q ? q.querySelectorAll("[data-drawer-row] [data-category-property]").length : null;
+      const summaryFirst = summary && q ? summary.compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING : true;
+      return { figures, bar, nested, rows, summaryFirst: !!summaryFirst, hasQueue: !!q };
+    });
+    record("dashboard", "one summary card with net, income and expenses and a bar", r.figures >= 3 && r.bar, `${r.figures} figures, bar=${r.bar}`);
+    record("dashboard", "no card nested in a card", r.nested === 0, `${r.nested} nested`);
+    record("dashboard", "uncategorized queue is standard rows below the summary (when present)", !r.hasQueue || (r.rows > 0 && r.summaryFirst), r.hasQueue ? `${r.rows} rows, summary first=${r.summaryFirst}` : "no queue in the fixture");
+  });
+}
+
 async function restingActions(browser) {
   await withPage(browser, async (page) => {
     // The guard is the RESTING value (the control exists without hover). The
@@ -762,7 +785,7 @@ try {
   await loadFixture();
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
-    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["resting actions", restingActions],
+    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow],
   ]) {

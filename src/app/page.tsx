@@ -18,6 +18,10 @@ import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/compone
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
+import { SummaryCard } from "@/components/SummaryCard";
+import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
+import { AmountCell, CategoryProperty } from "@/components/RowCells";
+import type { Category } from "@/lib/types";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
@@ -146,6 +150,81 @@ export default function DashboardPage() {
       {status === "loading" && !data && <LoadingRows />}
       {status !== "error" && data && (
         <div className="flex flex-col gap-5">
+          {/* One summary card, as on Categories and Recurrings: the projected
+              net leads (the one figure that answers "how am I doing"), income
+              and expenses beside it, the budget bar, and the verdict as the
+              status line. The three tiles and the standalone verdict sentence
+              this replaces were the last of the dashboard's own dialect. */}
+          {(() => {
+            const current = isCurrentMonth(month);
+            const b = data.budget;
+            const v = buildVerdict(data, current);
+            const net = data.projectedNet ?? data.net;
+            const progress = b && b.total > 0 ? b.spent / b.total : data.income > 0 ? data.expenses / data.income : 0;
+            const barLabel =
+              b && b.total > 0
+                ? `${Math.round((b.spent / b.total) * 100)}% of budget used`
+                : `${Math.round(progress * 100)}% of income spent`;
+            const prevLabel = prevPeriodLabel(data.prev);
+            return (
+              <SummaryCard
+                primary={{
+                  value: usd(net, { sign: true, cents: false }),
+                  label: data.projectedNet != null ? "net cash flow, projected" : "net cash flow",
+                  tone: net >= 0 ? "good" : "bad",
+                  href: `/transactions?month=${month}`,
+                  sub:
+                    data.projectedNet != null ? (
+                      // Mid-month net is misleading (income hasn't posted) — lead
+                      // with the projected month-end figure, keep the actual as context.
+                      <span>{usd(data.net, { sign: true, cents: false })} so far</span>
+                    ) : (
+                      <DeltaLine cur={data.net} prev={data.prev?.net} prevLabel={prevLabel} higherIsGood />
+                    ),
+                }}
+                secondary={[
+                  {
+                    value: usd(data.income, { cents: false }),
+                    label: "income",
+                    href: `/transactions?month=${month}&type=income`,
+                    sub:
+                      data.projectedIncome != null ? (
+                        // Income posts late in the month, so a vs-prior delta on the
+                        // amount-so-far is noise — show what's expected instead.
+                        <span>{usd(data.projectedIncome, { cents: false })} expected</span>
+                      ) : (
+                        <DeltaLine cur={data.income} prev={data.prev?.income} prevLabel={prevLabel} higherIsGood />
+                      ),
+                  },
+                  {
+                    value: usd(data.expenses, { cents: false }),
+                    label: current ? "expenses so far" : "expenses",
+                    href: `/transactions?month=${month}&type=expense`,
+                    sub: <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />,
+                  },
+                ]}
+                progress={progress}
+                barLabel={barLabel}
+                alarm={!!b && b.total > 0 && b.spent > b.total}
+                status={
+                  <span
+                    className={`flex items-center gap-2 text-[13px] font-medium ${
+                      v.tone === "good" ? "text-[var(--good)]" : v.tone === "bad" ? "text-[var(--bad)]" : "text-[var(--muted)]"
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        v.tone === "good" ? "bg-[var(--good)]" : v.tone === "bad" ? "bg-[var(--bad)]" : "bg-[var(--muted)]"
+                      }`}
+                      aria-hidden
+                    />
+                    {v.text}
+                  </span>
+                }
+              />
+            );
+          })()}
+
           {data.needsReview > 0 && (
             <UncategorizedResolver
               month={month}
@@ -153,73 +232,6 @@ export default function DashboardPage() {
               onResolved={refresh}
             />
           )}
-
-          <Verdict
-            data={data}
-            isCurrentMonth={month === new Date().toISOString().slice(0, 7)}
-          />
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-            <Stat
-              label="Income"
-              value={usd(data.income, { cents: false })}
-              tone="pos"
-              href={`/transactions?month=${month}&type=income`}
-              sub={
-                data.projectedIncome != null ? (
-                  // Income posts late in the month, so a vs-prior delta on the
-                  // amount-so-far is noise — show what's expected instead. The
-                  // word qualifies the forward-looking figure; no symbol.
-                  <span className="text-xs text-[var(--muted)]">
-                    {usd(data.projectedIncome, { cents: false })} expected
-                  </span>
-                ) : (
-                  <DeltaLine
-                    cur={data.income}
-                    prev={data.prev?.income}
-                    prevLabel={prevPeriodLabel(data.prev)}
-                    higherIsGood
-                  />
-                )
-              }
-            />
-            <Stat
-              label={isCurrentMonth(month) ? "Expenses so far" : "Expenses"}
-              value={usd(data.expenses, { cents: false })}
-              tone="neutral"
-              href={`/transactions?month=${month}&type=expense`}
-              sub={
-                <DeltaLine
-                  cur={data.expenses}
-                  prev={data.prev?.expenses}
-                  prevLabel={prevPeriodLabel(data.prev)}
-                  higherIsGood={false}
-                />
-              }
-            />
-            <Stat
-              label={data.projectedNet != null ? "Net cash flow (projected)" : "Net cash flow"}
-              value={usd(data.projectedNet ?? data.net, { sign: true, cents: false })}
-              tone={(data.projectedNet ?? data.net) >= 0 ? "pos" : "neg"}
-              href={`/transactions?month=${month}`}
-              sub={
-                data.projectedNet != null ? (
-                  // Mid-month net is misleading (income hasn't posted) — lead with
-                  // the projected month-end figure, keep the actual as context.
-                  <span className="text-xs text-[var(--muted)]">
-                    {usd(data.net, { sign: true, cents: false })} so far
-                  </span>
-                ) : (
-                  <DeltaLine
-                    cur={data.net}
-                    prev={data.prev?.net}
-                    prevLabel={prevPeriodLabel(data.prev)}
-                    higherIsGood
-                  />
-                )
-              }
-            />
-          </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
             <div className="card flex flex-col p-5 lg:col-span-3">
@@ -524,50 +536,6 @@ function SeeAll({ href }: { href: string }) {
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-  sub,
-  href,
-}: {
-  label: string;
-  value: string;
-  // pos → green (money in / favorable), neg → red (a deficit), neutral → plain
-  // (an expense is a fact, not a warning, so it stays in the foreground color).
-  tone: "pos" | "neg" | "neutral";
-  sub?: React.ReactNode;
-  href?: string;
-}) {
-  const valueColor =
-    tone === "pos"
-      ? "text-[var(--good)]"
-      : tone === "neg"
-        ? "text-[var(--bad)]"
-        : "text-[var(--foreground)]";
-  const inner = (
-    <>
-      <div className="stat-label">{label}</div>
-      <div className={`mt-1 text-xl font-semibold tracking-tight sm:mt-2 sm:text-2xl ${valueColor}`}>
-        {value}
-      </div>
-      {sub}
-    </>
-  );
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className="card group relative block cursor-pointer p-4 transition-colors hover:border-[var(--accent)]/40 sm:p-5"
-      >
-        <DrillChevron className="absolute right-4 top-4" />
-        {inner}
-      </Link>
-    );
-  }
-  return <div className="card p-4 sm:p-5">{inner}</div>;
-}
-
 // One plain-language headline answering "how am I doing this month?" — so the
 // dashboard leads with a verdict instead of three co-equal numbers. Leads with
 // the budget (the user's own plan); for an in-progress month it speaks in pace
@@ -600,24 +568,6 @@ function buildVerdict(
   const net = Math.round(data.net);
   if (net >= 0) return { tone: "good", text: `Net positive — you kept ${m(net)} this month` };
   return { tone: "bad", text: `Net negative — you spent ${m(net)} more than you earned` };
-}
-
-function Verdict({ data, isCurrentMonth }: { data: Dash; isCurrentMonth: boolean }) {
-  const v = buildVerdict(data, isCurrentMonth);
-  const dot =
-    v.tone === "good" ? "bg-[var(--good)]" : v.tone === "bad" ? "bg-[var(--bad)]" : "bg-[var(--muted)]";
-  const text =
-    v.tone === "good"
-      ? "text-[var(--good)]"
-      : v.tone === "bad"
-        ? "text-[var(--bad)]"
-        : "text-[var(--muted)]";
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
-      <p className={`text-base font-semibold tracking-tight sm:text-lg ${text}`}>{v.text}</p>
-    </div>
-  );
 }
 
 function shortMonth(month: string): string {
@@ -736,10 +686,11 @@ function UncategorizedResolver({
   onResolved: () => void;
 }) {
   const CAP = 4;
-  type UncatTx = { id: number; displayName: string; date: string; amount: number; excluded: 0 | 1 };
+  type UncatTx = { id: number; merchant: string; displayName: string; date: string; amount: number; excluded: 0 | 1 };
   const [rows, setRows] = useState<UncatTx[]>([]);
   const [hasMore, setHasMore] = useState(false);
-  const [cats, setCats] = useState<{ id: number; name: string; icon: string }[]>([]);
+  const [cats, setCats] = useState<Category[]>([]);
+  const openTx = useTxDrawer();
   const [busy, setBusy] = useState<number | null>(null);
   // "always": onResolved refreshes the dashboard (count, totals) and re-syncs
   // this list either way — a failed write has to put the optimistic row back.
@@ -786,13 +737,15 @@ function UncategorizedResolver({
   }
 
   return (
-    <div className="card border-[var(--warn)]/30 bg-[var(--warn)]/10 p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-base">⚠️</span>
-        <span className="text-sm font-medium text-[var(--warn)]">
-          {count} transaction{count === 1 ? "" : "s"} need{count === 1 ? "s" : ""} a category this
-          month
-        </span>
+    // A section like any other: a small-caps title above one card of standard
+    // rows (date, name, the category as the quiet property, the amount). The
+    // amber box with white cards nested inside it was the one place the app
+    // nested a card in a tinted card, and it out-shouted the money above.
+    <section className="flex flex-col gap-2" data-uncategorized>
+      <div className="flex items-center gap-2 px-[17px]">
+        <h3 className="stat-label text-[var(--warn)]">
+          {count} transaction{count === 1 ? "" : "s"} need{count === 1 ? "s" : ""} a category
+        </h3>
         {hasMore && (
           <Link
             href={`/transactions?category=none${month ? `&month=${month}` : ""}`}
@@ -802,38 +755,48 @@ function UncategorizedResolver({
           </Link>
         )}
       </div>
-      <ul className="flex flex-col gap-2">
+      <ul className="card divide-y divide-[var(--border)] overflow-hidden">
         {rows.map((t) => (
           <li
             key={t.id}
-            className="flex items-center gap-3 rounded-xl border border-[var(--warn)]/20 bg-[var(--card)] p-2.5"
+            data-drawer-row
+            {...rowButtonProps(() => openTx(t.merchant))}
+            className={`group flex cursor-pointer items-center gap-3 px-4 py-2 text-[13px] hover:bg-[var(--hover)] ${ROW_FOCUS} ${
+              busy === t.id ? "opacity-50" : ""
+            }`}
           >
+            <div className="w-12 shrink-0 text-xs tabular-nums text-[var(--muted)]">{shortDate(t.date)}</div>
+            {/* The property sits in its own column on desktop and under the
+                name on a phone, as on Transactions, so the name keeps its room. */}
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{t.displayName}</div>
-              <div className="text-xs text-[var(--muted)]">
-                {shortDate(t.date)} · {usd(t.amount, { sign: true })}
+              <div className="truncate font-medium">{t.displayName}</div>
+              <div className="sm:hidden">
+                <CategoryProperty
+                  categoryId={null}
+                  categoryName={null}
+                  categoryIcon={null}
+                  cats={cats}
+                  onChange={(id) => id != null && assign(t, id)}
+                  ariaLabel={`Category for ${t.displayName}`}
+                  className="-ml-1.5"
+                />
               </div>
             </div>
-            <select
-              defaultValue=""
-              disabled={busy === t.id}
-              onChange={(e) => e.target.value && assign(t, Number(e.target.value))}
-              aria-label={`Category for ${t.displayName}`}
-              className="select-caret shrink-0 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-[var(--card)] py-1.5 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 disabled:opacity-50"
-            >
-              <option value="" disabled>
-                Categorize…
-              </option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon} {c.name}
-                </option>
-              ))}
-            </select>
+            <span className="hidden w-44 shrink-0 justify-end sm:flex">
+              <CategoryProperty
+                categoryId={null}
+                categoryName={null}
+                categoryIcon={null}
+                cats={cats}
+                onChange={(id) => id != null && assign(t, id)}
+                ariaLabel={`Category for ${t.displayName}`}
+              />
+            </span>
+            <AmountCell value={t.amount} excluded={!!t.excluded} className="w-24 shrink-0" />
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
