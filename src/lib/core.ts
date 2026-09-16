@@ -334,6 +334,61 @@ function interleavedAmountParts<T extends { date: string; amount: number }>(
   return covered >= 0.8 * txs.length ? parts : null;
 }
 
+// A fixed bill with usage on top: Anthropic is a $20 subscription every month
+// plus $15-ish API top-ups on random days. Grouped by descriptor the top-ups
+// join the series (the count, the per-charge, "paid"). When ONE amount group
+// is regular on its own grid and is the largest, and the remaining charges
+// are NOT themselves regular (random days — usage, not another bill), the
+// bill is the regular group and the rest stays unlinked. A variable bill
+// whose other months sit on the same grid (a utility) is left whole: its
+// remainder is regular.
+function regularCore<T extends { date: string; amount: number }>(
+  txs: T[]
+): { cadence: Recurring["cadence"]; txs: T[] } | null {
+  // Debits only: usage on top of a plan is spending. A credit split across
+  // postings (an Amex $25 credit posted as $21 + $4) is one credit, not a
+  // core plus usage.
+  if (txs.length < 6 || txs.some((t) => t.amount > 0)) return null;
+  const groups: T[][] = [];
+  for (const t of [...txs].sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount))) {
+    const g = groups[groups.length - 1];
+    if (g && Math.abs(Math.abs(t.amount) - Math.abs(g[0].amount)) <= 0.1 * Math.abs(g[0].amount)) g.push(t);
+    else groups.push([t]);
+  }
+  const byDate = (g: T[]) => [...g].sort((a, b) => a.date.localeCompare(b.date));
+  const gapsOf = (g: T[]) => {
+    const d = byDate(g);
+    const gaps: number[] = [];
+    for (let i = 1; i < d.length; i++) gaps.push((Date.parse(d[i].date) - Date.parse(d[i - 1].date)) / DAY);
+    return gaps;
+  };
+  const regular = (g: T[], minOnGrid: number): Recurring["cadence"] | null => {
+    if (g.length < 3) return null;
+    const gaps = gapsOf(g);
+    const cadence = classifyCadence(medianGap(gaps));
+    return cadence && onGridFraction(gaps, CADENCE_DAYS[cadence]) >= minOnGrid ? cadence : null;
+  };
+  // A bill charges every period; six similar-priced lunches over four years
+  // land on the grid only by skipping it. Require consecutive periods.
+  const consecutive = (g: T[], period: number) => {
+    const gaps = gapsOf(g);
+    return gaps.filter((gap) => Math.round(gap / period) === 1 && Math.abs(gap - period) <= 0.35 * period).length >= 0.8 * gaps.length;
+  };
+  // The core must be a real bill on its own — six charges or more, tight on
+  // its grid, and most of the vendor — and the rest must be usage: three or
+  // more charges that are not regular. Anything less is a coincidence (six
+  // similar-priced lunches) or a price change (one odd charge), and the
+  // whole-descriptor path handles both.
+  const largest = groups.reduce((a, b) => (b.length > a.length ? b : a));
+  if (largest.length < 6 || largest.length < 0.45 * txs.length) return null;
+  const cadence = regular(largest, 0.8);
+  if (!cadence || !consecutive(largest, CADENCE_DAYS[cadence])) return null;
+  const rest = txs.filter((t) => !largest.includes(t));
+  if (rest.length < 3) return null;
+  if (regular(rest, 0.6)) return null; // the rest is a bill too — not this rule's case
+  return { cadence, txs: byDate(largest) };
+}
+
 // "<vendor> · 23rd" when parts differ by day; "· $200" when they share a day
 // and differ by amount; "· 18th · $200" when a vendor needs both.
 function partKey<T>(vendor: string, p: DayPart<T>, all: DayPart<T>[]): string {
@@ -541,6 +596,13 @@ export function detectRecurrings(): Recurring[] {
     const turns = interleavedAmountParts(txs);
     if (turns) {
       emitInterleaved(turns);
+      continue;
+    }
+    // A fixed bill with usage on top (Anthropic: $20 monthly + top-ups).
+    const core = regularCore(txs);
+    if (core) {
+      emitPart(merchant, { txs: core.txs, events: core.txs.map((t) => ({ date: t.date, amount: t.amount })) }, core.cadence);
+      created.add(merchant);
       continue;
     }
 

@@ -1488,3 +1488,43 @@ test("the vendor shelf follows the newer series of a folded vendor, and a price 
   detectRecurrings();
   assert.deepEqual(merchantSummary("Mag").priceChange, { from: 10, to: 12, since: "2026-04-05" });
 });
+
+// A fixed bill with usage on top. Anthropic: $20 on the 17th every month plus
+// $15-ish API top-ups on random days. The bill is the $20 group; the top-ups
+// stay unlinked. A variable utility whose amounts wander but whose every
+// charge sits on the monthly grid stays one whole series.
+test("detector keeps the regular amount group and leaves irregular usage charges unlinked", () => {
+  const subs = addCat("Subscriptions (core)");
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 8; m++) tx("Anthropic", { amount: -20, date: `${ym(m)}-17`, categoryId: subs });
+  // Usage top-ups land whenever the balance runs low: 3 days apart, then 40.
+  for (const [m, d, amt] of [[1, 4, 15.01], [1, 7, 15.14], [1, 9, 15.34], [2, 26, 15.06], [3, 2, 100], [3, 3, 15.0], [5, 26, 107.59], [5, 29, 15.01], [7, 30, 15.2]] as [number, number, number][])
+    tx("Anthropic", { amount: -amt, date: `${ym(m)}-${String(d).padStart(2, "0")}`, categoryId: subs });
+  for (let m = 1; m <= 8; m++) tx("Duke Energy", { amount: -[31, 44, 58, 72, 65, 49, 38, 33][m - 1], date: `${ym(m)}-11`, categoryId: subs });
+
+  const recs = detectRecurrings();
+  const a = recs.find((r) => r.merchant === "Anthropic")!;
+  assert.equal(a.cadence, "monthly");
+  assert.equal(a.count, 8, "the eight $20 charges");
+  assert.equal(a.avgAmount, -20);
+  const unlinked = (getDb().prepare("SELECT COUNT(*) n FROM transactions WHERE merchant = 'Anthropic' AND recurringId IS NULL").get() as { n: number }).n;
+  assert.equal(unlinked, 9, "every top-up is left out of the series");
+  const duke = recs.find((r) => r.merchant === "Duke Energy")!;
+  assert.equal(duke.count, 8, "a variable bill on one grid stays whole");
+
+  // Six similar-priced lunches that happen to skip months are not a bill.
+  for (const [ym2, amt] of [["2025-01-10", 26.65], ["2025-02-04", 26.65], ["2025-04-01", 27.3], ["2025-04-22", 26.65], ["2025-06-30", 27.63], ["2025-10-20", 25.89], ["2025-03-03", 10.66], ["2025-05-15", 1.84], ["2025-08-01", 11.31], ["2025-09-09", 6.21]])
+    tx("Potbelly", { amount: -(amt as number), date: ym2 as string, categoryId: subs });
+  // A monthly $25 credit sometimes posted as $21 + $4 is one credit, not a core plus usage.
+  for (let m = 1; m <= 8; m++) {
+    if (m === 3 || m === 6) { tx("Amex Credit", { amount: 21, date: `${ym(m)}-10`, categoryId: subs }); tx("Amex Credit", { amount: 4, date: `${ym(m)}-10`, categoryId: subs }); }
+    else tx("Amex Credit", { amount: 25, date: `${ym(m)}-10`, categoryId: subs });
+  }
+  const again = detectRecurrings();
+  // The core rule must decline (a core would be the six lunches); whatever
+  // the ordinary whole-vendor path makes of the ten charges is its business.
+  const potbelly = again.find((r) => r.merchant === "Potbelly");
+  assert.ok(!potbelly || potbelly.count === 10, "skipping the grid is a coincidence, not a core");
+  const credit = again.find((r) => r.merchant === "Amex Credit");
+  assert.ok(!credit || credit.count === 10, "a credit is never split into a core plus usage (all ten postings, or none)");
+});
