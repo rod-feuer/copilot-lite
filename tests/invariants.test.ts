@@ -1472,8 +1472,11 @@ test("the vendor shelf follows the newer series of a folded vendor, and a price 
   for (let m = 6; m <= 8; m++) tx("D J", { amount: -38.99, date: `${ym(m)}-18`, categoryId: subs });
   detectRecurrings();
   const shelf = merchantSummary("D J*wsj");
-  assert.equal(shelf.recurringDetail?.nextDate.slice(0, 7), "2026-09");
-  assert.equal(shelf.recurringDetail?.nextDate.slice(8), "18", "next due follows the newer descriptor's charges, not the stale series");
+  // Next due rolls forward from today (the clock sweep runs this at many
+  // dates), so assert the day it lands on and that it is not in the past.
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal(shelf.recurringDetail?.nextDate.slice(8), "18", "next due follows the newer descriptor's charges (the 18th), not the stale series (the 25th)");
+  assert.ok((shelf.recurringDetail?.nextDate ?? "") >= "2026-09-18" && (shelf.recurringDetail?.nextDate ?? "") >= today.slice(0, 8) + "01", "never in the past");
   assert.equal(shelf.priceChange, null, "no change to report");
 
   // A promo price then five charges at the real price: the change is old news.
