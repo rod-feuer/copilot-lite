@@ -700,11 +700,82 @@ function MerchantBody({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className={`grid gap-2 text-center ${boxes.length > 3 ? "grid-cols-2" : "grid-cols-3"}`}>
-        {boxes.map((b) => (
-          <Metric key={b.label} label={b.label} value={b.value} />
-        ))}
-      </div>
+      {d ? (
+        <>
+          {/* The plan's properties, each a stat that IS its editor: one fact,
+              one place. Per charge edits the expected amount; next due edits
+              the date; the cadence select sits on the caption line with the
+              per-year figure it drives. */}
+          <div className="grid grid-cols-2 gap-2">
+            <PropertyCard label="Per charge" edited={data.expectedAmount != null}>
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-semibold text-[var(--muted)]">$</span>
+                <CommitInput
+                  key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                  defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                  placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
+                  inputMode="decimal"
+                  aria-label="Expected amount"
+                  onCommit={(v) => {
+                    const t = v.trim();
+                    if (t === "") {
+                      if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                      return;
+                    }
+                    const n = Math.abs(Number(t));
+                    if (!Number.isFinite(n)) return; // ignore non-numeric input
+                    if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+                  }}
+                  className="w-full min-w-0 bg-transparent text-sm font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
+                />
+              </div>
+            </PropertyCard>
+            <PropertyCard label="Next due" edited={data.nextDate != null}>
+              <input
+                type="date"
+                aria-label="Next due"
+                value={data.nextDate ?? d.nextDate ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null }, v === "" ? "Next due reset to auto" : "Next due reset to auto");
+                  else if (v !== data.nextDate) onSaveSettings({ nextDate: v }, "Next due updated");
+                }}
+                className="w-full min-w-0 cursor-pointer bg-transparent text-sm font-semibold tabular-nums focus:outline-none"
+              />
+            </PropertyCard>
+          </div>
+          <div className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
+            <select
+              aria-label="Cadence"
+              value={data.cadence ?? "__auto"}
+              onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value }, e.target.value === "__auto" ? "Cadence reset to auto" : "Cadence updated")}
+              className="select-caret cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pl-1 pr-5 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)]"
+            >
+              <option value="__auto">Auto{data.detectedCadence ? ` · ${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence}` : ""}</option>
+              {Object.entries(CADENCE_LABELS).map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {data.cadence != null && <StateTag edited />}
+            <span>·</span>
+            <span>{usd(d.annualized, { cents: false })} per year expected</span>
+            {data.received > 0 && (
+              <>
+                <span>·</span>
+                <span>{usd(data.received, { cents: false })} received all time</span>
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className={`grid gap-2 text-center ${boxes.length > 3 ? "grid-cols-2" : "grid-cols-3"}`}>
+          {boxes.map((b) => (
+            <Metric key={b.label} label={b.label} value={b.value} />
+          ))}
+        </div>
+      )}
 
       {data.priceChange && (
         <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
@@ -714,51 +785,84 @@ function MerchantBody({
         </div>
       )}
 
-      {/* Edit / correct — name lives in the header (click to rename); here: a
-          compact 2-up grid so the top half stays scannable. */}
+      {/* Evidence before controls: the shelf exists to edit a vendor where its
+          charges are on screen, so the charges come first. */}
+      <div>
+        <div className="stat-label mb-1.5">Recent</div>
+        {/* Each charge carries a labelled membership pill — "In series",
+            "Excluded", "Unlinked" — that toggles it in or out of this plan (a
+            device purchase under "Apple" is not the subscription). No menu:
+            recategorizing a single charge is the Transactions tab's job. */}
+        <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
+          {data.recent.map((r) => (
+            <ShelfRow
+              key={r.id}
+              date={r.date}
+              name={r.categoryName ?? "Uncategorized"}
+              amount={r.amount}
+              muted={r.excluded === 1}
+              excluded={!!r.excluded || !!r.categoryExcluded}
+              recurring={recurringState(r)}
+              membership={{ kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
+            />
+          ))}
+        </ul>
+      </div>
+
+      {data.byYear.length > 1 && (
+        <div>
+          <div className="stat-label mb-1.5">By year</div>
+          <div className="flex flex-col gap-1.5">
+            {(() => {
+              const max = Math.max(...data.byYear.map((y) => y.spent), 1);
+              return data.byYear.map((y) => (
+                <div key={y.year} className="flex items-center gap-2 text-xs">
+                  <span className="w-9 shrink-0 text-[var(--muted)]">{y.year}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--background)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--accent)]"
+                      style={{ width: `${(y.spent / max) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-14 shrink-0 text-right tabular-nums">
+                    {usd(y.spent, { cents: false })}
+                  </span>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* A divider ranks the corrections a tier below the evidence — things
+          you reach for occasionally, not every visit. */}
+      <div className="border-t border-[var(--border)]" />
+
       <div className="flex flex-col gap-2.5">
         <div className="flex flex-wrap gap-x-3 gap-y-2.5">
-          <div className="min-w-[140px] flex-1">
-            <ShelfEditField
-              label="Expected"
-              hint="Amount used for upcoming bills; past charges are unchanged."
-              edited={data.expectedAmount != null}
-              prefix="$"
-              inputMode="decimal"
-              defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
-              placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
-              onCommit={(v) => {
-                const t = v.trim();
-                if (t === "") {
-                  if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
-                  return;
-                }
-                const n = Math.abs(Number(t));
-                if (!Number.isFinite(n)) return; // ignore non-numeric input
-                if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
-              }}
-            />
-          </div>
-
-          {data.recurring && (
+          {!d && (
             <div className="min-w-[140px] flex-1">
-              <CadenceCorrection
-                detected={data.detectedCadence}
-                override={data.cadence}
-                onSave={(c) => onSaveSettings({ cadence: c }, c ? "Cadence updated" : "Cadence reset to auto")}
+              <ShelfEditField
+                label="Expected"
+                hint="Amount used for upcoming bills; past charges are unchanged."
+                edited={data.expectedAmount != null}
+                prefix="$"
+                inputMode="decimal"
+                defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
+                placeholder={detectedAmount != null ? detectedAmount.toFixed(2) : "amount"}
+                onCommit={(v) => {
+                  const t = v.trim();
+                  if (t === "") {
+                    if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                    return;
+                  }
+                  const n = Math.abs(Number(t));
+                  if (!Number.isFinite(n)) return; // ignore non-numeric input
+                  if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+                }}
               />
             </div>
           )}
-          {data.recurring && (
-            <div className="min-w-[140px] flex-1">
-              <NextDueCorrection
-                derived={data.recurringDetail?.nextDate ?? null}
-                override={data.nextDate}
-                onSave={(d) => onSaveSettings({ nextDate: d }, d ? "Next due updated" : "Next due reset to auto")}
-              />
-            </div>
-          )}
-
           <div className="min-w-[140px] flex-1">
             <div className="flex flex-col gap-1.5">
               <label className="stat-label">Category</label>
@@ -811,10 +915,6 @@ function MerchantBody({
           </button>
         )}
 
-        {/* A divider ranks the structural operations a tier below the money facts
-            above — corrections you reach for occasionally, not every visit. */}
-        <div className="border-t border-[var(--border)]" />
-
         {/* Two secondary actions, compact and side-by-side. Combine is a
             disclosure — its panel drops below the row only while in use. */}
         <div className="flex gap-2">
@@ -829,9 +929,6 @@ function MerchantBody({
           </button>
         </div>
 
-        {/* End / reactivate a canceled subscription — same correction as the
-            Recurrings page, available wherever the vendor shelf is open. Only
-            meaningful for an actual recurring. */}
         {data.recurring && (
           <div className="flex items-center justify-between px-0.5 text-xs">
             {data.ended ? (
@@ -886,53 +983,6 @@ function MerchantBody({
             onClose={() => setCombining(false)}
           />
         )}
-      </div>
-
-      {data.byYear.length > 1 && (
-        <div>
-          <div className="stat-label mb-1.5">By year</div>
-          <div className="flex flex-col gap-1.5">
-            {(() => {
-              const max = Math.max(...data.byYear.map((y) => y.spent), 1);
-              return data.byYear.map((y) => (
-                <div key={y.year} className="flex items-center gap-2 text-xs">
-                  <span className="w-9 shrink-0 text-[var(--muted)]">{y.year}</span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--background)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--accent)]"
-                      style={{ width: `${(y.spent / max) * 100}%` }}
-                    />
-                  </div>
-                  <span className="w-14 shrink-0 text-right tabular-nums">
-                    {usd(y.spent, { cents: false })}
-                  </span>
-                </div>
-              ));
-            })()}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <div className="stat-label mb-1.5">Recent</div>
-        {/* Each charge carries a labelled membership pill — "In series",
-            "Excluded", "Unlinked" — that toggles it in or out of this plan (a
-            device purchase under "Apple" is not the subscription). No menu:
-            recategorizing a single charge is the Transactions tab's job. */}
-        <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
-          {data.recent.map((r) => (
-            <ShelfRow
-              key={r.id}
-              date={r.date}
-              name={r.categoryName ?? "Uncategorized"}
-              amount={r.amount}
-              muted={r.excluded === 1}
-              excluded={!!r.excluded || !!r.categoryExcluded}
-              recurring={recurringState(r)}
-              membership={{ kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
-            />
-          ))}
-        </ul>
       </div>
     </div>
   );
@@ -1495,38 +1545,6 @@ const CADENCE_LABELS: Record<string, string> = {
   yearly: "Yearly",
 };
 
-// Next-due correction: the derived date (last charge + cadence) is the auto
-// value; a picked date overrides it for upcoming bills and the projection.
-// Clearing the field returns to auto. Same auto/edited convention as Cadence.
-function NextDueCorrection({
-  derived,
-  override,
-  onSave,
-}: {
-  derived: string | null;
-  override: string | null;
-  onSave: (date: string | null) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <label className="stat-label">Next due</label>
-        <StateTag edited={override != null} />
-      </div>
-      <input
-        type="date"
-        aria-label="Next due"
-        value={override ?? derived ?? ""}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === "" || v === derived) onSave(null);
-          else if (v !== override) onSave(v);
-        }}
-        className="btn-ghost w-full cursor-pointer text-sm"
-      />
-    </div>
-  );
-}
 
 // Match correction: how a charge is recognised as this bill. Auto = exact
 // vendor, or the vendor's category + amount. "contains" widens it to any
@@ -1585,44 +1603,6 @@ function MatchCorrection({ rule, onSave }: { rule: MatchRule | null; onSave: (ru
   );
 }
 
-// One-line correction for a misread cadence: pick the right rhythm and the
-// override saves + re-derives next-due (server-side). "Auto" shows what detection
-// found and clears the override. Framed as correcting a guess, not configuring.
-function CadenceCorrection({
-  detected,
-  override,
-  onSave,
-}: {
-  detected: string | null;
-  override: string | null;
-  onSave: (cadence: string | null) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <label className="stat-label">Cadence</label>
-        <StateTag edited={override != null} />
-      </div>
-      <select
-        value={override ?? "__auto"}
-        onChange={(e) => onSave(e.target.value === "__auto" ? null : e.target.value)}
-        className="btn-ghost select-caret w-full cursor-pointer appearance-none pr-8 text-sm"
-      >
-        {/* The "auto" row shows what detection currently reads. "detected" is
-            redundant with the AUTO tag above and overflowed the half-width
-            select (e.g. "Auto · detected Every 6 months"), so it's dropped. */}
-        <option value="__auto">
-          Auto{detected ? ` · ${CADENCE_LABELS[detected] ?? detected}` : ""}
-        </option>
-        {Object.entries(CADENCE_LABELS).map(([v, label]) => (
-          <option key={v} value={v}>
-            {label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
 
 // A labeled, self-evidently editable field for the merchant shelf. Uncontrolled:
 // Enter or blur commits, Escape reverts. Keyed on defaultValue so a refreshed
@@ -1667,6 +1647,20 @@ function ShelfEditField({
         />
       </div>
       {hint && <span className="text-[10px] text-[var(--muted)]">{hint}</span>}
+    </div>
+  );
+}
+
+// A stat that is its own editor: the value on top, the label and its
+// auto/edited state beneath, in the same box the read-only metrics use.
+function PropertyCard({ label, edited, children }: { label: string; edited?: boolean; children: ReactNode }) {
+  return (
+    <div className="rounded-xl bg-[var(--background)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
+      {children}
+      <div className="mt-0.5 flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{label}</span>
+        <StateTag edited={edited} />
+      </div>
     </div>
   );
 }
