@@ -260,7 +260,20 @@ async function restingActions(browser) {
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
     await measure("shelf · exclude from totals", `${shelfSel} button::-p-text(xclude from totals)`);
     await measure("shelf · delete category", `${shelfSel} button[aria-label^='Delete ']`);
-    await measure("shelf · row ⋯", `${shelfSel} button[aria-label='Edit transaction']`);
+    // No row menu on the category shelf either: its rows carry a pill and an amount.
+    const shelfMenus = await page.$$eval(`${shelfSel} button[aria-label='Edit transaction']`, (bs) => bs.length);
+    record("resting actions", "shelf · no row menu on the category shelf", shelfMenus === 0, `${shelfMenus} menus`);
+    // One category treatment: the quiet property, no tint, on both list pages.
+    for (const route of ["/transactions", "/recurrings"]) {
+      await page.goto(BASE + route, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row] [data-category-property]");
+      const r = await page.$$eval("[data-drawer-row] [data-category-property]", (els) => {
+        const visible = els.filter((e) => e.offsetParent !== null);
+        const tinted = visible.filter((e) => { const bg = getComputedStyle(e).backgroundColor; return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent"; }).length;
+        return { n: visible.length, tinted, tints: [...new Set(els.map((e) => e.querySelector("select") ? "select" : "none"))] };
+      });
+      record("resting actions", `${route} · category is the quiet property (no tint, native select)`, r.n > 0 && r.tinted === 0 && r.tints.join() === "select", `${r.n} properties, ${r.tinted} tinted`);
+    }
   });
 }
 
@@ -568,8 +581,8 @@ async function recurringsRow(browser) {
       // Paid amounts are settled (foreground, semibold); expected ones are
       // provisional (muted, medium). The fixture has both.
       const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; };
-      const paid = r.amountStates.filter((a) => a.state === "paid");
-      const expected = r.amountStates.filter((a) => a.state === "expected");
+      const paid = r.amountStates.filter((a) => a.state === "settled");
+      const expected = r.amountStates.filter((a) => a.state === "provisional");
       const paidOk = paid.length > 0 && paid.every((a) => a.color === r.foreground && Number(a.weight) >= 600);
       const expectedOk = expected.length > 0 && expected.every((a) => hex(a.color) === r.mutedColour.toLowerCase() && Number(a.weight) === 500);
       record("recurrings row", "paid amounts read settled, expected amounts read provisional", paidOk && expectedOk, `paid ${paid.length} (fg, ≥600), expected ${expected.length} (muted, 500)`);

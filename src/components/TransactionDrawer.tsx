@@ -14,7 +14,7 @@ import { usePathname } from "next/navigation";
 import { useMutation } from "@/components/useMutation";
 import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState, type RecurringState } from "@/components/RecurringGlyph";
-import { Money } from "@/components/Money";
+import { AmountCell } from "@/components/RowCells";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson, deleteJson } from "@/lib/http";
@@ -373,20 +373,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       onChange.current?.();
     }
   }
-  async function txRecategorize(txId: number, categoryId: number | null) {
-    if (
-      await mutate(
-        () => patchJson(`/api/transactions/${txId}`, { categoryId }),
-        { success: "Recategorized", error: "Couldn't recategorize — please try again" },
-        { refresh: "never" }
-      )
-    ) {
-      refreshTarget();
-      onChange.current?.();
-    }
-  }
-  // One charge in or out of its plan (a device purchase under
-  // "Apple" is not the subscription). The server rebuilds detection.
   async function txSetMembership(txId: number, put: "in" | "out", plan: string | null) {
     if (
       await mutate(
@@ -509,10 +495,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             ) : target.kind === "category" && cData ? (
               <CategoryBody
                 data={cData}
-                cats={cats}
-                onAddCategory={addCat}
                 onOpenMerchant={drillToMerchant}
-                onTxRecategorize={txRecategorize}
                 onTxToggleRecurring={txToggleRecurring}
                 onSetExcluded={(exclude) => categorySetExcluded(cData.id, exclude)}
                 onDelete={() => categoryDelete(cData)}
@@ -1120,20 +1103,14 @@ function MerchantBody({
 
 function CategoryBody({
   data,
-  cats,
-  onAddCategory,
   onOpenMerchant,
-  onTxRecategorize,
   onTxToggleRecurring,
   onSetExcluded,
   onDelete,
   confirmingDelete,
 }: {
   data: CatSummary;
-  cats: Cat[];
-  onAddCategory: (c: Cat) => void;
   onOpenMerchant: (merchant: string) => void;
-  onTxRecategorize: (txId: number, categoryId: number | null) => void;
   onTxToggleRecurring: (merchant: string, makeIt: boolean) => void;
   onSetExcluded: (exclude: boolean) => void;
   onDelete: () => void;
@@ -1256,11 +1233,6 @@ function CategoryBody({
                 excluded={isExcluded}
                 recurring={recurringState(t)}
                 onClick={() => onOpenMerchant(t.merchant)}
-                editable={{
-                  cats,
-                  onAddCategory,
-                  onRecategorize: (cid) => onTxRecategorize(t.id, cid),
-                }}
                 membership={{ kind: "vendor", onToggle: () => onTxToggleRecurring(t.merchant, t.recurringId == null) }}
               />
             ))}
@@ -1302,14 +1274,9 @@ function monthsSince(firstSeen: string | null): number {
   return Math.min(12, Math.max(1, span));
 }
 
-// Shared shelf row: a fixed-width date column, gap, then the name; amount right;
-// an optional "⋯" edit menu (a reserved slot keeps amounts aligned across rows).
-// Used by both the Upcoming and Transactions lists so they line up.
-type RowEdit = {
-  cats: Cat[];
-  onAddCategory: (c: Cat) => void;
-  onRecategorize: (categoryId: number | null) => void;
-};
+// Shared shelf row: a fixed-width date column, gap, then the name; amount
+// right. Used by the Upcoming and Transactions lists so they line up. No row
+// menu: recategorizing a single charge is the Transactions tab's job.
 // The row's membership control: a labelled pill that says its state and
 // toggles it. "charge": this charge in or out of its plan (the vendor shelf).
 // "vendor": the whole vendor recurring or not (the category shelf).
@@ -1323,7 +1290,6 @@ function ShelfRow({
   excluded,
   recurring = "none",
   onClick,
-  editable,
   membership,
   flush = false,
   unsignedDebits = false,
@@ -1337,19 +1303,11 @@ function ShelfRow({
   excluded?: boolean; // doesn't count toward totals → an inflow is not green
   recurring?: RecurringState;
   onClick?: () => void;
-  editable?: RowEdit; // the ⋯ editor (recategorize) — the category shelf only
   membership?: Membership;
   flush?: boolean; // no horizontal padding: the list sits on the panel's edges
   unsignedDebits?: boolean; // a plan's charges are debits by definition — no minus on every row
   note?: string; // quiet text in the pill's slot when there is no control (e.g. "not counted")
 }) {
-  const [editing, setEditing] = useState(false);
-  // "+ New category…" in the row's Recategorize picker.
-  const newCat = useNewCategory<null>((cat) => {
-    editable?.onAddCategory(cat);
-    editable?.onRecategorize(cat.id);
-    setEditing(false);
-  });
   return (
     <li>
       <div
@@ -1425,63 +1383,15 @@ function ShelfRow({
             );
           })()}
         {/* A fixed amount column, so a pill beside it lands on one edge in every row. */}
-        {muted ? (
-          <span className="w-20 shrink-0 text-right tabular-nums text-[var(--muted)]">
-            {usd(unsignedDebits && amount < 0 ? -amount : amount, { sign: !!sign })}
-          </span>
-        ) : unsignedDebits && amount < 0 ? (
-          <span className="w-20 shrink-0 text-right tabular-nums text-[var(--foreground)]">{usd(-amount)}</span>
-        ) : (
-          <Money value={amount} sign={!!sign || (unsignedDebits && amount > 0)} excluded={excluded} className="w-20 shrink-0 text-right" />
-        )}
-        {editable && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing((v) => !v);
-            }}
-            className={`w-5 shrink-0 rounded text-[var(--muted)] transition-opacity hover:text-[var(--foreground)] focus:opacity-100 ${
-              editing ? "opacity-100" : "opacity-60 focus-visible:opacity-100 group-hover:opacity-100"
-            }`}
-            aria-label="Edit transaction"
-          >
-            ⋯
-          </button>
-        )}
+        <AmountCell
+          value={amount}
+          unsigned={unsignedDebits && amount < 0}
+          sign={!!sign || (unsignedDebits && amount > 0)}
+          excluded={excluded}
+          state={muted ? "provisional" : "settled"}
+          className="w-20 shrink-0"
+        />
       </div>
-      {editable && editing && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="flex flex-wrap items-center gap-2 border-t border-dashed border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs"
-        >
-          <select
-            defaultValue="__p"
-            aria-label="Recategorize"
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === NEW_CATEGORY) {
-                newCat.open(e.currentTarget, null, `New category for ${name}`);
-                return;
-              }
-              editable.onRecategorize(v === "none" ? null : Number(v));
-              setEditing(false);
-            }}
-            className="select-caret cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1 pl-2 pr-8"
-          >
-            <option value="__p" disabled>
-              Recategorize…
-            </option>
-            <option value="none">Uncategorized</option>
-            {editable.cats.map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.icon} {c.name}
-              </option>
-            ))}
-            <NewCategoryOption />
-          </select>
-          {newCat.popover}
-        </div>
-      )}
     </li>
   );
 }
