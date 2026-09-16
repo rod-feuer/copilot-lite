@@ -6,7 +6,7 @@ The finish line + rules for an autonomous improvement loop. Kick off with:
 ## Verification gate
 Run **every iteration** (fast):
 1. `npx tsc --noEmit` — clean
-2. `npx eslint src` — clean
+2. `npx eslint src` — clean; `npm run lint:design` — no new off-scale sizes, radii or spacing (a ratchet against `scripts/design-baseline.json`)
 3. `npm test` — green (`node --import tsx --test`; uses a temp DB via `COPILOT_DB_PATH`)
 4. `npm run smoke` — pages load in a real browser with **no console errors**, APIs 200
    (needs the dev server up on :3000; catches client-side crashes tests can't)
