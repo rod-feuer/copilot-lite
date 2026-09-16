@@ -456,7 +456,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 cats={cats}
                 onAddCategory={addCat}
                 onRecategorize={recategorize}
-                onTxRecategorize={txRecategorize}
                 onTxSetOneOff={txSetOneOff}
                 onToggleRecurring={toggleRecurring}
                 onSaveSettings={saveMerchantSettings}
@@ -637,7 +636,6 @@ function MerchantBody({
   cats,
   onAddCategory,
   onRecategorize,
-  onTxRecategorize,
   onTxSetOneOff,
   onToggleRecurring,
   onSaveSettings,
@@ -649,7 +647,6 @@ function MerchantBody({
   cats: Cat[];
   onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
-  onTxRecategorize: (txId: number, categoryId: number | null) => void;
   onTxSetOneOff: (txId: number, excluded: boolean) => void;
   onToggleRecurring: () => void;
   onSaveSettings: (
@@ -916,9 +913,10 @@ function MerchantBody({
 
       <div>
         <div className="stat-label mb-1.5">Recent</div>
-        {/* Each charge is editable here: recategorize it, or say it is not part
-            of this vendor's series (a device purchase under "Apple" is not the
-            subscription). The ↻ gutter shows the charge's own state. */}
+        {/* Each charge carries a labelled membership pill — "In series",
+            "Excluded", "Unlinked" — that toggles it in or out of this plan (a
+            device purchase under "Apple" is not the subscription). No menu:
+            recategorizing a single charge is the Transactions tab's job. */}
         <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
           {data.recent.map((r) => (
             <ShelfRow
@@ -929,12 +927,7 @@ function MerchantBody({
               muted={r.excluded === 1}
               excluded={!!r.excluded || !!r.categoryExcluded}
               recurring={recurringState(r)}
-              editable={{
-                cats,
-                onAddCategory,
-                onRecategorize: (cid) => onTxRecategorize(r.id, cid),
-                oneOff: { excluded: r.recurringExcluded === 1, set: (ex) => onTxSetOneOff(r.id, ex) },
-              }}
+              membership={{ kind: "charge", onToggle: () => onTxSetOneOff(r.id, r.recurringExcluded !== 1) }}
             />
           ))}
         </ul>
@@ -1051,7 +1044,6 @@ function CategoryBody({
               <span className="shrink-0 font-medium tabular-nums">
                 {usd(-data.upcoming.reduce((a, u) => a + u.amount, 0))}
               </span>
-              <span className="w-5 shrink-0" aria-hidden />
             </li>
           </ul>
         </div>
@@ -1080,8 +1072,8 @@ function CategoryBody({
                   cats,
                   onAddCategory,
                   onRecategorize: (cid) => onTxRecategorize(t.id, cid),
-                  onToggleRecurring: () => onTxToggleRecurring(t.merchant, t.recurringId == null),
                 }}
+                membership={{ kind: "vendor", onToggle: () => onTxToggleRecurring(t.merchant, t.recurringId == null) }}
               />
             ))}
           </ul>
@@ -1109,9 +1101,11 @@ type RowEdit = {
   cats: Cat[];
   onAddCategory: (c: Cat) => void;
   onRecategorize: (categoryId: number | null) => void;
-  onToggleRecurring?: () => void; // whole vendor: force/mute (the category shelf)
-  oneOff?: { excluded: boolean; set: (excluded: boolean) => void }; // this charge in/out of its series (the vendor shelf)
 };
+// The row's membership control: a labelled pill that says its state and
+// toggles it. "charge": this charge in or out of its plan (the vendor shelf).
+// "vendor": the whole vendor recurring or not (the category shelf).
+type Membership = { kind: "charge" | "vendor"; onToggle: () => void };
 function ShelfRow({
   date,
   name,
@@ -1122,6 +1116,7 @@ function ShelfRow({
   recurring = "none",
   onClick,
   editable,
+  membership,
 }: {
   date: string;
   name: string;
@@ -1131,7 +1126,8 @@ function ShelfRow({
   excluded?: boolean; // doesn't count toward totals → an inflow is not green
   recurring?: RecurringState;
   onClick?: () => void;
-  editable?: RowEdit;
+  editable?: RowEdit; // the ⋯ editor (recategorize) — the category shelf only
+  membership?: Membership;
 }) {
   const [editing, setEditing] = useState(false);
   // "+ New category…" in the row's Recategorize picker.
@@ -1149,24 +1145,37 @@ function ShelfRow({
         }`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          {editable?.onToggleRecurring ? (
-            // The ↻ gutter doubles as the recurring toggle (whole vendor: force/mute).
-            <Tooltip
-              label={recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring"}
-              onlyIfTruncated={false}
-              className="w-3.5 shrink-0"
-            >
-              <RecurringGlyph state={recurring} onToggle={editable.onToggleRecurring} muted={muted} className="w-full" />
-            </Tooltip>
-          ) : editable?.oneOff ? (
-            // The ↻ gutter toggles THIS charge in or out of the series.
-            <Tooltip
-              label={editable.oneOff.excluded ? "Add this charge back to the series" : "Not part of this recurring"}
-              onlyIfTruncated={false}
-              className="w-3.5 shrink-0"
-            >
-              <RecurringGlyph state={recurring} onToggle={() => editable.oneOff!.set(!editable.oneOff!.excluded)} muted={muted} className="w-full" />
-            </Tooltip>
+          {membership ? (
+            // A labelled state that toggles — readable at rest, no menu.
+            (() => {
+              const text =
+                membership.kind === "charge"
+                  ? recurring === "in" ? "In series" : recurring === "out" ? "Excluded" : "Unlinked"
+                  : recurring === "in" ? "Recurring" : recurring === "out" ? "Excluded" : "Not recurring";
+              const action =
+                membership.kind === "charge"
+                  ? recurring === "out" ? "Add this charge back to the series" : "Not part of this recurring"
+                  : recurring === "in" ? "Mark vendor not recurring" : "Mark vendor recurring";
+              const tone =
+                recurring === "in" && !muted
+                  ? "bg-[var(--accent)]/12 text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                  : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+              return (
+                <button
+                  type="button"
+                  data-membership={recurring}
+                  aria-label={action}
+                  title={action}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    membership.onToggle();
+                  }}
+                  className={`w-[4.5rem] shrink-0 self-center rounded-full px-1.5 py-px text-center text-[10px] font-medium transition-colors ${tone}`}
+                >
+                  {text}
+                </button>
+              );
+            })()
           ) : recurring !== "none" ? (
             <Tooltip label={RECURRING_LABEL[recurring]} onlyIfTruncated={false} className="w-3.5 shrink-0">
               <RecurringGlyph state={recurring} muted={muted} className="block w-full text-center" />
@@ -1187,7 +1196,7 @@ function ShelfRow({
         ) : (
           <Money value={amount} sign={!!sign} excluded={excluded} className="shrink-0" />
         )}
-        {editable ? (
+        {editable && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -1200,8 +1209,6 @@ function ShelfRow({
           >
             ⋯
           </button>
-        ) : (
-          <span className="w-5 shrink-0" aria-hidden />
         )}
       </div>
       {editable && editing && (
@@ -1235,21 +1242,6 @@ function ShelfRow({
             <NewCategoryOption />
           </select>
           {newCat.popover}
-          {editable.oneOff ? (
-            <button
-              type="button"
-              data-one-off
-              onClick={() => {
-                editable.oneOff!.set(!editable.oneOff!.excluded);
-                setEditing(false);
-              }}
-              className="rounded-lg border border-[var(--border)] bg-card px-2 py-1 font-medium hover:bg-[var(--hover)]"
-            >
-              {editable.oneOff.excluded ? "Part of this recurring" : "Not part of this recurring"}
-            </button>
-          ) : (
-            <span className="text-[var(--muted)]">Recurring? Use the ↻ at the start of the row.</span>
-          )}
         </div>
       )}
     </li>

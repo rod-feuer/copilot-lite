@@ -567,22 +567,23 @@ async function recurringsRow(browser) {
       const afterTwo = await page.evaluate(() => ({ rowFocused: document.activeElement?.hasAttribute("data-drawer-row"), tag: document.activeElement?.tagName }));
       record("keyboard rows", "Escape closes the shelf, then Escape drops the row's focus", !afterOne.shelf && afterOne.rowFocused && !afterTwo.rowFocused, `after 1: shelf=${afterOne.shelf} row=${afterOne.rowFocused}; after 2: row=${afterTwo.rowFocused} (${afterTwo.tag})`);
     }
-    // The vendor shelf's Recent rows carry a per-charge editor: "Not part of this
-    // recurring" flags one charge out of the series, and the same button, now
-    // reading "Part of this recurring", puts it back.
+    // The vendor shelf's Recent rows carry a labelled membership pill: "In
+    // series" toggles the charge out ("Excluded") and back — no menu.
     {
       await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
       await page.waitForSelector("[data-drawer-row]");
       await page.evaluate(() => { const row = [...document.querySelectorAll("[data-drawer-row]")].find((r) => /Netflix/.test(r.textContent)); row?.click(); });
-      await page.waitForSelector("[data-shelf] button[aria-label='Edit transaction']");
-      const openEditor = async () => { await page.waitForSelector("[data-shelf] button[aria-label='Edit transaction']"); await page.click("[data-shelf] button[aria-label='Edit transaction']"); const b = await page.waitForSelector("[data-shelf] [data-one-off]", { timeout: 4000 }).catch(() => null); return b ? { btn: b, text: await b.evaluate((e) => e.textContent.trim()) } : null; };
-      const editable = await page.$$eval("[data-shelf] li", (lis) => lis.filter((li) => li.querySelector("button[aria-label='Edit transaction']")).length);
-      const first = await openEditor();
-      if (first) { await first.btn.click(); await new Promise((r) => setTimeout(r, 1200)); }
-      const second = await openEditor();
-      if (second) { await second.btn.click(); await new Promise((r) => setTimeout(r, 1200)); } // back in
-      const third = await openEditor();
-      record("shelf", "Recent rows have a per-charge menu; 'Not part of this recurring' flags one charge out and back", editable >= 3 && first?.text === "Not part of this recurring" && second?.text === "Part of this recurring" && third?.text === "Not part of this recurring", `editable rows ${editable}; ${first?.text} → ${second?.text} → ${third?.text}`);
+      await page.waitForSelector("[data-shelf] button[data-membership]");
+      const pillText = () => page.$eval("[data-shelf] button[data-membership]", (b) => b.textContent.trim());
+      const menus = await page.$$eval("[data-shelf] button[aria-label='Edit transaction']", (bs) => bs.length);
+      const t1 = await pillText();
+      await page.click("[data-shelf] button[data-membership]"); await new Promise((r) => setTimeout(r, 1200));
+      await page.waitForSelector("[data-shelf] button[data-membership]");
+      const t2 = await pillText();
+      await page.click("[data-shelf] button[data-membership]"); await new Promise((r) => setTimeout(r, 1200));
+      await page.waitForSelector("[data-shelf] button[data-membership]");
+      const t3 = await pillText();
+      record("shelf", "Recent rows: a labelled membership pill toggles a charge out and back; no row menu", menus === 0 && t1 === "In series" && t2 === "Excluded" && t3 === "In series", `menus ${menus}; ${t1} → ${t2} → ${t3}`);
       await page.keyboard.press("Escape");
     }
     // The inline editor raises no tooltip: hovering a name, or its ✎ cue, shows
