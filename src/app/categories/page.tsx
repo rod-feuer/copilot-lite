@@ -143,17 +143,23 @@ export default function CategoriesPage() {
   return (
     <Shell
       title="Categories"
-      subtitle="Totals for the selected month"
+      month={<MonthPicker months={months} value={month} onChange={changeMonth} />}
       actions={
-        <>
-          <MonthPicker months={months} value={month} onChange={changeMonth} />
-          <button
-            onClick={() => setShowAddForm((v) => !v)}
-            className="btn-ghost"
-          >
-            + New category
-          </button>
-        </>
+        <button onClick={() => setShowAddForm((v) => !v)} className="btn-primary">
+          + New category
+        </button>
+      }
+      toolbar={
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          aria-label="Sort categories"
+          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-sm"
+        >
+          <option value="pressure">Budget used</option>
+          <option value="spent">Most spent</option>
+          <option value="name">Name A–Z</option>
+        </select>
       }
     >
       <BudgetSummary
@@ -178,19 +184,6 @@ export default function CategoriesPage() {
         <NewCategoryForm autoFocus onCreated={() => load(month)} />
       </div>
       )}
-
-      <div className="mb-4 flex items-center justify-end">
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-          aria-label="Sort categories"
-          className="btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm"
-        >
-          <option value="pressure">Budget used</option>
-          <option value="spent">Most spent</option>
-          <option value="name">Name A–Z</option>
-        </select>
-      </div>
 
       {status === "loading" ? (
         <LoadingRows />

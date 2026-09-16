@@ -529,7 +529,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                   : `/transactions?category=${target.categoryId}&month=${target.month}`
               }
               onClick={close}
-              className="block rounded-lg px-2 py-2 text-center text-sm font-medium text-[var(--accent)] hover:bg-[var(--hover)]"
+              className="btn-link w-full justify-center rounded-lg px-2 py-2 text-sm hover:bg-[var(--hover)] hover:no-underline"
             >
               View all transactions →
             </Link>
@@ -982,7 +982,7 @@ function MerchantBody({
         {data.count > data.recent.length && (
           <Link
             href={`/transactions?vendor=${encodeURIComponent(data.merchant)}`}
-            className="mt-2 inline-block text-[11px] font-medium text-[var(--accent)] hover:underline"
+            className="btn-link mt-2 text-[11px]"
           >
             {data.series ? "All this vendor's charges →" : `Show all ${data.count} →`}
           </Link>

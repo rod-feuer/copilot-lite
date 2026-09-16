@@ -213,6 +213,29 @@ async function keyboardRows(browser) {
   });
 }
 
+// One page anatomy (DESIGN.md §2): the month picker is the FIRST control in
+// the header's right-hand cluster on every page; search, filters and sort sit
+// in a toolbar row under the header, never in it; at most one primary button.
+async function pageHeader(browser) {
+  await withPage(browser, async (page) => {
+    for (const route of ["/", "/transactions", "/categories", "/recurrings"]) {
+      await page.goto(BASE + route, { waitUntil: "networkidle2" });
+      await page.waitForSelector("header h1");
+      const r = await page.evaluate(() => {
+        const header = document.querySelector("header");
+        const cluster = header.querySelector("h1").parentElement.nextElementSibling;
+        const first = cluster && cluster.querySelector("select, button, input, a");
+        const monthFirst = !!first && first.tagName === "SELECT" && [...first.options].some((o) => /^\d{4}-\d{2}$/.test(o.value));
+        // Import's hidden file input lives in the header; only a visible text input counts as search.
+        const inputsInHeader = header.querySelectorAll("input:not([type=file]):not([type=hidden])").length;
+        const primaries = document.querySelectorAll("main .btn-primary, header .btn-primary").length;
+        return { monthFirst, inputsInHeader, primaries };
+      });
+      record("page header", `${route} month picker leads the header's right cluster; no search in the header; ≤1 primary button`, r.monthFirst && r.inputsInHeader === 0 && r.primaries <= 1, `monthFirst=${r.monthFirst}, inputs=${r.inputsInHeader}, primaries=${r.primaries}`);
+    }
+  });
+}
+
 async function restingActions(browser) {
   await withPage(browser, async (page) => {
     // The guard is the RESTING value (the control exists without hover). The
@@ -726,7 +749,7 @@ try {
   await loadFixture();
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
-    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["resting actions", restingActions],
+    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow],
   ]) {
