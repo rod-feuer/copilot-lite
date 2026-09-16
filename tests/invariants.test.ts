@@ -1561,3 +1561,51 @@ test("detector keeps the regular amount group and leaves irregular usage charges
   const credit = again.find((r) => r.merchant === "Amex Credit");
   assert.ok(!credit || credit.count === 10, "a credit is never split into a core plus usage (all ten postings, or none)");
 });
+
+// A bank rename is not a new vendor. Cursor billed $20 on the 20th as "Cursor
+// Ai Powered" for three months, then as "Cursor, Ai Powered Isan Francisco";
+// grouped by descriptor, the new charge was a one-charge vendor the shelf
+// showed as "not detected" while the old series read as stopped. Descriptors
+// that share the shelf's vendor key are also planned together, and the merge
+// wins only when it links charges the descriptors alone could not, without
+// losing a series. Chubb is the counter-case: descriptors that each carry
+// their own policy link nothing more together, so they stay apart (merged on
+// the real data, its eight policies read as one "biweekly" bill).
+test("detector joins a renamed descriptor to its vendor only when the merge earns it", () => {
+  const tools = addCat("Dev Tools");
+  const ym = (i: number) => `2026-${String(i).padStart(2, "0")}`;
+  for (let m = 1; m <= 3; m++) tx("Cursor Ai Powered", { amount: -20, date: `${ym(m)}-20`, categoryId: tools });
+  tx("Cursor, Ai Powered Isan Francisco", { amount: -20, date: "2026-04-20", categoryId: tools });
+  for (let m = 1; m <= 6; m++) {
+    tx("Chubb Prs Debitpmt", { amount: -163.75, date: `${ym(m)}-05`, categoryId: tools });
+    tx("Chubb-prs Direct Deb Prs", { amount: -903.48, date: `${ym(m)}-20`, categoryId: tools });
+  }
+  const recs = detectRecurrings();
+  const cursor = recs.filter((r) => /cursor/i.test(r.merchant));
+  assert.deepEqual(
+    cursor.map((r) => [r.merchant, r.count]),
+    [["Cursor Ai Powered", 4]],
+    "the renamed charge continues the series under the vendor's busiest descriptor"
+  );
+  const renamed = getDb()
+    .prepare("SELECT recurringId FROM transactions WHERE merchant = ?")
+    .get("Cursor, Ai Powered Isan Francisco") as { recurringId: number | null };
+  assert.equal(renamed.recurringId, cursor[0].id, "the renamed charge is a member, not 'not detected'");
+  // The month view pays the series with the renamed charge, not only with
+  // charges on the series' own descriptor.
+  const april = recurringsForMonth("2026-04").find((r) => r.merchant === "Cursor Ai Powered");
+  assert.equal(april?.paid, true);
+  assert.equal(april?.paidAmount, 20);
+  const chubb = recs
+    .filter((r) => /chubb/i.test(r.merchant))
+    .map((r) => [r.merchant, r.count])
+    .sort();
+  assert.deepEqual(
+    chubb,
+    [
+      ["Chubb Prs Debitpmt", 6],
+      ["Chubb-prs Direct Deb Prs", 6],
+    ],
+    "a merge that links no more charges than the descriptors alone does not happen"
+  );
+});

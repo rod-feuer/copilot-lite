@@ -1,4 +1,5 @@
 import { seriesKey, seriesVendor, isSeriesKey, dayLabel, amountLabel } from "./series";
+import { merchantKey } from "./merchant";
 import crypto from "node:crypto";
 import { getDb } from "./db";
 import {
@@ -510,19 +511,35 @@ export function detectRecurrings(): Recurring[] {
   // Group by canonical merchant, so user-linked descriptors (e.g. a gas bill
   // whose payment descriptor changed) form a single recurring.
   const links = getMerchantLinks();
-  const byMerchant = new Map<string, typeof rows>();
+  const byCanon = new Map<string, typeof rows>();
   for (const r of rows) {
     const key = canonicalMerchant(r.merchant, links);
-    const arr = byMerchant.get(key) ?? [];
+    const arr = byCanon.get(key) ?? [];
     arr.push(r);
-    byMerchant.set(key, arr);
+    byCanon.set(key, arr);
   }
   // The SELECT is ordered by (merchant, date), but a canonical group can span
   // several descriptor strings — so it arrives ordered by descriptor, then date,
   // NOT globally by date. Re-sort each group so gap math and lastDate/nextDate
   // are correct for merged/linked vendors (e.g. a renamed gym).
-  for (const arr of byMerchant.values())
+  for (const arr of byCanon.values())
     arr.sort((a, b) => a.date.localeCompare(b.date));
+  // Then by vendor: the same coarse key the shelf rolls a vendor up with
+  // (merchantKey — the first two words once processor prefixes are stripped),
+  // so a bank rename ("Cursor Ai Powered" → "Cursor, Ai Powered Isan
+  // Francisco") can be read as one vendor with one history. Each vendor is
+  // named by its busiest descriptor; the loop below decides per vendor whether
+  // its descriptors are planned together or apart.
+  const byKey = new Map<string, string[]>();
+  for (const canon of byCanon.keys()) {
+    const key = merchantKey(canon) || canon;
+    byKey.set(key, [...(byKey.get(key) ?? []), canon]);
+  }
+  const byVendor = new Map<string, string[]>(); // vendor name → its descriptors
+  for (const canons of byKey.values()) {
+    const name = canons.reduce((a, b) => (byCanon.get(b)!.length > byCanon.get(a)!.length ? b : a));
+    byVendor.set(name, canons);
+  }
 
   // Clear child references BEFORE deleting parent rows, so this is safe whether
   // or not SQLite foreign-key enforcement is on.
@@ -549,9 +566,6 @@ export function detectRecurrings(): Recurring[] {
     `INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count)
      VALUES (@merchant, @categoryId, @avgAmount, @cadence, @lastDate, @nextDate, @count)`
   );
-  const link = db.prepare(
-    "UPDATE transactions SET recurringId = ? WHERE merchant = ? AND excluded = 0" // members = the rows that shaped the series
-  );
   // A split series owns specific charges of a shared descriptor, so it links
   // by row (hash), never by merchant string.
   const linkByHash = db.prepare("UPDATE transactions SET recurringId = ? WHERE hash = ?");
@@ -572,10 +586,24 @@ export function detectRecurrings(): Recurring[] {
     return sd / Math.abs(mean) <= 0.6;
   };
 
-  for (const [merchant, all] of byMerchant) {
-    if (overrides[merchant] === "mute") continue; // user said: not recurring
+  type Tx = (typeof rows)[number];
+  type Plan = {
+    key: string;
+    txs: Tx[];
+    events: { date: string; amount: number }[];
+    cadence: Recurring["cadence"];
+    // Set on the established plan the first time a vendor splits: the vendor's
+    // own settings (its name, an expected amount) move to that plan's key; the
+    // new plan reads as the bare descriptor until it is named.
+    inherit?: string;
+  };
+  // Plan one vendor's series without touching the database: `merchant` names
+  // the series, `all` is its charges, `status` the user's override on it.
+  const planVendor = (merchant: string, all: Tx[], status: "force" | "mute" | undefined): Plan[] => {
+    const plans: Plan[] = [];
+    if (status === "mute") return plans; // user said: not recurring
     const txs = all.filter((t) => !excluded.has(t.hash)); // drop flagged one-offs
-    if (txs.length < 3) continue;
+    if (txs.length < 3) return plans;
 
     // Two (or more) monthly bills behind one descriptor: one series per day of
     // the month, keyed "<vendor> · <day>". A part the user marked not recurring
@@ -586,56 +614,37 @@ export function detectRecurrings(): Recurring[] {
     // vendor's charges); a cluster whose amounts don't hold together is then
     // dropped from emission and its charges stay unlinked.
     const allParts = monthlyDayParts(txs);
-    const steady = (p: DayPart<(typeof txs)[number]>) => amountsConsistent(p.events.map((e) => e.amount));
+    const steady = (p: DayPart<Tx>) => amountsConsistent(p.events.map((e) => e.amount));
     const dayParts = allParts.filter(steady);
     const emitPart = (
       key: string,
-      p: { txs: (typeof txs)[number][]; events: { date: string; amount: number }[] },
+      p: { txs: Tx[]; events: { date: string; amount: number }[] },
       cadence: Recurring["cadence"] = "monthly"
-    ) => {
-      const lastDate = p.events[p.events.length - 1].date;
-      const categoryId = modalCategory(p.txs);
-      const rec = {
-        merchant: key,
-        categoryId,
-        avgAmount: Number(currentAmount(p.events.map((e) => e.amount)).toFixed(2)),
-        cadence,
-        lastDate,
-        nextDate: addCadence(lastDate, cadence),
-        count: p.events.length,
-      };
-      const info = insert.run(rec);
-      for (const t of p.txs) linkByHash.run(info.lastInsertRowid, t.hash);
-      if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
-      out.push({ id: Number(info.lastInsertRowid), ...rec });
+    ) => plans.push({ key, txs: p.txs, events: p.events, cadence });
+    const emitSplit = (parts: DayPart<Tx>[]) => {
+      const main = parts.reduce((a, b) => (b.events.length > a.events.length ? b : a));
+      for (const p of parts)
+        plans.push({
+          key: partKey(merchant, p, parts),
+          txs: p.txs,
+          events: p.events,
+          cadence: "monthly",
+          inherit: p === main ? merchant : undefined,
+        });
     };
-    // Emit several plans of one descriptor. The vendor's own settings (its
-    // name, an expected amount) stay with the established plan — the part with
-    // the most history — the first time it splits; the new plan reads as the
-    // bare descriptor until it is named.
-    const emitSplit = (parts: DayPart<(typeof txs)[number]>[]) => {
-      const own = settings[merchant];
-      if (own) {
-        const main = parts.reduce((a, b) => (b.events.length > a.events.length ? b : a));
-        const mainKey = partKey(merchant, main, parts);
-        if (!settings[mainKey]) setRecurringSetting(mainKey, own);
-      }
-      for (const p of parts) emitPart(partKey(merchant, p, parts), p);
-      created.add(merchant);
-    };
-    const emitInterleaved = (parts: NonNullable<ReturnType<typeof interleavedAmountParts<(typeof txs)[number]>>>) => {
-      const own = settings[merchant];
-      if (own) {
-        const main = parts.reduce((a, b) => (b.txs.length > a.txs.length ? b : a));
-        const mainKey = seriesKey(merchant, amountLabel(main.amount));
-        if (!settings[mainKey]) setRecurringSetting(mainKey, own);
-      }
+    const emitInterleaved = (parts: NonNullable<ReturnType<typeof interleavedAmountParts<Tx>>>) => {
+      const main = parts.reduce((a, b) => (b.txs.length > a.txs.length ? b : a));
       for (const p of parts) {
         const key = seriesKey(merchant, amountLabel(p.amount));
         if (rawOverrides[key] === "mute") continue;
-        emitPart(key, { txs: p.txs, events: p.txs.map((t) => ({ date: t.date, amount: t.amount })) }, p.cadence);
+        plans.push({
+          key,
+          txs: p.txs,
+          events: p.txs.map((t) => ({ date: t.date, amount: t.amount })),
+          cadence: p.cadence,
+          inherit: p === main ? merchant : undefined,
+        });
       }
-      created.add(merchant);
     };
     const concurrent = concurrentParts(allParts, txs.length);
     const split = concurrent?.filter(
@@ -643,7 +652,7 @@ export function detectRecurrings(): Recurring[] {
     );
     if (split && split.length >= 2) {
       emitSplit(split);
-      continue;
+      return plans;
     }
     // One billing day plus strays (a service call, the first charge of a
     // second plan, a pair that posted a month early): when that day's plan —
@@ -656,11 +665,9 @@ export function detectRecurrings(): Recurring[] {
       const all = txs.map((t) => Date.parse(t.date + "T00:00:00Z"));
       const allGaps = all.slice(1).map((d, i) => (d - all[i]) / DAY);
       if (classifyCadence(medianGap(allGaps)) !== "monthly") {
-        if (dayParts.length === 1) {
-          emitPart(merchant, dayParts[0]);
-          created.add(merchant);
-        } else emitSplit(dayParts.filter((p) => rawOverrides[partKey(merchant, p, dayParts)] !== "mute"));
-        continue;
+        if (dayParts.length === 1) emitPart(merchant, dayParts[0]);
+        else emitSplit(dayParts.filter((p) => rawOverrides[partKey(merchant, p, dayParts)] !== "mute"));
+        return plans;
       }
     }
 
@@ -668,14 +675,13 @@ export function detectRecurrings(): Recurring[] {
     const turns = interleavedAmountParts(txs);
     if (turns) {
       emitInterleaved(turns);
-      continue;
+      return plans;
     }
     // A fixed bill with usage on top (Anthropic: $20 monthly + top-ups).
     const core = regularCore(txs);
     if (core) {
       emitPart(merchant, { txs: core.txs, events: core.txs.map((t) => ({ date: t.date, amount: t.amount })) }, core.cadence);
-      created.add(merchant);
-      continue;
+      return plans;
     }
 
     // Amounts must be roughly consistent — measured by coefficient of variation
@@ -685,41 +691,83 @@ export function detectRecurrings(): Recurring[] {
     // usage-based bills (utilities). CV is robust to a few outliers yet still
     // rejects wildly-variable spend (e.g. a plumber, CV ~2.4).
     const amounts = txs.map((t) => t.amount);
-    if (!amountsConsistent(amounts)) continue;
+    if (!amountsConsistent(amounts)) return plans;
 
     // Gaps between consecutive dates must be regular.
     const dates = txs.map((t) => new Date(t.date + "T00:00:00Z").getTime());
     const gaps: number[] = [];
     for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i - 1]) / DAY);
     const cadence = classifyCadence(medianGap(gaps));
-    if (!cadence) continue;
+    if (!cadence) return plans;
     // Timing must be regular, not just a median that happens to land in range.
-    if (onGridFraction(gaps, CADENCE_DAYS[cadence]) < 0.6) continue;
+    if (onGridFraction(gaps, CADENCE_DAYS[cadence]) < 0.6) return plans;
 
-    const lastDate = txs[txs.length - 1].date;
-    const categoryId = modalCategory(txs);
+    emitPart(merchant, { txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })) }, cadence);
+    return plans;
+  };
+
+  const commit = (p: Plan) => {
+    if (p.inherit && settings[p.inherit] && !settings[p.key]) setRecurringSetting(p.key, settings[p.inherit]);
+    const lastDate = p.events[p.events.length - 1].date;
+    const categoryId = modalCategory(p.txs);
     const rec = {
-      merchant,
+      merchant: p.key,
       categoryId,
-      avgAmount: Number(currentAmount(amounts).toFixed(2)),
-      cadence,
+      avgAmount: Number(currentAmount(p.events.map((e) => e.amount)).toFixed(2)),
+      cadence: p.cadence,
       lastDate,
-      nextDate: addCadence(lastDate, cadence),
-      count: txs.length,
+      nextDate: addCadence(lastDate, p.cadence),
+      count: p.events.length,
     };
     const info = insert.run(rec);
-    for (const om of new Set(txs.map((t) => t.merchant)))
-      link.run(info.lastInsertRowid, om);
+    for (const t of p.txs) linkByHash.run(info.lastInsertRowid, t.hash);
     if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
-    created.add(merchant);
     out.push({ id: Number(info.lastInsertRowid), ...rec });
+  };
+  const linked = (plans: Plan[]) => plans.reduce((n, p) => n + p.txs.length, 0);
+
+  for (const [name, canons] of byVendor) {
+    // Each descriptor on its own, as the user has seen and corrected it.
+    const apart = canons.map((c) => planVendor(c, byCanon.get(c)!, overrides[c]));
+    let chosen = apart.flat();
+    let together: Plan[] | null = null;
+    if (canons.length > 1) {
+      // As one vendor, under its busiest descriptor. The merge has to earn
+      // it: it wins only when it links charges the descriptors alone could
+      // not (a renamed subscription's new charges continuing the old series)
+      // without losing a series. On a tie the descriptors stay apart, and so
+      // they do when one blob would swallow several bills — Chubb's eight
+      // policies under three bank formats read as one "biweekly" bill when
+      // merged, and it links every charge.
+      const status = canons.some((c) => overrides[c] === "force")
+        ? "force"
+        : canons.some((c) => overrides[c] === "mute")
+          ? "mute"
+          : undefined;
+      together = planVendor(name, canons.flatMap((c) => byCanon.get(c)!), status);
+      if (linked(together) > linked(chosen) && together.length >= chosen.length) {
+        chosen = together;
+        // Settings live under the descriptor the user edited; carry them to
+        // the vendor's name once so it keeps its name and rules.
+        if (!settings[name]) {
+          const from = canons.find((c) => settings[c]);
+          if (from) {
+            setRecurringSetting(name, settings[from]);
+            settings[name] = settings[from];
+          }
+        }
+        for (const c of canons) created.add(c);
+      }
+    }
+    if (chosen !== together) for (let i = 0; i < canons.length; i++) if (apart[i].length) created.add(canons[i]);
+    for (const p of chosen) commit(p);
   }
 
   // User-forced recurrings: create one for each 'force' merchant the auto pass
   // didn't already catch (cadence/amount inferred from its history).
   for (const [merchant, status] of Object.entries(overrides)) {
     if (status !== "force" || created.has(merchant)) continue;
-    const all = byMerchant.get(merchant);
+    const all = byCanon.get(merchant);
     if (!all || all.length === 0) continue;
     const txs = all.filter((t) => !excluded.has(t.hash));
     if (txs.length === 0) continue;
@@ -744,8 +792,7 @@ export function detectRecurrings(): Recurring[] {
       count: txs.length,
     };
     const info = insert.run(rec);
-    for (const om of new Set(txs.map((t) => t.merchant)))
-      link.run(info.lastInsertRowid, om);
+    for (const t of txs) linkByHash.run(info.lastInsertRowid, t.hash);
     if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
     out.push({ id: Number(info.lastInsertRowid), ...rec });
   }

@@ -1011,11 +1011,12 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       if (consumed.has(i)) return;
       // A split series shares its descriptor with a sibling, so only the
       // charges the detector linked to it are its own; a whole-descriptor
-      // series claims every charge on its key (or a folded clone's).
+      // series claims every charge on its key (or a folded clone's) plus the
+      // charges the detector linked to it under a renamed descriptor.
       const key = canon(t.merchant);
       const ours = isSeriesKey(r.merchant)
         ? t.recurringId === r.id
-        : key === r.merchant || clonesOf.get(r.merchant)?.has(key);
+        : key === r.merchant || t.recurringId === r.id || clonesOf.get(r.merchant)?.has(key);
       if (ours && (expense ? t.amount < 0 : t.amount > 0)) {
         consumed.add(i);
         actual[ri] += Math.abs(t.amount);
