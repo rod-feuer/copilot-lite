@@ -23,6 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run lint:design
       - run: npm test
       - run: npm run test:clock
       # Browser checks of shipped UI behaviour (honest load states, keyboard rows,

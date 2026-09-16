@@ -115,9 +115,9 @@ and §3 carry over unchanged.
   enough of the month has elapsed. No ≈ or ~ in front of a figure. *(Honest)*
 - **Review queues** surface low-confidence work (uncategorized, merge / name-cleanup
   candidates) for one-tap confirmation instead of auto-applying it. *(Correct-don't-configure)*
-- **Tokens & theme.** One accent, neutral grays, 8px (`lg`) card and control radii, dark
-  mode via `data-theme` + CSS variables. New surfaces use the tokens — never
-  hard-coded colors. *(One-pattern)*
+- **Tokens & theme.** One accent, neutral grays, dark mode via `data-theme` + CSS
+  variables. New surfaces use the tokens and the scales below — never a
+  hard-coded color, never a size off the scale. *(One-pattern)*
 - **Touch is in scope; hover only enhances.** The app ships a mobile bottom nav
   and a bottom-sheet shelf, so every action has a resting state — secondary
   controls sit at `opacity-60` and strengthen on hover/focus (the dashboard's
@@ -131,6 +131,61 @@ and §3 carry over unchanged.
   (category, note, effective-date, recurring membership, exclude-from-totals,
   split). This is the deliberate answer to "Complete the verbs" for
   transactions. *(Capable)*
+
+### The one page — scales and anatomies
+
+Every line here is a rule the code is checked against (`npm run lint:design`,
+a ratchet: off-scale uses may fall or hold, never rise; `-- --update` records a
+new floor). The audit that produced it lives in the session artifacts.
+
+**Type** — six sizes, nothing between them.
+
+| px | role | class |
+|---|---|---|
+| 11 | tags, uppercase labels (letter-spaced) | `text-[11px]` |
+| 12 | captions, meta, secondary text | `text-xs` |
+| 13 | rows and body | `text-[13px]` |
+| 15 | card and section titles | `text-[15px]` |
+| 18 | page title | `text-lg` |
+| 24 | summary figures | `text-2xl` |
+
+Weights: 400 body · 500 names and labels · 600 titles and figures. Tabular
+figures wherever numbers align.
+
+**Colour** — the seven surface and text tokens as today (`--background`,
+`--card`, `--border`, `--hover`, `--foreground`, `--muted`, `--accent`) plus
+three semantic ones, `--good`, `--warn`, `--bad`, each with a dark value one
+step lighter; tints are the token at 10–25%. Semantic colour is never the
+accent and the accent is never semantic. Category colours are data, not chrome.
+
+**Space and shape** — spacing steps 4 · 8 · 12 · 16 · 24 · 32 (Tailwind 1 2 3
+4 6 8). Card padding 16; the summary card 20. Rows 8 vertical × 16
+horizontal. One radius for cards and controls (8px, `rounded-lg`); `full` for
+pills and tags; nothing else.
+
+**Page anatomy** — header: title, optional one-line subtitle, the month picker
+in one slot on every page, page actions to its right. A toolbar row under it
+for search, filters and sort — never in the header. Then the summary card.
+Then sections: a small-caps title above one card of rows.
+
+**Row anatomy** — leading column: a date where time is the subject, a glyph
+where the vendor is. Name in 13/500 with a 12/400 meta line only when it
+varies row to row. Category as a quiet property with a chevron. Amount right,
+tabular, in one of three states: settled (600, foreground), provisional (500,
+muted), overdue (600, warn). No row menu: verbs live in the shelf.
+
+**Shelf anatomy** — header (name, descriptor, count and since); at most two
+property cards, each marked auto or edited; one caption line; evidence as a
+flush, edge-aligned list with the membership pill; then match and the action
+row. The footer link follows the content, not the panel edge.
+
+**Buttons** — three tiers, named: primary (accent fill, at most one per page),
+secondary (bordered), tertiary (text with an arrow, navigation only).
+Destructive: secondary with `--bad` text, and only in a shelf.
+
+**Pills and tags** — one pill: 11/500, full radius, 6px horizontal padding.
+Tone says state: quiet border for the default, warn tint for what the user
+chose, muted fill for what the system chose. The `edited` tag is the only tag.
 
 ---
 
