@@ -499,7 +499,7 @@ function SectionLink({
       data-section-link={section}
       onClick={() =>
         document
-          .querySelector(`[data-bill-section="${section}"]`)
+          .querySelector(`[data-bill-anchor="${section}"], [data-bill-status="${section}"]`)
           ?.scrollIntoView({ behavior: "smooth", block: "start" })
       }
       className={`hover:underline ${className}`}
@@ -537,21 +537,16 @@ function BillList({
   if (recs.length === 0) return null;
   const editable = !!(cats && onRecategorize);
 
-  // Convey paid status by grouping rather than a cryptic per-row ✓/○. Unpaid
-  // bills split by due date: Overdue (date already passed — expected but not yet
-  // matched to a charge) vs Upcoming (still ahead). Headers are shown only when
-  // there's something to distinguish; a lone all-paid list renders flat.
+  // One list in date order — the month as it happens — instead of three cards
+  // (Overdue / Upcoming / Paid) that put a Sep 26 bill above a Sep 3 one. The
+  // amount cell already carries the state (settled, provisional, overdue) and
+  // the summary card the counts, so grouping said nothing the row didn't. A
+  // "Today" divider splits what has happened from what is ahead; an unpaid
+  // bill above it is overdue and wears amber. A past month has no today.
   const today = new Date().toISOString().slice(0, 10);
-  const groups = [
-    { key: "od", label: pastMonth ? "Unpaid" : "Overdue", recs: recs.filter((r) => !r.paid && r.dueDate < today) },
-    { key: "up", label: "Upcoming", recs: recs.filter((r) => !r.paid && r.dueDate >= today) },
-    { key: "pd", label: "Paid this month", recs: recs.filter((r) => r.paid) },
-  ].filter((g) => g.recs.length > 0);
-  const onlyPaid = groups.length === 1 && groups[0].key === "pd";
-  const sections = dim
-    ? [{ key: "all", label: "", recs }]
-    : groups.map((g) => ({ ...g, label: onlyPaid ? "" : g.label }));
-  const sectionTotal = (recs: Rec[]) => recs.reduce((a, r) => a + (r.paid ? r.paidAmount ?? 0 : r.expectedAmount), 0);
+  const status = (r: Rec): "pd" | "od" | "up" => (r.paid ? "pd" : r.dueDate < today ? "od" : "up");
+  const dividerAt = dim || pastMonth ? -1 : recs.findIndex((r) => r.dueDate >= today);
+  const showDivider = dividerAt > 0; // something behind it and something ahead
   return (
     <div className="flex flex-col gap-4">
       {title && (
@@ -559,44 +554,28 @@ function BillList({
           {title}
         </h3>
       )}
-      {/* One card per section (Overdue / Upcoming / Paid this month), so the
-          boundaries are structural, not a small label inside one long list.
-          The title sits ABOVE the card on the page background — the same
-          small-caps group title the Categories tab uses — with the count and
-          the section's total on the same line; the card holds only rows.
-          Overdue keeps the amber the dates already use. */}
-      {sections.map((section) => (
-        <section key={section.key} className="flex flex-col gap-2" data-bill-section={section.key}>
-          {/* Padded to the card's inner edge (16px padding + 1px border), so
-              the section total sits exactly on the amounts column and the
-              title on the date column. */}
-          {section.label && (
-            <div className="flex items-center gap-2 px-[17px]">
-              <h3 className={`stat-label ${section.key === "od" ? "text-amber-600" : "text-[var(--foreground)]"}`}>
-                {section.label}
-              </h3>
-              <span
-                className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
-                  section.key === "od" ? "bg-amber-500/15 text-amber-600" : "bg-[var(--border)] text-[var(--muted)]"
-                }`}
-              >
-                {section.recs.length}
-              </span>
-              <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--foreground)]">
-                {usd(sectionTotal(section.recs))}
-              </span>
-            </div>
-          )}
-          <div className="card divide-y divide-[var(--border)] overflow-hidden">
-            {section.recs.map((r) => {
+      <div className="card divide-y divide-[var(--border)] overflow-hidden" data-bill-list>
+        {recs.map((r, i) => {
+          const st = status(r);
           const amount = r.paid ? r.paidAmount ?? 0 : r.expectedAmount;
           // The amount column already says "$200"; a series keyed by amount
           // needn't repeat it in its name. A user-set name is shown as typed.
           const rowName = r.settings?.alias ? r.displayName : withoutAmountQualifier(r.displayName);
           return (
             <div key={r.id}>
+            {i === dividerAt && showDivider && (
+              <div
+                data-bill-anchor="up"
+                className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--hover)]/60 px-4 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]"
+              >
+                <span className="w-12 shrink-0">Today</span>
+                <span className="tabular-nums">{shortDate(today)}</span>
+              </div>
+            )}
             <div
               data-drawer-row
+              data-bill-status={st}
+              data-due={r.dueDate}
               {...(onOpen ? rowButtonProps(() => onOpen(r.vendor, isSeriesKey(r.merchant) ? r.merchant : undefined)) : {})}
               className={`group flex items-center gap-3 px-4 py-2 text-[13px] ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
@@ -613,7 +592,7 @@ function BillList({
                   status colour: amber when overdue. */}
               <div
                 className={`w-12 shrink-0 text-xs tabular-nums ${
-                  section.key === "od" ? "font-medium text-amber-600" : "text-[var(--muted)]"
+                  st === "od" ? "font-medium text-amber-600" : "text-[var(--muted)]"
                 }`}
               >
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
@@ -711,7 +690,7 @@ function BillList({
                   expected shows the difference — the one fact a paid row can
                   tell you that you didn't already know. */}
               {(() => {
-                const state = r.paid ? "paid" : section.key === "od" ? "overdue" : "expected";
+                const state = r.paid ? "paid" : st === "od" ? "overdue" : "expected";
                 const delta =
                   r.paid && r.paidAmount != null && Math.abs(r.paidAmount - r.expectedAmount) >= 0.5
                     ? r.paidAmount - r.expectedAmount
@@ -740,10 +719,8 @@ function BillList({
             </div>
             </div>
           );
-            })}
-          </div>
-        </section>
-      ))}
+        })}
+      </div>
       {newCat.popover}
     </div>
   );

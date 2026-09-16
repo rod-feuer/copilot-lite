@@ -898,7 +898,8 @@ function MerchantBody({
       <div>
         <div className="stat-label mb-1.5">Recent</div>
         {/* Each charge carries a labelled membership pill — "In series",
-            "Excluded", "Not detected" — that toggles it in or out of this plan (a
+            "Left out" (by you), "Not detected" (by the detector) — that
+            toggles it in or out of this plan (a
             device purchase under "Apple" is not the subscription). No menu:
             recategorizing a single charge is the Transactions tab's job.
             The text slot shows only what VARIES across these rows — the
@@ -1309,8 +1310,8 @@ function ShelfRow({
           (() => {
             const text =
               membership.kind === "charge"
-                ? recurring === "in" ? "In series" : recurring === "out" ? "Excluded" : "Not detected"
-                : recurring === "in" ? "Recurring" : recurring === "out" ? "Excluded" : "Not recurring";
+                ? recurring === "in" ? "In series" : recurring === "out" ? "Left out" : "Not detected"
+                : recurring === "in" ? "Recurring" : recurring === "out" ? "Left out" : "Not recurring";
             const action =
               membership.kind === "charge"
                 ? recurring === "out" ? "Add this charge back to the series" : "Not part of this recurring"
