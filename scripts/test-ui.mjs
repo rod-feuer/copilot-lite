@@ -229,12 +229,14 @@ async function restingActions(browser) {
       const ok = rest >= 0.5 && (!canHover || hover >= 0.99);
       record("resting actions", label, ok, `rest ${rest}, hover ${canHover ? hover : "n/a (no hover pointer)"}`);
     };
+    // The category's verbs live in its shelf (no verb on the row).
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
-    await measure("categories · exclude from totals", "button::-p-text(exclude from totals)");
-    await measure("categories · delete", "button[aria-label^='Delete ']");
-    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
-    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const rowVerbs = await page.$$eval("[data-drawer-row] button", (bs) => bs.filter((b) => /delete|exclude from totals/i.test(b.textContent || b.getAttribute("aria-label") || "")).length);
+    record("resting actions", "categories · no delete or exclude verb on a row", rowVerbs === 0, `${rowVerbs} row verbs`);
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
+    await measure("shelf · exclude from totals", `${shelfSel} button::-p-text(xclude from totals)`);
+    await measure("shelf · delete category", `${shelfSel} button[aria-label^='Delete ']`);
     await measure("shelf · row ⋯", `${shelfSel} button[aria-label='Edit transaction']`);
   });
 }

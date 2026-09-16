@@ -33,7 +33,7 @@ export default async function LoginPage({
           placeholder="Password"
           className="w-full rounded-lg border border-[var(--border)] bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
         />
-        {failed && <p className="mt-2 text-xs text-rose-600">Incorrect password</p>}
+        {failed && <p className="mt-2 text-xs text-[var(--bad)]">Incorrect password</p>}
         <button
           type="submit"
           className="mt-4 w-full rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white"
