@@ -363,9 +363,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
 
   // Per-transaction edits from inside the category shelf. Refresh the shelf so
   // totals/lists update (e.g. recategorizing a row out of the category).
-  const refreshCategory = () => {
-    if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
-  };
   // Re-read whichever detail is open after a per-charge write.
   const refreshTarget = () => {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
@@ -454,7 +451,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         { refresh: "never" }
       )
     ) {
-      refreshCategory();
+      refreshTarget();
       onChange.current?.();
     }
   }
@@ -574,6 +571,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onSplit={() => setSplitting(true)}
                 onUndoSplit={() => chargeUndoSplit(xData.id)}
                 onOpenVendor={() => drillToMerchant(xData.merchant)}
+                onMakeRecurring={() => txToggleRecurring(xData.merchant, true)}
                 onOpenCharge={(id) => {
                   setTarget({ kind: "charge", id });
                   fetchCharge(id);
@@ -812,6 +810,7 @@ function ChargeBody({
   onSplit,
   onUndoSplit,
   onOpenVendor,
+  onMakeRecurring,
   onOpenCharge,
 }: {
   data: ChargeDetail;
@@ -826,6 +825,7 @@ function ChargeBody({
   onUndoSplit: () => void;
   onOpenVendor: () => void;
   onOpenCharge: (id: number) => void; // step to another of the vendor's charges
+  onMakeRecurring: () => void; // the vendor has no plan: make it one (a vendor verb, reachable here)
 }) {
   const newCat = useNewCategory<null>((cat) => {
     onAddCategory(cat);
@@ -897,6 +897,12 @@ function ChargeBody({
             />
             <span className="truncate">{data.planName}</span>
           </span>
+        )}
+        {/* No plan to be in: the vendor's own pill, "Not recurring", makes
+            it one — the same control the category shelf's rows carry, so a
+            charge is never a dead end for "this should be recurring". */}
+        {!data.planKey && !excluded && (
+          <MembershipPill kind="vendor" inPlan={false} edited={false} onToggle={onMakeRecurring} />
         )}
         {excluded && <span>not counted in totals</span>}
         {isParent && <span>split · {data.splitParts} parts</span>}
@@ -1748,9 +1754,12 @@ function ShelfRow({
       <div
         {...(onClick ? rowButtonProps(onClick) : {})}
         data-active={active ? "1" : undefined}
-        className={`group flex w-full items-center gap-2 py-2 text-xs ${flush ? "" : "px-3"} ${
+        // A flush list sits on the panel's edges, so its wash and highlight run
+        // 8px past the text on each side (negative margin, matching padding);
+        // the dates and amounts keep their edge and the tint doesn't hug them.
+        className={`group flex items-center gap-2 py-2 text-xs ${flush ? "-mx-2 px-2" : "w-full px-3"} ${
           onClick ? `cursor-pointer hover:bg-[var(--hover)] ${ROW_FOCUS}` : ""
-        } ${active ? "bg-[var(--accent)]/10" : ""}`}
+        } ${active ? "rounded-lg bg-[var(--accent)]/10" : ""}`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
           {/* The glyph gutter belongs to lists without a membership pill (the
