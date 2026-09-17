@@ -133,7 +133,9 @@ export function AmountCell({
         ? "font-medium text-[var(--muted)]"
         : "font-semibold";
   return (
-    <span data-amount-state={state} className={`inline-flex items-baseline justify-end tabular-nums ${tone} ${className}`}>
+    // An amount never wraps: the line-breaker treats the minus and the dollar
+    // sign as two prefixes and may break between them ("−" / "$12,748.12").
+    <span data-amount-state={state} className={`inline-flex items-baseline justify-end whitespace-nowrap tabular-nums ${tone} ${className}`}>
       {delta != null && (
         <span className="mr-1.5 text-[11px] font-medium text-[var(--muted)]">
           {delta > 0 ? "+" : "−"}
