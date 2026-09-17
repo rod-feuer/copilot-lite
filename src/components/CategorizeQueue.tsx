@@ -12,7 +12,13 @@ import type { CategorySuggestion } from "@/lib/categorizeSuggest";
 // are fetched on demand and badged "AI" so they get a look before they're
 // committed (Rule 5). Apply learns the choice as a rule. Renders nothing when
 // everything's categorized.
-export function CategorizeQueue({ onChange }: { onChange?: () => void }) {
+export function CategorizeQueue({
+  onChange,
+  onShowUncategorized,
+}: {
+  onChange?: () => void;
+  onShowUncategorized?: () => void; // filter the list below to the uncategorized charges
+}) {
   const [items, setItems] = useState<CategorySuggestion[]>([]);
   const [needsModel, setNeedsModel] = useState(0);
   const [modelEnabled, setModelEnabled] = useState(false);
@@ -162,10 +168,22 @@ export function CategorizeQueue({ onChange }: { onChange?: () => void }) {
               <button onClick={suggestAI} disabled={busy != null} className="btn-ghost py-1 text-xs">
                 {busy === "__ai" ? "Asking AI…" : "Suggest with AI"}
               </button>
+              {/* The hand-work path: when the model has nothing to offer, the
+                  list itself, filtered to what needs a category. */}
+              {onShowUncategorized && (
+                <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
+                  Show the uncategorized →
+                </button>
+              )}
             </>
           ) : (
             <span>
-              {needsModel} vendor{needsModel === 1 ? "" : "s"} need the model — set ANTHROPIC_API_KEY to get AI suggestions.
+              {needsModel} vendor{needsModel === 1 ? "" : "s"} need the model — set ANTHROPIC_API_KEY to get AI suggestions.{" "}
+              {onShowUncategorized && (
+                <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
+                  Show the uncategorized →
+                </button>
+              )}
             </span>
           )}
         </div>

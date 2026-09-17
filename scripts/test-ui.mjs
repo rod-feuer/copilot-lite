@@ -365,6 +365,15 @@ async function statementMode(browser) {
       // A day header is a band in the page grey, sticky while its rows scroll.
       const band = await page.evaluate(() => { const h = document.querySelector("[data-day-header]"); if (!h) return null; const cs = getComputedStyle(h); const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toLowerCase(); const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; }; return { washed: hex(cs.backgroundColor) === bg, sticky: cs.position === "sticky", label: h.querySelector(".stat-label") !== null }; });
       if (mode === "normal") record("statement mode", "day header is a page-grey band, sticky, in the label style", !!band && band.washed && band.sticky && band.label, band ? `washed=${band.washed}, sticky=${band.sticky}, label=${band.label}` : "no day header");
+      // The queue's "Show the uncategorized" filters the list to category = none.
+      if (mode === "normal") {
+        const link = await page.$("[data-show-uncategorized]");
+        if (link) {
+          await link.click(); await sleep(600);
+          const v = await page.evaluate(() => { const s = [...document.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.value === "none")); return s ? s.value : null; });
+          record("statement mode", "queue's 'Show the uncategorized' filters the list", v === "none", `category filter = ${v}`);
+        } else record("statement mode", "queue's 'Show the uncategorized' filters the list", true, "no queue in the fixture");
+      }
       await page.setViewport({ width: 400, height: 800 }); await sleep(400);
       const chip = await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] select"); return !!s && s.offsetParent !== null; });
       record("statement mode", mode, editor && chip && (mode !== "statement" || header) && errs.length === 0, `note editor: ${editor}, mobile chip: ${chip}`);
