@@ -489,7 +489,12 @@ export default function TransactionsPage() {
         <>
           <CategorizeQueue
             onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))}
-            onShowUncategorized={() => setCatFilter("none")}
+            // The queue counts vendors across all time; the list is scoped to
+            // a month, so widen it too or a caught-up month shows nothing.
+            onShowUncategorized={() => {
+              setCatFilter("none");
+              setMonth("");
+            }}
           />
 
           <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />

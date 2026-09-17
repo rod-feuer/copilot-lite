@@ -370,8 +370,8 @@ async function statementMode(browser) {
         const link = await page.$("[data-show-uncategorized]");
         if (link) {
           await link.click(); await sleep(600);
-          const v = await page.evaluate(() => { const s = [...document.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.value === "none")); return s ? s.value : null; });
-          record("statement mode", "queue's 'Show the uncategorized' filters the list", v === "none", `category filter = ${v}`);
+          const v = await page.evaluate(() => { const s = [...document.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.value === "none")); const m = [...document.querySelectorAll("header select")].find((x) => [...x.options].some((o) => /^\d{4}-\d{2}$/.test(o.value))); return { cat: s ? s.value : null, month: m ? m.value : null }; });
+          record("statement mode", "queue's 'Show all uncategorized' filters the list across all months", v.cat === "none" && v.month === "", `category=${v.cat}, month=${JSON.stringify(v.month)}`);
         } else record("statement mode", "queue's 'Show the uncategorized' filters the list", true, "no queue in the fixture");
       }
       await page.setViewport({ width: 400, height: 800 }); await sleep(400);
