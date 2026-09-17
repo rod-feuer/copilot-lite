@@ -502,21 +502,22 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 confirmingDelete={confirmingDelete === cData.id}
               />
             ) : null}
+            {/* The way out follows the content, not the panel's edge: a
+                link pinned to the foot sat across a gap on every short shelf. */}
+            {(target.kind === "merchant" ? mData : cData) && (
+              <Link
+                href={
+                  target.kind === "merchant"
+                    ? `/transactions?vendor=${encodeURIComponent(target.merchant)}`
+                    : `/transactions?category=${target.categoryId}&month=${target.month}`
+                }
+                onClick={close}
+                className="btn-link mt-4 w-full justify-center rounded-lg px-2 py-2 text-[13px] hover:bg-[var(--hover)] hover:no-underline"
+              >
+                View all transactions →
+              </Link>
+            )}
           </div>
-
-          <footer className="border-t border-[var(--border)] p-3">
-            <Link
-              href={
-                target.kind === "merchant"
-                  ? `/transactions?vendor=${encodeURIComponent(target.merchant)}`
-                  : `/transactions?category=${target.categoryId}&month=${target.month}`
-              }
-              onClick={close}
-              className="btn-link w-full justify-center rounded-lg px-2 py-2 text-sm hover:bg-[var(--hover)] hover:no-underline"
-            >
-              View all transactions →
-            </Link>
-          </footer>
           </aside>
         </>
       )}
@@ -729,20 +730,6 @@ function MerchantBody({
     if (categories.size > 1) return (r: { categoryName: string | null }) => r.categoryName ?? "Uncategorized";
     return () => undefined;
   })();
-  const boxes = d
-    ? [
-        { label: "per charge", value: usd(d.perCharge, { cents: false }) },
-        { label: "per year", value: usd(d.annualized, { cents: false }) },
-        { label: "next due", value: shortDate(d.nextDate) },
-      ]
-    : [
-        { label: "last 12 mo", value: usd(data.trailing12, { cents: false }) },
-        { label: "per active mo", value: usd(data.trailing12 / monthsActive, { cents: false }) },
-        { label: "txns / 12mo", value: String(data.count12) },
-      ];
-  if (data.received > 0)
-    boxes.push({ label: "received, all time", value: usd(data.received, { cents: false }) });
-
   return (
     <div className="flex flex-col gap-4">
       {d ? (
@@ -758,7 +745,7 @@ function MerchantBody({
                   locale format) is laid transparently over that and opens on
                   click. */}
               <span className="relative flex items-center justify-between">
-                <span className="text-sm font-semibold tabular-nums">{shortDate(data.nextDate ?? d.nextDate)}</span>
+                <span className="text-[15px] font-semibold tabular-nums">{shortDate(data.nextDate ?? d.nextDate)}</span>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
                   <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
                 </svg>
@@ -778,7 +765,7 @@ function MerchantBody({
             </PropertyCard>
             <PropertyCard label="Per charge" edited={data.expectedAmount != null}>
               <div className="flex items-center">
-                <span className="text-sm font-semibold text-[var(--muted)]">$</span>
+                <span className="text-[15px] font-semibold text-[var(--muted)]">$</span>
                 <CommitInput
                   key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
                   defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
@@ -795,7 +782,7 @@ function MerchantBody({
                     if (!Number.isFinite(n)) return; // ignore non-numeric input
                     if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
                   }}
-                  className="w-full min-w-0 bg-transparent text-sm font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
+                  className="w-full min-w-0 bg-transparent text-[15px] font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
                 />
               </div>
             </PropertyCard>
@@ -849,20 +836,20 @@ function MerchantBody({
             )}
           </div>
         </>
-      ) : (
-        <div className={`grid gap-2 text-center ${boxes.length > 3 ? "grid-cols-2" : "grid-cols-3"}`}>
-          {boxes.map((b) => (
-            <Metric key={b.label} label={b.label} value={b.value} />
-          ))}
-        </div>
-      )}
+      ) : null}
 
       {!d && (
+        // A vendor with no plan keeps the same anatomy: two cards — what it
+        // cost over the last year, and the expected amount (its editor) —
+        // then the caption line with the category and the per-month facts.
         <>
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-2 gap-2">
+          <PropertyCard label="last 12 months">
+            <div className="text-[15px] font-semibold tabular-nums">{usd(data.trailing12, { cents: false })}</div>
+          </PropertyCard>
           <PropertyCard label="Expected" edited={data.expectedAmount != null}>
             <div className="flex items-center">
-              <span className="text-sm font-semibold text-[var(--muted)]">$</span>
+              <span className="text-[15px] font-semibold text-[var(--muted)]">$</span>
               <CommitInput
                 key={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
                 defaultValue={data.expectedAmount != null ? data.expectedAmount.toFixed(2) : ""}
@@ -879,7 +866,7 @@ function MerchantBody({
                   if (!Number.isFinite(n)) return;
                   if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
                 }}
-                className="w-full min-w-0 bg-transparent text-sm font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
+                className="w-full min-w-0 bg-transparent text-[15px] font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
               />
             </div>
           </PropertyCard>
@@ -905,6 +892,12 @@ function MerchantBody({
               ))}
               <NewCategoryOption />
             </CaptionSelect>
+            <span className="whitespace-nowrap">
+              {usd(data.trailing12 / monthsActive, { cents: false })} per active month · {data.count12} charge{data.count12 === 1 ? "" : "s"} in 12 months
+            </span>
+            {data.received > 0 && (
+              <span className="whitespace-nowrap">{usd(data.received, { cents: false })} received all time</span>
+            )}
             {newCat.popover}
           </div>
         </>
@@ -1120,69 +1113,58 @@ function CategoryBody({
   const isExcluded = data.excludeFromTotals === 1;
   const budgeted = data.budget != null && !isIncome && !isExcluded;
 
-  // Card 1 — how much.
-  // Mid-month, "spent" and the trend compare a partial month with full ones.
+  // The category's properties in the vendor shelf's anatomy: two cards (how
+  // much this month; a typical month), then one caption line for the trend
+  // and the budget, then a slim bar. Mid-month, "spent" and the trend compare
+  // a partial month with full ones, so the labels say "so far".
   const partial = isCurrentMonth(data.month);
-  const card1 = {
-    label: `${isIncome ? "received" : isExcluded ? "total" : "spent"}${partial ? " so far" : ""}`,
-    value: usd(data.spent, { cents: false }),
-  };
-  // Card 2 — the trailing-12 "typical month" benchmark, always (the budget bar
-  // below owns the budget, so the three cards stay a consistent actual/typical/
-  // trend triad for every category).
   const remaining = (data.budget ?? 0) - data.spent;
-  const card2 = { label: "avg/mo", value: usd(data.monthlyAvg, { cents: false }) };
-  // Card 3 — trend vs last month: a direction arrow + % (compact, so a large
-  // dollar swing no longer dominates the row), tinted green when it moved the
-  // "good" way (expense down / income up) and amber otherwise.
   const delta = data.spent - data.prevSpent;
   const pct = data.prevSpent ? Math.round((delta / data.prevSpent) * 100) : 0;
   const better = isIncome ? delta > 0 : delta < 0;
   const hasTrend = data.prevSpent > 0 && pct !== 0;
-  const card3 = {
-    label: partial ? "so far vs last mo" : "vs last mo",
-    value:
-      data.prevSpent === 0
-        ? data.spent === 0
-          ? "—"
-          : "new"
-        : `${pct > 0 ? "↑ " : pct < 0 ? "↓ " : ""}${Math.abs(pct)}%`,
-    valueClass: hasTrend ? (better ? "text-[var(--good)]" : "text-[var(--warn)]") : undefined,
-  };
-  const cards: { label: string; value: string; valueClass?: string }[] = [card1, card2, card3];
-
+  const trend =
+    data.prevSpent === 0
+      ? data.spent === 0
+        ? null
+        : "new this month"
+      : `${pct > 0 ? "↑" : pct < 0 ? "↓" : "="} ${Math.abs(pct)}% vs last month${partial ? " so far" : ""}`;
   const pctOfBudget = budgeted && data.budget ? Math.min(100, (data.spent / data.budget) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-2 text-center">
-        {cards.map((b) => (
-          <Metric key={b.label} label={b.label} value={b.value} valueClass={b.valueClass} />
-        ))}
+      <div className="grid grid-cols-2 gap-2">
+        <PropertyCard label={`${isIncome ? "received" : isExcluded ? "total" : "spent"}${partial ? " so far" : ""}`}>
+          <div className="text-[15px] font-semibold tabular-nums">{usd(data.spent, { cents: false })}</div>
+        </PropertyCard>
+        <PropertyCard label="typical month">
+          <div className="text-[15px] font-semibold tabular-nums">{usd(data.monthlyAvg, { cents: false })}</div>
+        </PropertyCard>
       </div>
-
+      <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
+        {trend && (
+          <span className={hasTrend ? (better ? "text-[var(--good)]" : "text-[var(--warn)]") : ""}>{trend}</span>
+        )}
+        {budgeted && data.budget != null && (
+          <span className={`whitespace-nowrap ${remaining < 0 ? "text-[var(--warn)]" : ""}`}>
+            {usd(data.spent, { cents: false })} of {usd(data.budget, { cents: false })} budget ·{" "}
+            {remaining >= 0 ? `${usd(remaining, { cents: false })} left` : `${usd(-remaining, { cents: false })} over`}
+          </span>
+        )}
+      </div>
       {budgeted && data.budget != null && (
-        // A tinted summary module (matching the Metric cards). The two figures
-        // bookend the progress bar: "spent of budget" caps its left, "X left"
-        // caps its right — both right/left edges are the box content edges, the
-        // same px-3 that bounds the bar, so they align to the bar by structure.
-        <div className="rounded-xl border border-transparent bg-[var(--background)] px-3 py-2">
-          <div className="mb-1.5 flex items-center gap-2 text-xs text-[var(--muted)]">
-            <span className="min-w-0 flex-1 truncate">
-              {usd(data.spent, { cents: false })} of {usd(data.budget, { cents: false })}
-            </span>
-            <span className={`shrink-0 tabular-nums ${remaining < 0 ? "text-[var(--warn)]" : ""}`}>
-              {remaining >= 0
-                ? `${usd(remaining, { cents: false })} left`
-                : `${usd(-remaining, { cents: false })} over`}
-            </span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-[var(--muted)]/15">
-            <div
-              className={`h-full rounded-full ${remaining < 0 ? "bg-[var(--bad)]" : "bg-[var(--accent)]"}`}
-              style={{ width: `${pctOfBudget}%` }}
-            />
-          </div>
+        <div
+          className="-mt-2 h-2 overflow-hidden rounded-full bg-[var(--muted)]/15"
+          role="progressbar"
+          aria-label={`${Math.round(pctOfBudget)}% of budget used`}
+          aria-valuenow={Math.round(pctOfBudget)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div
+            className={`h-full rounded-full ${remaining < 0 ? "bg-[var(--bad)]" : "bg-[var(--accent)]"}`}
+            style={{ width: `${pctOfBudget}%` }}
+          />
         </div>
       )}
 
@@ -1728,7 +1710,7 @@ function CaptionSelect({ label, tag, className = "", children, ...select }: { la
 // auto/edited state beneath, in the same box the read-only metrics use.
 function PropertyCard({ label, edited, children }: { label: string; edited?: boolean; children: ReactNode }) {
   return (
-    <div className="rounded-xl bg-[var(--background)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
+    <div data-property-card className="rounded-lg bg-[var(--background)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
       {children}
       <div className="mt-0.5 flex items-center gap-1.5">
         <span className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{label}</span>
@@ -1739,19 +1721,3 @@ function PropertyCard({ label, edited, children }: { label: string; edited?: boo
   );
 }
 
-function Metric({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="rounded-xl bg-[var(--background)] py-2">
-      <div className={`text-sm font-semibold tabular-nums ${valueClass ?? ""}`}>{value}</div>
-      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{label}</div>
-    </div>
-  );
-}

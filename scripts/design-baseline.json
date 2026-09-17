@@ -1,6 +1,6 @@
 {
   "text size off the scale": {
-    "total": 91,
+    "total": 84,
     "files": {
       "src/app/categories/page.tsx": 8,
       "src/app/globals.css": 3,
@@ -22,11 +22,11 @@
       "src/components/SignOut.tsx": 1,
       "src/components/ThemeToggle.tsx": 1,
       "src/components/Toast.tsx": 1,
-      "src/components/TransactionDrawer.tsx": 14
+      "src/components/TransactionDrawer.tsx": 7
     }
   },
   "radius off the scale": {
-    "total": 49,
+    "total": 46,
     "files": {
       "src/app/categories/page.tsx": 6,
       "src/app/page.tsx": 2,
@@ -44,12 +44,12 @@
       "src/components/SearchBox.tsx": 1,
       "src/components/Toast.tsx": 1,
       "src/components/Tooltip.tsx": 1,
-      "src/components/TransactionDrawer.tsx": 14,
+      "src/components/TransactionDrawer.tsx": 11,
       "src/lib/queries.ts": 2
     }
   },
   "spacing off the scale": {
-    "total": 124,
+    "total": 123,
     "files": {
       "src/app/categories/page.tsx": 18,
       "src/app/globals.css": 4,
@@ -72,7 +72,7 @@
       "src/components/SignOut.tsx": 1,
       "src/components/SummaryCard.tsx": 3,
       "src/components/Toast.tsx": 4,
-      "src/components/TransactionDrawer.tsx": 19
+      "src/components/TransactionDrawer.tsx": 18
     }
   }
 }
