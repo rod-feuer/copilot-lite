@@ -12,10 +12,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { createPortal } from "react-dom";
 import Shell, { Toolbar } from "@/components/Shell";
-import { RowMenu, RowMenuItem, RowMenuDivider } from "@/components/RowMenu";
-import { CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { AmountCell, CategoryProperty } from "@/components/RowCells";
@@ -25,14 +22,14 @@ import { MonthPicker, ImportButton } from "@/components/Actions";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
-import { useTxDrawer, useShelfActive } from "@/components/TransactionDrawer";
+import { useChargeShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { MergeQueue } from "@/components/MergeQueue";
 import { NameCleanupQueue } from "@/components/NameCleanupQueue";
 import { CategorizeQueue } from "@/components/CategorizeQueue";
 import { SearchBox } from "@/components/SearchBox";
 import { Tooltip } from "@/components/Tooltip";
-import { postJson, patchJson, deleteJson } from "@/lib/http";
+import { patchJson } from "@/lib/http";
 import { usd, longDate, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import type { TransactionRow } from "@/lib/queries";
 import type { Category } from "@/lib/types";
@@ -74,8 +71,6 @@ export default function TransactionsPage() {
   // Review-queue widgets are deferred to after first paint so their fetches
   // (esp. the ~155ms merge scan) don't compete with the list on load.
   const [showQueues, setShowQueues] = useState(false);
-  const [editingDateId, setEditingDateId] = useState<number | null>(null);
-  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   // Which row's category <select> has its full option list mounted. At rest a
   // row renders only its current value (1 option), not all ~27 categories — so a
   // long month builds ~1 option/row instead of ~28, the page's main render cost.
@@ -123,7 +118,7 @@ export default function TransactionsPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const toast = useToast();
   const mutate = useMutation(useCallback(() => setRefreshKey((k) => k + 1), []));
-  const openTx = useTxDrawer();
+  const openCharge = useChargeShelf();
   const shelfActive = useShelfActive();
   useSyncedRefresh(() => setRefreshKey((k) => k + 1));
 
@@ -349,7 +344,7 @@ export default function TransactionsPage() {
 
   // Handlers are stabilized with useCallback so the memoized TxRow only
   // re-renders when its own data/flags change — not on every keystroke or
-  // optimistic edit elsewhere in the list. (setTxs/setRefreshKey/setEditingDateId
+  // optimistic edit elsewhere in the list. (setTxs/setRefreshKey
   // and toast are stable; cats is the only mutable dep, and it changes rarely.)
   const setCategory = useCallback(
     async (id: number, categoryId: number | null) => {
@@ -376,110 +371,11 @@ export default function TransactionsPage() {
     [cats, mutate]
   );
 
-  // Set/clear a transaction's free-text note. Empty clears it. Optimistic, with
-  // a server re-sync on failure (same pattern as setCategory).
-  const saveNote = useCallback(
-    async (id: number, raw: string) => {
-      const note = raw.trim() || null;
-      setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, note } : t)));
-      await mutate(
-        () => patchJson(`/api/transactions/${id}`, { note }),
-        { error: "Couldn't save note — please try again" },
-        { refresh: "error" }
-      );
-    },
-    [mutate]
-  );
-
-  // Set/clear a transaction's effective (accounting) date. Equal to the posted
-  // date or empty means clear the override.
-  const commitDate = useCallback(
-    async (t: Tx, value: string | null) => {
-      setEditingDateId(null);
-      const eff = !value || value === t.date ? null : value;
-      if (eff === (t.effectiveDate ?? null)) return;
-      await mutate(
-        () => patchJson(`/api/transactions/${t.id}`, { effectiveDate: eff }),
-        { error: "Couldn't update date — please try again" },
-        { refresh: "always" }
-      );
-    },
-    [mutate]
-  );
-
-  // Recurring control — VENDOR-level (the row's common intent): is this vendor a
-  // recurring bill? `force` marks the whole vendor recurring; `mute` makes the
-  // whole series not-recurring (and the route clears any stale per-charge
-  // exclusions, so no "excluded from the series" ghost lingers). Per-charge
-  // one-off exclusion is a finer operation that belongs on the vendor shelf.
-  const setRecurringVendor = useCallback(
-    async (t: Tx, recurring: boolean) => {
-      await mutate(
-        () =>
-          postJson("/api/recurrings/override", {
-            merchant: t.merchant,
-            status: recurring ? "force" : "mute",
-          }),
-        {
-          success: recurring ? `Marked "${t.merchant}" recurring` : `"${t.merchant}" not recurring`,
-          error: "Couldn't update — please try again",
-        }
-      );
-    },
-    [mutate]
-  );
-
-  // Per-charge recurring exclusion — the FINER counterpart to the vendor-level
-  // toggle above: keep the vendor's series, but drop (or re-add) this one charge
-  // as a one-off (e.g. a double payment). Only offered when the charge is already
-  // in/out of a series (the ⋯ menu gates on recState), so it can't create a ghost
-  // "excluded" marker on a vendor that isn't recurring at all. The server re-runs
-  // detection, so refresh to pick up the new recurringId.
-  const setChargeRecurring = useCallback(
-    async (t: Tx, excluded: boolean) => {
-      await mutate(
-        () => patchJson(`/api/transactions/${t.id}`, { recurringExcluded: excluded }),
-        {
-          success: excluded ? "Charge excluded from its series" : "Charge added back to its series",
-          error: "Couldn't update — please try again",
-        }
-      );
-    },
-    [mutate]
-  );
-
-  // Exclude/include a single charge from all totals (the per-transaction
-  // counterpart to a category's exclude-from-totals). Optimistic for instant
-  // pill + day-subtotal feedback; refresh to resync the header net (server-side).
-  const setExcluded = useCallback(
-    async (t: Tx, excluded: boolean) => {
-      setTxs((prev) => prev.map((x) => (x.id === t.id ? { ...x, excluded: excluded ? 1 : 0 } : x)));
-      await mutate(
-        () => patchJson(`/api/transactions/${t.id}`, { excluded }),
-        {
-          success: excluded ? "Excluded from totals" : "Included in totals",
-          error: "Couldn't update — please try again",
-        },
-        { refresh: "always" }
-      );
-    },
-    [mutate]
-  );
-
-  // The charge being split (drives the split dialog). null = closed.
-  const [splitTx, setSplitTx] = useState<Tx | null>(null);
-  // Undo a split from its parent row: the rule, its child rows, and the
-  // parent's exclusion all go (see DELETE …/split).
-  async function undoSplitTx(t: Tx) {
-    await mutate(() => deleteJson(`/api/transactions/${t.id}/split`), {
-      success: "Split undone",
-      error: "Couldn't undo split — please try again",
-    });
-  }
-
+  // A row opens the charge's own shelf, which carries every overlay a charge
+  // can take; the vendor is one link up from there.
   const onOpenRow = useCallback(
-    (merchant: string) => openTx(merchant, { onChange: () => setRefreshKey((k) => k + 1) }),
-    [openTx]
+    (t: Tx) => openCharge(t.id, { onChange: () => setRefreshKey((k) => k + 1) }),
+    [openCharge]
   );
 
   // Group the list under day headers when it's in date order (the rows are
@@ -817,22 +713,11 @@ export default function TransactionsPage() {
                     t={t}
                     modal={modal}
                     headed={headed}
-                    isEditingDate={editingDateId === t.id}
-                    isEditingNote={editingNoteId === t.id}
                     isCatActive={activeCatSelect === t.id}
-                    isShelfActive={shelfActive.isMerchant(t.merchant)}
+                    isShelfActive={shelfActive.isCharge(t.id)}
                     cats={cats}
                     onOpen={onOpenRow}
-                    setEditingDateId={setEditingDateId}
-                    setEditingNoteId={setEditingNoteId}
                     setActiveCatSelect={setActiveCatSelect}
-                    onCommitDate={commitDate}
-                    onSaveNote={saveNote}
-                    onSetRecurring={setRecurringVendor}
-                    onSetChargeRecurring={setChargeRecurring}
-                    onToggleExcluded={setExcluded}
-                    onSplit={setSplitTx}
-                    onUndoSplit={undoSplitTx}
                     onSetCategory={setCategory}
                   />
                 ))}
@@ -861,91 +746,10 @@ export default function TransactionsPage() {
           </>
         )}
       </div>
-      {splitTx && (
-        <SplitDialog
-          tx={splitTx}
-          cats={cats}
-          onClose={() => setSplitTx(null)}
-          onDone={() => {
-            setSplitTx(null);
-            setRefreshKey((k) => k + 1);
-          }}
-        />
-      )}
     </Shell>
   );
 }
 
-// The row's always-visible "⋯" — one anchor for the actions that used to be
-// hover-gated (set date, add/edit note, recurring toggle), so they're reachable
-// without hover and on touch (DESIGN.md §1 Anchor, §3 Reach). The menu is
-// PORTALED to document.body: the row uses content-visibility (paint containment)
-// which would clip an in-row popover. Fixed-positioned from the button's rect and
-// closed on scroll/resize/outside-click/Escape (it can't follow a scroll).
-function RowActionsMenu({
-  recState,
-  hasNote,
-  hasDateOverride,
-  excluded,
-  canSplit,
-  splitParts,
-  onSetDate,
-  onEditNote,
-  onSetRecurring,
-  onSetChargeRecurring,
-  onToggleExcluded,
-  onSplit,
-  onUndoSplit,
-}: {
-  recState: "in" | "out" | "none";
-  hasNote: boolean;
-  hasDateOverride: boolean;
-  excluded: boolean;
-  canSplit: boolean;
-  splitParts: number;
-  onSetDate: () => void;
-  onEditNote: () => void;
-  onSetRecurring: (recurring: boolean) => void;
-  onSetChargeRecurring: (excluded: boolean) => void;
-  onToggleExcluded: (excluded: boolean) => void;
-  onSplit: () => void;
-  onUndoSplit: () => void;
-}) {
-  // Vendor-level: if the vendor has any recurring relationship (in/out), offer to
-  // make the whole vendor not-recurring; otherwise offer to mark it recurring.
-  const isRecurring = recState !== "none";
-
-  const item = (label: string, fn: () => void) => <RowMenuItem label={label} onSelect={fn} />;
-  const divider = <RowMenuDivider />;
-
-  return (
-    <RowMenu>
-            {item(hasDateOverride ? "Change date" : "Set date", onSetDate)}
-            {item(hasNote ? "Edit note" : "Add note", onEditNote)}
-            {splitParts > 0
-              ? item(`Undo split (${splitParts} parts)`, onUndoSplit)
-              : canSplit && item("Split…", onSplit)}
-            {divider}
-            {item(isRecurring ? "Not recurring" : "Mark recurring", () =>
-              onSetRecurring(!isRecurring)
-            )}
-            {/* Per-charge series exclusion — only when the vendor IS a series, so
-                it can't strand a ghost marker on a non-recurring vendor. */}
-            {recState === "in" && item("Exclude this charge", () => onSetChargeRecurring(true))}
-            {recState === "out" && item("Add charge to series", () => onSetChargeRecurring(false))}
-            {/* A split parent is excluded because its parts count instead;
-                including it again would double-count, so the toggle is hidden. */}
-            {splitParts === 0 && (
-              <>
-                {divider}
-                {item(excluded ? "Include in totals" : "Exclude from totals", () =>
-                  onToggleExcluded(!excluded)
-                )}
-              </>
-            )}
-    </RowMenu>
-  );
-}
 
 // Mobile-only: search owns its row, so sort + add-filter collapse behind one
 // "adjustments" icon (the iOS convention for refining a list). An accent dot
@@ -1061,51 +865,27 @@ const TxRow = memo(function TxRow({
   t,
   modal,
   headed,
-  isEditingDate,
-  isEditingNote,
   isCatActive,
   isShelfActive,
   cats,
   onOpen,
-  setEditingDateId,
-  setEditingNoteId,
   setActiveCatSelect,
-  onCommitDate,
-  onSaveNote,
-  onSetRecurring,
-  onSetChargeRecurring,
-  onToggleExcluded,
-  onSplit,
-  onUndoSplit,
   onSetCategory,
 }: {
   t: Tx;
   modal: { categoryId: number | null; account: string } | null;
   headed: boolean;
-  isEditingDate: boolean;
-  isEditingNote: boolean;
   isCatActive: boolean;
   isShelfActive: boolean;
   cats: Cat[];
-  onOpen: (merchant: string) => void;
-  setEditingDateId: Dispatch<SetStateAction<number | null>>;
-  setEditingNoteId: Dispatch<SetStateAction<number | null>>;
+  onOpen: (t: Tx) => void;
   setActiveCatSelect: Dispatch<SetStateAction<number | null>>;
-  onCommitDate: (t: Tx, value: string | null) => void;
-  onSaveNote: (id: number, raw: string) => void;
-  onSetRecurring: (t: Tx, recurring: boolean) => void;
-  onSetChargeRecurring: (t: Tx, excluded: boolean) => void;
-  onToggleExcluded: (t: Tx, excluded: boolean) => void;
-  onSplit: (t: Tx) => void;
-  onUndoSplit: (t: Tx) => void;
   onSetCategory: (id: number, categoryId: number | null) => void;
 }) {
   const sameCat =
     modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
   const sameAcct = modal && t.account === modal.account;
   const recState = recurringState(t);
-  const commitDate = onCommitDate;
-  const saveNote = onSaveNote;
   const setCategory = onSetCategory;
   // "•" is the app's placeholder for a category with no real emoji (see core.ts),
   // so it's not null — treat it (and empty) as no icon and use the merchant's
@@ -1113,7 +893,7 @@ const TxRow = memo(function TxRow({
   return (
               <li
                 data-drawer-row
-                {...rowButtonProps(() => onOpen(t.merchant))}
+                {...rowButtonProps(() => onOpen(t))}
                 // content-visibility lets the browser skip layout + paint for rows
                 // scrolled off-screen — virtualizing the render without unmounting
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
@@ -1132,28 +912,7 @@ const TxRow = memo(function TxRow({
                   {modal ? (
                     <>
                       <div className="flex items-center gap-2">
-                        {isEditingDate ? (
-                          <CommitInput
-                            type="date"
-                            defaultValue={t.effectiveDate ?? t.date}
-                            autoFocus
-                            onCommit={(v) => commitDate(t, v)}
-                            onDone={() => setEditingDateId(null)}
-                            className="rounded border border-[var(--border)] bg-card px-1 py-0.5 text-sm"
-                          />
-                        ) : (
-                          <Tooltip label="Edit effective date" onlyIfTruncated={false}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingDateId(t.id);
-                              }}
-                              className="whitespace-nowrap text-[13px] font-medium hover:underline"
-                            >
-                              {longDate(t.effectiveDate ?? t.date)}
-                            </button>
-                          </Tooltip>
-                        )}
+                        <span className="whitespace-nowrap text-[13px] font-medium">{longDate(t.effectiveDate ?? t.date)}</span>
                         {t.splitParts > 0 ? (
                           <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
                             split · {t.splitParts} parts
@@ -1183,17 +942,6 @@ const TxRow = memo(function TxRow({
                           {t.effectiveDate && t.effectiveDate !== t.date && (
                             <span className="text-[var(--warn)]">
                               {!sameAcct ? "· " : ""}posted {shortDate(t.date)}
-                              <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    commitDate(t, null);
-                                  }}
-                                  className="hover:text-[var(--foreground)]"
-                                >
-                                  ↺
-                                </button>
-                              </Tooltip>
                             </span>
                           )}
                         </div>
@@ -1203,7 +951,7 @@ const TxRow = memo(function TxRow({
                   <div className="flex items-center gap-2">
                     <span className="truncate text-[13px] font-medium">{t.displayName}</span>
                     {/* Passive recurring marker — glanceable state; the toggle
-                        lives in the ⋯ menu (so the icon isn't a cryptic control). */}
+                        lives in the charge's shelf. */}
                     {recState !== "none" && (
                       <Tooltip label={RECURRING_LABEL[recState]} onlyIfTruncated={false} className="shrink-0">
                         <RecurringGlyph state={recState} className="text-xs" />
@@ -1242,73 +990,14 @@ const TxRow = memo(function TxRow({
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-[var(--warn)]">
                             · posted {shortDate(t.date)}
-                            <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  commitDate(t, null);
-                                }}
-                                className="hover:text-[var(--foreground)]"
-                              >
-                                ↺
-                              </button>
-                            </Tooltip>
                           </span>
-                        )}
-                        {/* Date editing is reached via the row's ⋯ menu (Set date);
-                            the inline editor still renders here when active. */}
-                        {isEditingDate && (
-                          <span className="inline-flex items-center gap-1">
-                            ·
-                            <CommitInput
-                              type="date"
-                              defaultValue={t.effectiveDate ?? t.date}
-                              autoFocus
-                              onCommit={(v) => commitDate(t, v)}
-                              onDone={() => setEditingDateId(null)}
-                              className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
-                            />
-                          </span>
-                        )}
-                      </>
+                        )}                      </>
                     ) : (
                       <>
-                        {isEditingDate ? (
-                          <CommitInput
-                            type="date"
-                            defaultValue={t.effectiveDate ?? t.date}
-                            autoFocus
-                            onCommit={(v) => commitDate(t, v)}
-                            onDone={() => setEditingDateId(null)}
-                            className="rounded border border-[var(--border)] bg-card px-1 py-0.5"
-                          />
-                        ) : (
-                          <Tooltip label="Edit effective date" onlyIfTruncated={false}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingDateId(t.id);
-                              }}
-                              className="whitespace-nowrap hover:text-[var(--foreground)] hover:underline"
-                            >
-                              {longDate(t.effectiveDate ?? t.date)}
-                            </button>
-                          </Tooltip>
-                        )}
+                        <span className="whitespace-nowrap">{longDate(t.effectiveDate ?? t.date)}</span>
                         {t.effectiveDate && t.effectiveDate !== t.date && (
                           <span className="text-[var(--warn)]">
                             · posted {shortDate(t.date)}
-                            <Tooltip label="Revert to posted date" onlyIfTruncated={false} className="ml-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  commitDate(t, null);
-                                }}
-                                className="hover:text-[var(--foreground)]"
-                              >
-                                ↺
-                              </button>
-                            </Tooltip>
                           </span>
                         )}
                         {/* Account dropped on mobile (tertiary; lives in the sheet).
@@ -1316,37 +1005,17 @@ const TxRow = memo(function TxRow({
                         <span className="hidden whitespace-nowrap sm:inline">· {t.account}</span>
                       </>
                     )}
-                    {/* Adding a note is reached via the row's ⋯ menu (Add note);
-                        a set note renders on its own line below. */}
                   </div>
                     </>
                   )}
-                  {/* A set note (or the editor) takes its own line below — that's
-                      persistent content, not a hover reveal, so it doesn't jitter.
-                      Outside the mode ternary so statement (vendor) view has it too. */}
-                  {isEditingNote ? (
-                    <CommitInput
-                      autoFocus
-                      defaultValue={t.note ?? ""}
-                      placeholder="What was this for?"
-                      onCommit={(v) => saveNote(t.id, v)}
-                      onDone={() => setEditingNoteId(null)}
-                      className="mt-0.5 w-full max-w-md rounded border border-[var(--border)] bg-card px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
-                    />
-                  ) : t.note ? (
-                    <Tooltip label="Edit note" onlyIfTruncated={false} className="mt-0.5 flex max-w-full">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingNoteId(t.id);
-                        }}
-                        className="flex max-w-full items-baseline gap-1 text-left text-xs italic text-[var(--muted)] hover:text-[var(--foreground)]"
-                      >
-                        <span className="shrink-0 not-italic opacity-70">✎</span>
-                        <span className="truncate">{t.note}</span>
-                      </button>
-                    </Tooltip>
-                  ) : null}
+                  {/* A set note takes its own line below (edited in the charge's
+                      shelf). Outside the mode ternary so statement view has it too. */}
+                  {t.note && (
+                    <div className="mt-0.5 flex max-w-full items-baseline gap-1 text-xs italic text-[var(--muted)]">
+                      <span className="shrink-0 not-italic opacity-70">✎</span>
+                      <span className="truncate">{t.note}</span>
+                    </div>
+                  )}
                 </div>
                 {/* Desktop: the category as a quiet property in its own column
                     (hidden on a phone, where it sits in the meta line instead). */}
@@ -1365,172 +1034,10 @@ const TxRow = memo(function TxRow({
                   </span>
                 )}
                 <AmountCell value={t.amount} excluded={!!t.excluded || !!t.categoryExcluded} className="w-24 shrink-0" />
-                <RowActionsMenu
-                  recState={recState}
-                  hasNote={!!t.note}
-                  hasDateOverride={!!(t.effectiveDate && t.effectiveDate !== t.date)}
-                  excluded={!!t.excluded}
-                  canSplit={t.amount < 0 && !t.pending}
-                  onSetDate={() => setEditingDateId(t.id)}
-                  onEditNote={() => setEditingNoteId(t.id)}
-                  onSetRecurring={(recurring) => onSetRecurring(t, recurring)}
-                  onSetChargeRecurring={(excluded) => onSetChargeRecurring(t, excluded)}
-                  onToggleExcluded={(excluded) => onToggleExcluded(t, excluded)}
-                  splitParts={t.splitParts}
-                  onSplit={() => onSplit(t)}
-                  onUndoSplit={() => onUndoSplit(t)}
-                />
               </li>
   );
 });
 
-// Split a single charge into category parts. Records a split rule keyed on the
-// charge's merchant + amount and applies it immediately (see the split route);
-// the parts must reconcile to the charge total before it can be saved. Portaled
-// + centered so it escapes the list's content-visibility clipping.
-function SplitDialog({
-  tx,
-  cats,
-  onClose,
-  onDone,
-}: {
-  tx: Tx;
-  cats: Cat[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const total = Math.abs(tx.amount);
-  const [parts, setParts] = useState<{ categoryId: string; amount: string; label: string }[]>(() => [
-    { categoryId: tx.categoryId ? String(tx.categoryId) : "", amount: "", label: "" },
-    { categoryId: "", amount: "", label: "" },
-  ]);
-  const [saving, setSaving] = useState(false);
-  // No page refresh here — onDone() is what re-reads the list.
-  const mutate = useMutation();
-
-  const sum = parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
-  const remaining = Number((total - sum).toFixed(2));
-  const valid =
-    parts.length >= 2 &&
-    parts.every((p) => p.categoryId !== "" && Number(p.amount) > 0) &&
-    Math.abs(remaining) <= 0.01;
-
-  const update = (i: number, patch: Partial<(typeof parts)[number]>) =>
-    setParts((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-
-  async function submit() {
-    if (!valid || saving) return;
-    setSaving(true);
-    const ok = await mutate(
-      () =>
-        postJson(`/api/transactions/${tx.id}/split`, {
-          parts: parts.map((p) => ({
-            categoryId: Number(p.categoryId),
-            amount: Number(p.amount),
-            label: p.label.trim() || cats.find((c) => c.id === Number(p.categoryId))?.name || "Part",
-          })),
-        }),
-      { success: "Transaction split", error: "Couldn't split — please try again" },
-      { refresh: "never" }
-    );
-    if (ok) onDone();
-    else setSaving(false);
-  }
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="card w-full max-w-md p-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 text-sm font-semibold">Split transaction</div>
-        <div className="mb-3 text-xs text-[var(--muted)]">
-          {tx.displayName} · {usd(tx.amount, { sign: true })}
-        </div>
-
-        <div className="space-y-2">
-          {parts.map((p, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <select
-                value={p.categoryId}
-                onChange={(e) => update(i, { categoryId: e.target.value })}
-                className="select-caret min-w-0 flex-1 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1.5 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-              >
-                <option value="">Category…</option>
-                {cats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.icon} {c.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={p.amount}
-                onChange={(e) => update(i, { amount: e.target.value })}
-                placeholder="$"
-                inputMode="decimal"
-                className="w-20 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-              />
-              <input
-                value={p.label}
-                onChange={(e) => update(i, { label: e.target.value })}
-                placeholder={cats.find((c) => c.id === Number(p.categoryId))?.name ?? "Label"}
-                aria-label="Part label"
-                className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-              />
-              {parts.length > 2 ? (
-                <button
-                  onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))}
-                  aria-label="Remove part"
-                  className="rounded px-1 text-[var(--muted)] hover:text-[var(--foreground)]"
-                >
-                  ✕
-                </button>
-              ) : (
-                <span className="w-5" />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-2 flex items-center justify-between text-xs">
-          <button
-            onClick={() => setParts((prev) => [...prev, { categoryId: "", amount: "", label: "" }])}
-            className="font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
-          >
-            + Add part
-          </button>
-          <span className={Math.abs(remaining) > 0.01 ? "text-[var(--warn)] tabular-nums" : "text-[var(--muted)] tabular-nums"}>
-            {remaining === 0 ? "balanced" : `${usd(remaining)} left`}
-          </span>
-        </div>
-
-        <p className="mt-3 text-[11px] leading-snug text-[var(--muted)]">
-          Splits this and any future {tx.displayName} charge of {usd(total)} into the parts above.
-        </p>
-
-        <div className="mt-3 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={!valid || saving}
-            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {saving ? "Splitting…" : "Split"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 // Day-group header label, e.g. "Saturday, June 6". UTC to match the stored dates.
 function dayLabel(iso: string): string {

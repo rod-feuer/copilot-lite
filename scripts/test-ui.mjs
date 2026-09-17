@@ -190,13 +190,14 @@ async function keyboardRows(browser) {
       await page.keyboard.press("Escape"); try { await shelfIs(page, false); } catch {}
       record("keyboard rows", route, f.focused && f.role === "button" && opened, `role=${f.role}, Enter opens shelf: ${opened}`);
     }
+    // A transaction row opens the CHARGE's shelf (no row menu): the note
+    // field and the charge's verbs are there, and Open vendor drills up.
     await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
-    await page.waitForSelector("[data-drawer-row] button[aria-haspopup]");
-    await page.evaluate(() => document.querySelector("[data-drawer-row] button[aria-haspopup]").focus());
-    await page.keyboard.press("Enter"); await sleep(400);
-    const menu = await page.evaluate(() => !!document.querySelector("[role='menu']"));
-    const shelf = await page.evaluate((sel) => { const a = document.querySelector(sel); return !!a && a.innerText.trim().length > 0; }, shelfSel);
-    record("keyboard rows", "nested ⋯ does not open the shelf", menu && !shelf, `menu: ${menu}, shelf: ${shelf}`);
+    await page.waitForSelector("[data-drawer-row]");
+    await page.evaluate(() => document.querySelector("[data-drawer-row]").focus());
+    await page.keyboard.press("Enter"); await shelfIs(page, true); await shelfSettled(page);
+    const charge = await page.evaluate((sel) => { const a = document.querySelector(sel); const btns = [...a.querySelectorAll("button")].map((b) => b.textContent.trim()); return { note: !!a.querySelector("input[placeholder='What was this for?']"), verbs: btns.filter((x) => /totals|Split|Open vendor/.test(x)).length, menus: document.querySelectorAll("[data-drawer-row] button[aria-haspopup]").length }; }, shelfSel);
+    record("keyboard rows", "Enter on a transaction opens the charge's shelf: note field, its verbs, no row menu", charge.note && charge.verbs >= 2 && charge.menus === 0, `note=${charge.note}, verbs=${charge.verbs}, row menus=${charge.menus}`);
     await page.keyboard.press("Escape");
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     const catRows = await page.$$("[data-drawer-row]");
@@ -341,13 +342,11 @@ async function statementMode(browser) {
   for (const [mode, url] of [["statement", "/transactions?vendor=Chipotle"], ["normal", "/transactions"]]) {
     await withPage(browser, async (page, errs) => {
       await page.goto(BASE + url, { waitUntil: "networkidle2" });
-      await page.waitForSelector("[data-drawer-row] button[aria-haspopup]");
+      await page.waitForSelector("[data-drawer-row]");
       const header = await page.evaluate(() => /\d+ transactions? ·/.test(document.body.innerText));
-      await page.click("[data-drawer-row] button[aria-haspopup]");
-      await page.waitForSelector("[role='menu']");
-      await page.click("[role='menu'] button::-p-text(note)");
-      let editor = false; try { await page.waitForSelector("input[placeholder='What was this for?']", { timeout: 3000 }); editor = true; } catch {}
-      await page.keyboard.press("Escape");
+      await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
+      let editor = false; try { await page.waitForSelector(`${shelfSel} input[placeholder='What was this for?']`, { timeout: 3000 }); editor = true; } catch {}
+      await page.keyboard.press("Escape"); await shelfIs(page, false);
       await page.setViewport({ width: 400, height: 800 }); await sleep(400);
       const chip = await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] select"); return !!s && s.offsetParent !== null; });
       record("statement mode", mode, editor && chip && (mode !== "statement" || header) && errs.length === 0, `note editor: ${editor}, mobile chip: ${chip}`);
@@ -369,13 +368,12 @@ async function splitUndo(browser) {
     }, cand.displayName, amtText);
     if (!found) { record("split → undo", "target row", false, `no row for ${cand.displayName} ${amtText}`); return; }
     const row = "[data-drawer-row][data-ui-target]";
-    const openMenu = async () => {
-      await page.evaluate((sel) => document.querySelector(sel).scrollIntoView({ block: "center" }), row);
-      await sleep(400);
-      await page.click(`${row} button[aria-haspopup]`); await page.waitForSelector("[role='menu']", { timeout: 8000 });
+    const openShelf = async () => {
+      await page.evaluate((sel) => { const el = document.querySelector(sel); el.scrollIntoView({ block: "center" }); el.click(); }, row);
+      await shelfIs(page, true); await shelfSettled(page);
     };
-    await openMenu();
-    await page.click("[role='menu'] button::-p-text(Split…)");
+    await openShelf();
+    await page.click(`${shelfSel} button::-p-text(Split…)`);
     await page.waitForFunction(() => document.body.innerText.includes("Split transaction"));
     const labels = await page.$$eval("input[aria-label='Part label']", (els) => els.length);
     const total = Math.abs(cand.amount);
@@ -394,15 +392,15 @@ async function splitUndo(browser) {
     await sleep(500);
     const child = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row]")].some((li) => li.innerText.includes("— UI test part")));
     await page.evaluate(() => { for (const li of document.querySelectorAll("[data-drawer-row]")) if (li.innerText.includes("split · 2 parts")) { li.setAttribute("data-ui-target", "1"); break; } });
-    await openMenu();
-    const menuText = await page.evaluate(() => document.querySelector("[role='menu']").innerText);
-    const hasUndo = menuText.includes("Undo split (2 parts)"), hidesToggle = !/totals/.test(menuText);
-    await page.click("[role='menu'] button::-p-text(Undo split)");
+    await openShelf();
+    const verbs = await page.evaluate((sel) => [...document.querySelector(sel).querySelectorAll("button")].map((b) => b.textContent.trim()), shelfSel);
+    const hasUndo = verbs.some((v) => v.includes("Undo split (2 parts)")), hidesToggle = !verbs.some((v) => /totals/.test(v));
+    await page.click(`${shelfSel} button::-p-text(Undo split)`);
     await page.waitForFunction(() => ![...document.querySelectorAll("[data-drawer-row]")].some((li) => /split · 2 parts|— UI test part/.test(li.innerText)), { timeout: 10000 });
     record("split → undo", "dialog has a label per part", labels === 2, `${labels}`);
     record("split → undo", "parts balanced", balanced);
     record("split → undo", "pill + labelled child after save", child);
-    record("split → undo", "menu: Undo split, no totals toggle", hasUndo && hidesToggle);
+    record("split → undo", "shelf: Undo split, no totals toggle on a split parent", hasUndo && hidesToggle);
     record("split → undo", "pill + children gone after undo", true);
     if (errs.length) record("split → undo", "page errors", false, errs[0]);
   });
@@ -505,10 +503,11 @@ async function recurringGlyph(browser) {
     record("recurring glyph", "transactions · Netflix charge is in its series", (await glyphOn(page, "Netflix")) === "in");
     await page.evaluate(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); li.setAttribute("data-ui-target", "1"); li.scrollIntoView({ block: "center" }); });
     await sleep(300);
-    await page.click("[data-drawer-row][data-ui-target] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
-    await page.click("[role='menu'] button::-p-text(Exclude this charge)");
+    await page.click("[data-drawer-row][data-ui-target]"); await shelfIs(page, true); await shelfSettled(page);
+    await page.click(`${shelfSel} button[data-membership='in']`);
     await page.waitForFunction(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); const g = li && li.querySelector("[data-recurring]"); return g && g.getAttribute("data-recurring") === "out"; }, { timeout: 10000 });
-    record("recurring glyph", "transactions · excluded charge reads out", true);
+    record("recurring glyph", "transactions · a charge taken out of its plan reads out", true);
+    await page.keyboard.press("Escape"); await shelfIs(page, false);
     await page.goto(BASE + "/", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-drawer-row]");
     record("recurring glyph", "dashboard · same charge reads out", (await glyphOn(page, "Netflix")) === "out");
@@ -517,9 +516,10 @@ async function recurringGlyph(browser) {
     await page.waitForSelector("[data-drawer-row]");
     await page.evaluate(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); li.setAttribute("data-ui-target", "1"); li.scrollIntoView({ block: "center" }); });
     await sleep(300);
-    await page.click("[data-drawer-row][data-ui-target] button[aria-haspopup]"); await page.waitForSelector("[role='menu']");
-    await page.click("[role='menu'] button::-p-text(Add charge to series)");
+    await page.click("[data-drawer-row][data-ui-target]"); await shelfIs(page, true); await shelfSettled(page);
+    await page.click(`${shelfSel} button[data-membership='out']`);
     await page.waitForFunction(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); const g = li && li.querySelector("[data-recurring]"); return g && g.getAttribute("data-recurring") === "in"; }, { timeout: 10000 });
+    await page.keyboard.press("Escape");
     record("recurring glyph", "transactions · restored to in", true);
     if (errs.length) record("recurring glyph", "page errors", false, errs[0]);
   });
