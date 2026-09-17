@@ -134,3 +134,16 @@ test("txHash is stable and case-insensitive on merchant", () => {
   assert.equal(a, txHash("2026-01-01", "foo", -10, "Checking"));
   assert.notEqual(a, txHash("2026-01-01", "Foo", -11, "Checking"));
 });
+
+// A model reply cut off mid-array (a 143-merchant ask at a 1,024-token cap)
+// used to parse as nothing and read as "no confident suggestions". Every
+// complete proposal in a cut-off reply counts; the half-written last one
+// does not; a whole array still parses as one.
+test("parseProposals keeps every complete proposal in a cut-off reply", async () => {
+  const { parseProposals } = await import("../src/lib/categorize");
+  const whole = 'Here you go: [{"merchant":"Cvs","categoryId":3},{"merchant":"Target","categoryId":5}]';
+  assert.deepEqual(parseProposals(whole), [{ merchant: "Cvs", categoryId: 3 }, { merchant: "Target", categoryId: 5 }]);
+  const cut = '[{"merchant":"Cvs","categoryId":3},{"merchant":"Target","categoryId":5},{"merchant":"Wal';
+  assert.deepEqual(parseProposals(cut), [{ merchant: "Cvs", categoryId: 3 }, { merchant: "Target", categoryId: 5 }]);
+  assert.deepEqual(parseProposals("no json here"), []);
+});

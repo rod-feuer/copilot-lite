@@ -92,7 +92,7 @@ export function CategorizeQueue({
           return [...a, ...d.suggestions.filter((x) => !have.has(x.merchant))];
         });
         // An empty result is "info", not a success toast — it stays in the write.
-        if (d.suggestions.length === 0) toast("No confident suggestions from the model", "info");
+        if (d.suggestions.length === 0) toast("The model had no suggestions for these vendors", "info");
       },
       { error: "Couldn't reach the model — please try again" },
       { refresh: "never" } // nothing to restore: the list only ever gained rows
