@@ -368,7 +368,9 @@ async function splitUndo(browser) {
     }, cand.displayName, amtText);
     if (!found) { record("split → undo", "target row", false, `no row for ${cand.displayName} ${amtText}`); return; }
     const row = "[data-drawer-row][data-ui-target]";
+    // Re-clicking the row whose shelf is open toggles it shut, so close first.
     const openShelf = async () => {
+      if (await page.$(shelfSel)) { await page.keyboard.press("Escape"); try { await shelfIs(page, false); } catch {} }
       await page.evaluate((sel) => { const el = document.querySelector(sel); el.scrollIntoView({ block: "center" }); el.click(); }, row);
       await shelfIs(page, true); await shelfSettled(page);
     };
