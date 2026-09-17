@@ -331,7 +331,9 @@ async function partialMonthQualifiers(browser) {
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
     const shelf = (await page.evaluate((sel) => document.querySelector(sel).innerText, shelfSel)).toLowerCase();
-    record("qualifiers", "shelf (category, current month)", shelf.includes("spent so far") && shelf.includes("vs last month so far"));
+    // "spent so far" always; the trend line reads "… vs last month so far" when
+    // there is a last month to compare with, and "new this month" when not.
+    record("qualifiers", "shelf (category, current month)", shelf.includes("spent so far") && (!shelf.includes("vs last month") || shelf.includes("vs last month so far")), shelf.includes("vs last month") ? "trend qualified" : "no prior month in the fixture");
   });
 }
 
