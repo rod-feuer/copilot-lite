@@ -694,17 +694,15 @@ export default function TransactionsPage() {
                 {headed && (
                   <li className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-3.5 sm:pr-4">
                     {/* Quiet typographic section header (no heavy gray fill);
-                        the total mirrors the row's trailing columns (w-24 amount
-                        + w-6 ⋯) so it lines up with the row amounts. */}
+                        the total sits on the row's amount column (the same
+                        w-24, flush right) at the row size, muted — a sum, not a
+                        fifth amount. */}
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
                       {g.label}
                     </span>
-                    <div className="flex items-center gap-x-2 sm:gap-3">
-                      <span className="w-24 text-right text-[15px] font-medium tabular-nums text-[var(--muted)]">
-                        {usd(g.total, { sign: true })}
-                      </span>
-                      <span className="w-6" aria-hidden />
-                    </div>
+                    <span data-day-total className="w-24 text-right text-[13px] font-medium tabular-nums text-[var(--muted)]">
+                      {usd(g.total, { sign: true })}
+                    </span>
                   </li>
                 )}
                 {g.rows.map((t) => (
