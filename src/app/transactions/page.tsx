@@ -487,7 +487,10 @@ export default function TransactionsPage() {
     >
       {showQueues && (
         <>
-          <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          <CategorizeQueue
+            onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))}
+            onShowUncategorized={() => setCatFilter("none")}
+          />
 
           <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
