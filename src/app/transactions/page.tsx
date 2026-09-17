@@ -647,7 +647,9 @@ export default function TransactionsPage() {
         </select>
       </Toolbar>
 
-      <div className="card overflow-hidden">
+      {/* overflow-clip, not hidden: hidden would make the card its own scroll
+          container and the day headers would stick to it instead of the page. */}
+      <div className="card overflow-clip">
         {txs.length === 0 && status === "loading" ? (
           <div className="p-4">
             <LoadingRows />
@@ -692,14 +694,16 @@ export default function TransactionsPage() {
               return (
               <Fragment key={g.key}>
                 {headed && (
-                  <li className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-3.5 sm:pr-4">
-                    {/* Quiet typographic section header (no heavy gray fill);
-                        the total sits on the row's amount column (the same
-                        w-24, flush right) at the row size, muted — a sum, not a
-                        fifth amount. */}
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                      {g.label}
-                    </span>
+                  <li
+                    data-day-header
+                    // A running header in a continuous list (DESIGN.md §2): a band
+                    // in the page grey so a day boundary reads as a boundary, not
+                    // as one more row divider; sticky, so a long month keeps its
+                    // date in view. The total sits on the row's amount column at
+                    // the row size, muted — a sum, not a fifth amount.
+                    className="sticky top-[var(--page-header,0px)] z-10 flex items-center justify-between bg-[var(--background)] px-4 py-2"
+                  >
+                    <span className="stat-label">{g.label}</span>
                     <span data-day-total className="w-24 text-right text-[13px] font-medium tabular-nums text-[var(--muted)]">
                       {usd(g.total, { sign: true })}
                     </span>

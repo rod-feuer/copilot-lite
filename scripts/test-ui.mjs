@@ -362,6 +362,9 @@ async function statementMode(browser) {
       // the rows' amount cells (it once reserved a column for a row menu).
       const dayTotal = await page.evaluate(() => { const t = document.querySelector("[data-day-total]"); const a = t && t.closest("ul")?.querySelector("[data-drawer-row] [data-amount-state]"); if (!t || !a) return null; return Math.abs(Math.round(t.getBoundingClientRect().right - a.getBoundingClientRect().right)); });
       if (mode === "normal") record("statement mode", "day header total sits on the amounts column", dayTotal !== null && dayTotal <= 1, dayTotal === null ? "no day header" : `Δ ${dayTotal}px`);
+      // A day header is a band in the page grey, sticky while its rows scroll.
+      const band = await page.evaluate(() => { const h = document.querySelector("[data-day-header]"); if (!h) return null; const cs = getComputedStyle(h); const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toLowerCase(); const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; }; return { washed: hex(cs.backgroundColor) === bg, sticky: cs.position === "sticky", label: h.querySelector(".stat-label") !== null }; });
+      if (mode === "normal") record("statement mode", "day header is a page-grey band, sticky, in the label style", !!band && band.washed && band.sticky && band.label, band ? `washed=${band.washed}, sticky=${band.sticky}, label=${band.label}` : "no day header");
       await page.setViewport({ width: 400, height: 800 }); await sleep(400);
       const chip = await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] select"); return !!s && s.offsetParent !== null; });
       record("statement mode", mode, editor && chip && (mode !== "statement" || header) && errs.length === 0, `note editor: ${editor}, mobile chip: ${chip}`);

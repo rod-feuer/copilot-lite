@@ -167,7 +167,12 @@ pills and tags; nothing else.
 in one slot on every page, page actions to its right. Then the summary card
 (the month). Then the toolbar — search, filters, sort — sitting directly
 above the list it acts on, never in the header and never above the summary.
-Then sections: a small-caps title above one card of rows.
+Then the list, in one of two patterns: **sections** for a handful of groups
+(a small-caps title on the page above one card of rows — Recurrings, the
+Dashboard queue), or a **continuous list with running headers** for many
+small groups (a statement: one card, each day a sticky band in the page grey
+carrying the date and the day's total — Transactions). Never one card per
+day.
 
 **Row anatomy** — leading column: a date where time is the subject, a glyph
 where the vendor is. Name in 13/500 with a 12/400 meta line only when it
