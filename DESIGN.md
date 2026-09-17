@@ -164,8 +164,9 @@ horizontal. One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
-in one slot on every page, page actions to its right. A toolbar row under it
-for search, filters and sort — never in the header. Then the summary card.
+in one slot on every page, page actions to its right. Then the summary card
+(the month). Then the toolbar — search, filters, sort — sitting directly
+above the list it acts on, never in the header and never above the summary.
 Then sections: a small-caps title above one card of rows.
 
 **Row anatomy** — leading column: a date where time is the subject, a glyph

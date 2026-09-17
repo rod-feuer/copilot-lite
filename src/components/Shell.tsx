@@ -1,20 +1,24 @@
 // The page anatomy (DESIGN.md §2, "The one page"): title with an optional
 // one-line subtitle on the left; the month picker in ONE slot on every page,
-// first in the right-hand cluster; page actions to its right; a toolbar row
-// under the header for search, filters and sort — never in the header.
+// first in the right-hand cluster; page actions to its right. Search, filters
+// and sort go in a <Toolbar>, which each page places between its summary
+// card and the list the controls act on — never in the header, never above
+// the summary (the summary is the month; the toolbar is the list).
+export function Toolbar({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`flex flex-wrap items-center gap-2 ${className}`.trim()}>{children}</div>;
+}
+
 export default function Shell({
   title,
   subtitle,
   month,
   actions,
-  toolbar,
   children,
 }: {
   title: string;
   subtitle?: string;
   month?: React.ReactNode; // the month picker, always in the same place
   actions?: React.ReactNode; // page actions (rare ones behind ⋯ on a phone)
-  toolbar?: React.ReactNode; // search, filters, sort
   children: React.ReactNode;
 }) {
   return (
@@ -35,10 +39,7 @@ export default function Shell({
           {actions}
         </div>
       </header>
-      <div className="px-5 pb-6 pt-4 sm:px-8 sm:py-6">
-        {toolbar && <div className="mb-4 flex flex-wrap items-center gap-2">{toolbar}</div>}
-        {children}
-      </div>
+      <div className="px-5 pb-6 pt-4 sm:px-8 sm:py-6">{children}</div>
     </div>
   );
 }

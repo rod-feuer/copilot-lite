@@ -6,7 +6,7 @@ import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { CategoryBadge, categoryTint } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
-import Shell from "@/components/Shell";
+import Shell, { Toolbar } from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
@@ -31,7 +31,8 @@ export default function CategoriesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   // Default to budget pressure so the categories nearest/over their budget rise
   // to the top — the thing a budget exists to surface. "spent" is the old order.
-  const [sort, setSort] = useState<"pressure" | "spent" | "name">("pressure");
+  // "Most spent" first: where the money went is the question the page answers.
+  const [sort, setSort] = useState<"pressure" | "spent" | "name">("spent");
   // Attention filter, driven by clicking the summary counts: narrow the expense
   // list to the categories that need action (over budget / not yet budgeted).
   const [filter, setFilter] = useState<"over" | "unbudgeted" | null>(null);
@@ -149,18 +150,6 @@ export default function CategoriesPage() {
           + New category
         </button>
       }
-      toolbar={
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-          aria-label="Sort categories"
-          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-sm"
-        >
-          <option value="pressure">Budget used</option>
-          <option value="spent">Most spent</option>
-          <option value="name">Name A–Z</option>
-        </select>
-      }
     >
       <BudgetSummary
         cats={cats}
@@ -184,6 +173,19 @@ export default function CategoriesPage() {
         <NewCategoryForm autoFocus onCreated={() => load(month)} />
       </div>
       )}
+
+      <Toolbar className="mb-4">
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          aria-label="Sort categories"
+          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-sm"
+        >
+          <option value="spent">Most spent</option>
+          <option value="pressure">Budget used</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </Toolbar>
 
       {status === "loading" ? (
         <LoadingRows />

@@ -13,7 +13,7 @@ import {
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
-import Shell from "@/components/Shell";
+import Shell, { Toolbar } from "@/components/Shell";
 import { RowMenu, RowMenuItem, RowMenuDivider } from "@/components/RowMenu";
 import { CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
@@ -588,8 +588,18 @@ export default function TransactionsPage() {
           </span>
         </>
       }
-      toolbar={
+    >
+      {showQueues && (
         <>
+          <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+
+          <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+
+          <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+        </>
+      )}
+
+      <Toolbar className="mb-4">
         {/* On mobile, search owns the row and sort+filter collapse into one
             trailing icon (sm:contents dissolves this wrapper on desktop, where
             the inline +Filter and sort controls return). */}
@@ -739,18 +749,7 @@ export default function TransactionsPage() {
           <option value="amount-asc">Smallest amount</option>
           <option value="merchant-asc">Merchant A–Z</option>
         </select>
-        </>
-      }
-    >
-      {showQueues && (
-        <>
-          <CategorizeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
-
-          <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
-
-          <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
-        </>
-      )}
+      </Toolbar>
 
       <div className="card overflow-hidden">
         {txs.length === 0 && status === "loading" ? (
