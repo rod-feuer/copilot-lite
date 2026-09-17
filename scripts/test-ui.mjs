@@ -358,6 +358,10 @@ async function statementMode(browser) {
       await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
       let editor = false; try { await page.waitForSelector(`${shelfSel} input[placeholder='What was this for?']`, { timeout: 3000 }); editor = true; } catch {}
       await page.keyboard.press("Escape"); await shelfIs(page, false);
+      // The day header's total sits on the amounts column: same right edge as
+      // the rows' amount cells (it once reserved a column for a row menu).
+      const dayTotal = await page.evaluate(() => { const t = document.querySelector("[data-day-total]"); const a = t && t.closest("ul")?.querySelector("[data-drawer-row] [data-amount-state]"); if (!t || !a) return null; return Math.abs(Math.round(t.getBoundingClientRect().right - a.getBoundingClientRect().right)); });
+      if (mode === "normal") record("statement mode", "day header total sits on the amounts column", dayTotal !== null && dayTotal <= 1, dayTotal === null ? "no day header" : `Δ ${dayTotal}px`);
       await page.setViewport({ width: 400, height: 800 }); await sleep(400);
       const chip = await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] select"); return !!s && s.offsetParent !== null; });
       record("statement mode", mode, editor && chip && (mode !== "statement" || header) && errs.length === 0, `note editor: ${editor}, mobile chip: ${chip}`);
