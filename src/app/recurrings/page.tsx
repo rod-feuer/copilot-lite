@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import Shell from "@/components/Shell";
+import Shell, { Toolbar } from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useNewCategory } from "@/components/NewCategoryOption";
 import { AmountCell, CategoryProperty } from "@/components/RowCells";
@@ -274,27 +274,6 @@ export default function RecurringsPage() {
           </button>
         </HeaderMenu>
       }
-      toolbar={
-        <>
-          <SearchBox value={q} onChange={setQ} placeholder="Search…" className="w-full sm:w-48" />
-          <select
-            value={catFilter}
-            onChange={(e) => setCatFilter(e.target.value)}
-            aria-label="Filter by category"
-            className={`btn-ghost select-caret max-w-44 cursor-pointer appearance-none pr-8 ${
-              catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
-            }`}
-          >
-            <option value="">All categories</option>
-            <option value="none">Uncategorized</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.icon} {c.name}
-              </option>
-            ))}
-          </select>
-        </>
-      }
     >
       {status === "loading" ? (
         <LoadingRows />
@@ -352,6 +331,26 @@ export default function RecurringsPage() {
               }
             />
           )}
+
+          <Toolbar>
+          <SearchBox value={q} onChange={setQ} placeholder="Search…" className="w-full sm:w-48" />
+          <select
+            value={catFilter}
+            onChange={(e) => setCatFilter(e.target.value)}
+            aria-label="Filter by category"
+            className={`btn-ghost select-caret max-w-44 cursor-pointer appearance-none pr-8 ${
+              catFilter ? "text-[var(--foreground)]" : "text-[var(--muted)]"
+            }`}
+          >
+            <option value="">All categories</option>
+            <option value="none">Uncategorized</option>
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.icon} {c.name}
+              </option>
+            ))}
+          </select>
+          </Toolbar>
 
           <BillList
             title=""
