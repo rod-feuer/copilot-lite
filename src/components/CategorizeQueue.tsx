@@ -172,7 +172,7 @@ export function CategorizeQueue({
                   list itself, filtered to what needs a category. */}
               {onShowUncategorized && (
                 <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
-                  Show the uncategorized →
+                  Show all uncategorized →
                 </button>
               )}
             </>
@@ -181,7 +181,7 @@ export function CategorizeQueue({
               {needsModel} vendor{needsModel === 1 ? "" : "s"} need the model — set ANTHROPIC_API_KEY to get AI suggestions.{" "}
               {onShowUncategorized && (
                 <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
-                  Show the uncategorized →
+                  Show all uncategorized →
                 </button>
               )}
             </span>
