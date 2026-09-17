@@ -574,6 +574,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onSplit={() => setSplitting(true)}
                 onUndoSplit={() => chargeUndoSplit(xData.id)}
                 onOpenVendor={() => drillToMerchant(xData.merchant)}
+                onOpenCharge={(id) => {
+                  setTarget({ kind: "charge", id });
+                  fetchCharge(id);
+                }}
               />
             ) : null}
             {splitting && xData && (
@@ -808,6 +812,7 @@ function ChargeBody({
   onSplit,
   onUndoSplit,
   onOpenVendor,
+  onOpenCharge,
 }: {
   data: ChargeDetail;
   cats: Cat[];
@@ -820,6 +825,7 @@ function ChargeBody({
   onSplit: () => void;
   onUndoSplit: () => void;
   onOpenVendor: () => void;
+  onOpenCharge: (id: number) => void; // step to another of the vendor's charges
 }) {
   const newCat = useNewCategory<null>((cat) => {
     onAddCategory(cat);
@@ -935,9 +941,35 @@ function ChargeBody({
           )
         )}
       </div>
-      <button onClick={onOpenVendor} className="btn-link w-full justify-center rounded-lg px-2 py-2 text-[13px] hover:bg-[var(--hover)] hover:no-underline">
-        Open vendor →
-      </button>
+
+      {/* Evidence: what this vendor usually costs. The last five charges,
+          the open one marked; a row steps the shelf to that charge. A charge
+          that doesn't count reads muted, as on the vendor shelf. The vendor's
+          shelf is the way to the full history and its plan. */}
+      <div>
+        <div className="stat-label mb-2">Recent from this vendor</div>
+        <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list data-charge-recent>
+          {data.recent.map((r) => (
+            <ShelfRow
+              key={r.id}
+              date={r.date}
+              amount={r.amount}
+              sign
+              muted={r.excluded === 1}
+              excluded={r.excluded === 1 || !!data.categoryExcluded}
+              active={r.id === data.id}
+              onClick={r.id === data.id ? undefined : () => onOpenCharge(r.id)}
+              flush
+            />
+          ))}
+        </ul>
+        <button
+          onClick={onOpenVendor}
+          className="btn-link mt-2 text-[11px]"
+        >
+          {data.vendorCount > data.recent.length ? `All ${data.vendorCount} charges →` : "Open vendor →"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1695,6 +1727,7 @@ function ShelfRow({
   flush = false,
   unsignedDebits = false,
   note,
+  active = false,
 }: {
   date: string;
   name?: string; // omitted when every row in the list would say the same thing
@@ -1708,14 +1741,16 @@ function ShelfRow({
   flush?: boolean; // no horizontal padding: the list sits on the panel's edges
   unsignedDebits?: boolean; // a plan's charges are debits by definition — no minus on every row
   note?: string; // quiet text in the pill's slot when there is no control (e.g. "not counted")
+  active?: boolean; // the row the shelf is about (a charge in its own vendor history)
 }) {
   return (
     <li>
       <div
         {...(onClick ? rowButtonProps(onClick) : {})}
+        data-active={active ? "1" : undefined}
         className={`group flex w-full items-center gap-2 py-2 text-xs ${flush ? "" : "px-3"} ${
           onClick ? `cursor-pointer hover:bg-[var(--hover)] ${ROW_FOCUS}` : ""
-        }`}
+        } ${active ? "bg-[var(--accent)]/10" : ""}`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
           {/* The glyph gutter belongs to lists without a membership pill (the

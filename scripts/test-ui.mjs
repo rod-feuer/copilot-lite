@@ -196,8 +196,19 @@ async function keyboardRows(browser) {
     await page.waitForSelector("[data-drawer-row]");
     await page.evaluate(() => document.querySelector("[data-drawer-row]").focus());
     await page.keyboard.press("Enter"); await shelfIs(page, true); await shelfSettled(page);
-    const charge = await page.evaluate((sel) => { const a = document.querySelector(sel); const btns = [...a.querySelectorAll("button")].map((b) => b.textContent.trim()); return { note: !!a.querySelector("input[placeholder='What was this for?']"), verbs: btns.filter((x) => /totals|Split|Open vendor/.test(x)).length, menus: document.querySelectorAll("[data-drawer-row] button[aria-haspopup]").length }; }, shelfSel);
+    const charge = await page.evaluate((sel) => { const a = document.querySelector(sel); const btns = [...a.querySelectorAll("button")].map((b) => b.textContent.trim()); const recent = a.querySelectorAll("[data-charge-recent] li").length; const marked = a.querySelectorAll("[data-charge-recent] [data-active]").length; return { note: !!a.querySelector("input[placeholder='What was this for?']"), verbs: btns.filter((x) => /totals|Split|Open vendor|charges →/.test(x)).length, menus: document.querySelectorAll("[data-drawer-row] button[aria-haspopup]").length, recent, marked }; }, shelfSel);
     record("keyboard rows", "Enter on a transaction opens the charge's shelf: note field, its verbs, no row menu", charge.note && charge.verbs >= 2 && charge.menus === 0, `note=${charge.note}, verbs=${charge.verbs}, row menus=${charge.menus}`);
+    record("keyboard rows", "the charge's shelf lists the vendor's recent charges with this one marked", charge.recent >= 1 && charge.marked === 1, `${charge.recent} recent, ${charge.marked} marked`);
+    // A recent row steps the shelf to that charge (when the vendor has another).
+    {
+      const other = await page.$(`${shelfSel} [data-charge-recent] li [role='button']`);
+      if (other) {
+        const before = await page.$eval(`${shelfSel} [data-charge-recent] [data-active]`, (e) => e.textContent);
+        await other.click(); await shelfSettled(page); await sleep(300);
+        const after = await page.$eval(`${shelfSel} [data-charge-recent] [data-active]`, (e) => e.textContent);
+        record("keyboard rows", "a recent row steps the shelf to that charge", before !== after, `${before.trim().slice(0, 20)} → ${after.trim().slice(0, 20)}`);
+      }
+    }
     await page.keyboard.press("Escape");
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     const catRows = await page.$$("[data-drawer-row]");

@@ -369,6 +369,10 @@ export type ChargeDetail = TransactionRow & {
   recurringIncluded: 0 | 1;
   planKey: string | null;
   planName: string | null;
+  // The vendor's last few charges (all its descriptors, split parents left
+  // out): the evidence for the charge's verbs — is this amount the usual one?
+  recent: { id: number; date: string; amount: number; excluded: 0 | 1; recurringId: number | null }[];
+  vendorCount: number;
 };
 export function transactionById(id: number): ChargeDetail | null {
   const db = getDb();
@@ -400,11 +404,24 @@ export function transactionById(id: number): ChargeDetail | null {
          ORDER BY lastDate DESC LIMIT 1`
       )
       .get(...variants) as { merchant: string } | undefined);
+  const notParent = "NOT EXISTS (SELECT 1 FROM transactions s WHERE s.hash LIKE t.hash || ':s%')";
+  const recent = db
+    .prepare(
+      `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.amount, t.excluded, t.recurringId
+       FROM transactions t WHERE t.merchant IN (${ph}) AND ${notParent}
+       ORDER BY COALESCE(t.effectiveDate, t.date) DESC, t.id DESC LIMIT 5`
+    )
+    .all(...variants) as ChargeDetail["recent"];
+  const vendorCount = (
+    db.prepare(`SELECT COUNT(*) AS n FROM transactions t WHERE t.merchant IN (${ph}) AND ${notParent}`).get(...variants) as { n: number }
+  ).n;
   return {
     ...row,
     displayName: merchantDisplayName(row.merchant, settings, links),
     planKey: plan?.merchant ?? null,
     planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
+    recent,
+    vendorCount,
   };
 }
 
