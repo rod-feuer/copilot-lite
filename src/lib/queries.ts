@@ -362,6 +362,52 @@ export function listTransactions(
   return rows.map((r) => ({ ...r, displayName: merchantDisplayName(r.merchant, settings, links) }));
 }
 
+// One charge, for its shelf: the list row's fields plus its plan — the plan it
+// is linked to, else the vendor's most recently charged plan (the one "In
+// plan" would put it into) — and the plan's display name.
+export type ChargeDetail = TransactionRow & {
+  recurringIncluded: 0 | 1;
+  planKey: string | null;
+  planName: string | null;
+};
+export function transactionById(id: number): ChargeDetail | null {
+  const db = getDb();
+  ensureRecurringTxExclusions(db);
+  ensureRecurringTxInclusions(db);
+  const row = db
+    .prepare(
+      `SELECT t.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon,
+         COALESCE(c.excludeFromTotals, 0) AS categoryExcluded,
+         (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded,
+         (t.hash IN (SELECT hash FROM recurring_tx_inclusions)) AS recurringIncluded,
+         (SELECT COUNT(*) FROM transactions s WHERE s.hash LIKE t.hash || ':s%') AS splitParts
+       FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id WHERE t.id = ?`
+    )
+    .get(id) as (TransactionWithCategory & { recurringExcluded: 0 | 1; recurringIncluded: 0 | 1; splitParts: number }) | undefined;
+  if (!row) return null;
+  const settings = getRecurringSettings();
+  const links = getMerchantLinks();
+  const variants = merchantVariants(row.merchant);
+  const ph = variants.map(() => "?").join(",");
+  const plan =
+    (row.recurringId != null
+      ? (db.prepare("SELECT merchant FROM recurrings WHERE id = ?").get(row.recurringId) as { merchant: string } | undefined)
+      : undefined) ??
+    (db
+      .prepare(
+        `SELECT merchant FROM recurrings
+         WHERE id IN (SELECT DISTINCT recurringId FROM transactions WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
+         ORDER BY lastDate DESC LIMIT 1`
+      )
+      .get(...variants) as { merchant: string } | undefined);
+  return {
+    ...row,
+    displayName: merchantDisplayName(row.merchant, settings, links),
+    planKey: plan?.merchant ?? null,
+    planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
+  };
+}
+
 // Count and net total over the FULL filtered set. The list is paged, so the
 // header's "N shown" and net figure can't be derived from the loaded rows.
 // Net mirrors the dashboard: excluded rows and excluded-from-totals categories

@@ -18,11 +18,12 @@ import { AmountCell } from "@/components/RowCells";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson, deleteJson } from "@/lib/http";
+import { createPortal } from "react-dom";
 import { merchantKey } from "@/lib/merchant";
 import { LoadError } from "@/components/LoadState";
 import { InfoHint } from "@/components/InfoHint";
 import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
-import type { MerchantSummary, CategorySummary, MatchRule } from "@/lib/queries";
+import type { MerchantSummary, CategorySummary, MatchRule , ChargeDetail } from "@/lib/queries";
 import type { Category } from "@/lib/types";
 import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
 
@@ -36,20 +37,24 @@ type CatSummary = CategorySummary;
 type OpenOpts = { onChange?: () => void; amountHint?: number | null; series?: string }; // series: one plan of a multi-plan vendor
 type Target =
   | { kind: "merchant"; merchant: string; series?: string }
-  | { kind: "category"; categoryId: number; month: string };
+  | { kind: "category"; categoryId: number; month: string }
+  | { kind: "charge"; id: number };
 
 type Shelf = {
   openMerchant: (merchant: string, opts?: OpenOpts) => void;
   openCategory: (categoryId: number, month: string, opts?: OpenOpts) => void;
+  openCharge: (id: number, opts?: OpenOpts) => void;
   active: Target | null; // what the shelf is currently showing, for active-state styling
 };
 const Ctx = createContext<Shelf>({
   openMerchant: () => {},
   openCategory: () => {},
+  openCharge: () => {},
   active: null,
 });
 export const useTxDrawer = () => useContext(Ctx).openMerchant;
 export const useCategoryShelf = () => useContext(Ctx).openCategory;
+export const useChargeShelf = () => useContext(Ctx).openCharge;
 
 // Whether a given trigger is the one the shelf is currently showing — so a row or
 // bar can render a "selected" state while its detail is open (and make the
@@ -61,6 +66,7 @@ export const useShelfActive = () => {
       active?.kind === "merchant" && active.merchant === m && (active.series ?? null) === (series ?? null),
     isCategory: (id: number, month: string) =>
       active?.kind === "category" && active.categoryId === id && active.month === month,
+    isCharge: (id: number) => active?.kind === "charge" && active.id === id,
   };
 };
 
@@ -68,6 +74,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [target, setTarget] = useState<Target | null>(null);
   const [mData, setMData] = useState<Summary | null>(null);
   const [cData, setCData] = useState<CatSummary | null>(null);
+  const [xData, setXData] = useState<ChargeDetail | null>(null);
   const [back, setBack] = useState<Target | null>(null);
   const [amountHint, setAmountHint] = useState<number | null>(null);
   const [cats, setCats] = useState<Cat[]>([]);
@@ -111,6 +118,13 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       .then(setCData)
       .catch(() => setLoadError(true));
   }, []);
+  const fetchCharge = useCallback((id: number, keep = false) => {
+    if (!keep) setXData(null);
+    setLoadError(false);
+    getJson<ChargeDetail>(`/api/transactions/${id}`)
+      .then(setXData)
+      .catch(() => setLoadError(true));
+  }, []);
 
   const close = useCallback(() => {
     setTarget(null);
@@ -134,6 +148,25 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       fetchMerchant(m, opts?.series);
     },
     [target, close, fetchMerchant]
+  );
+  // One charge: its shelf carries the overlays a charge can take (category,
+  // date, note, plan membership, exclude from totals, split), so the
+  // Transactions row needs no menu. "Open vendor" drills up, with Back.
+  const openCharge = useCallback(
+    (id: number, opts?: OpenOpts) => {
+      if (target?.kind === "charge" && target.id === id) {
+        close();
+        return;
+      }
+      onChange.current = opts?.onChange;
+      setAmountHint(null);
+      setBack(null);
+      setMData(null);
+      setCData(null);
+      setTarget({ kind: "charge", id });
+      fetchCharge(id);
+    },
+    [target, close, fetchCharge]
   );
   const openCategory = useCallback(
     (categoryId: number, month: string, opts?: OpenOpts) => {
@@ -170,6 +203,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     setBack(null);
     setTarget(b);
     if (b.kind === "category") fetchCategory(b.categoryId, b.month);
+    else if (b.kind === "charge") fetchCharge(b.id);
     else fetchMerchant(b.merchant);
   };
 
@@ -336,7 +370,25 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const refreshTarget = () => {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
     else if (target?.kind === "merchant") fetchMerchant(target.merchant, target.series, true);
+    else if (target?.kind === "charge") fetchCharge(target.id, true);
   };
+  // The charge's own overlays. Each is one PATCH on the charge; the shelf
+  // re-reads itself and the page behind it refreshes.
+  async function chargePatch(id: number, body: Record<string, unknown>, success: string | undefined, error: string) {
+    if (await mutate(() => patchJson(`/api/transactions/${id}`, body), { success, error }, { refresh: "never" })) {
+      refreshTarget();
+      onChange.current?.();
+    }
+  }
+  const [splitting, setSplitting] = useState(false);
+  async function chargeUndoSplit(id: number) {
+    if (
+      await mutate(() => deleteJson(`/api/transactions/${id}/split`), { success: "Split undone", error: "Couldn't undo the split — please try again" }, { refresh: "never" })
+    ) {
+      refreshTarget();
+      onChange.current?.();
+    }
+  }
   // The category's own verbs, in its shelf (the row only opens the shelf).
   async function categorySetExcluded(id: number, excludeFromTotals: boolean) {
     if (
@@ -407,10 +459,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const loading = target?.kind === "merchant" ? !mData : !cData;
+  const loading = target?.kind === "merchant" ? !mData : target?.kind === "category" ? !cData : !xData;
 
   return (
-    <Ctx.Provider value={{ openMerchant, openCategory, active: target }}>
+    <Ctx.Provider value={{ openMerchant, openCategory, openCharge, active: target }}>
       {children}
       {target && (
         <>
@@ -450,8 +502,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                   onUnlink={unlinkName}
                   onRename={(alias) => saveMerchantSettings({ alias }, alias ? "Name updated" : "Name reset")}
                 />
-              ) : (
+              ) : target.kind === "category" ? (
                 <CategoryHeader data={cData} month={target.month} />
+              ) : (
+                <ChargeHeader data={xData} />
               )}
             </div>
             <button
@@ -466,11 +520,13 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
           <div className="flex-1 overflow-y-auto p-4">
             {loadError ? (
               <LoadError
-                what={target.kind === "merchant" ? "this vendor" : "this category"}
+                what={target.kind === "merchant" ? "this vendor" : target.kind === "category" ? "this category" : "this charge"}
                 onRetry={() =>
                   target.kind === "merchant"
                     ? fetchMerchant(target.merchant, target.series)
-                    : fetchCategory(target.categoryId, target.month)
+                    : target.kind === "category"
+                      ? fetchCategory(target.categoryId, target.month)
+                      : fetchCharge(target.id)
                 }
               />
             ) : loading ? (
@@ -501,10 +557,40 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onDelete={() => categoryDelete(cData)}
                 confirmingDelete={confirmingDelete === cData.id}
               />
+            ) : target.kind === "charge" && xData ? (
+              <ChargeBody
+                data={xData}
+                cats={cats}
+                onAddCategory={addCat}
+                onSetCategory={(categoryId) => chargePatch(xData.id, { categoryId }, "Recategorized", "Couldn't recategorize — please try again")}
+                onSetDate={(effectiveDate) =>
+                  chargePatch(xData.id, { effectiveDate }, effectiveDate ? "Date updated" : "Date reset to posted", "Couldn't update date — please try again")
+                }
+                onSetNote={(note) => chargePatch(xData.id, { note }, undefined, "Couldn't save note — please try again")}
+                onSetExcluded={(excluded) =>
+                  chargePatch(xData.id, { excluded }, excluded ? "Excluded from totals" : "Counted in totals again", "Couldn't update — please try again")
+                }
+                onSetMembership={(put) => txSetMembership(xData.id, put, xData.planKey)}
+                onSplit={() => setSplitting(true)}
+                onUndoSplit={() => chargeUndoSplit(xData.id)}
+                onOpenVendor={() => drillToMerchant(xData.merchant)}
+              />
             ) : null}
+            {splitting && xData && (
+              <SplitDialog
+                tx={xData}
+                cats={cats}
+                onClose={() => setSplitting(false)}
+                onDone={() => {
+                  setSplitting(false);
+                  refreshTarget();
+                  onChange.current?.();
+                }}
+              />
+            )}
             {/* The way out follows the content, not the panel's edge: a
                 link pinned to the foot sat across a gap on every short shelf. */}
-            {(target.kind === "merchant" ? mData : cData) && (
+            {target.kind !== "charge" && (target.kind === "merchant" ? mData : cData) && (
               <Link
                 href={
                   target.kind === "merchant"
@@ -639,6 +725,339 @@ function MerchantHeader({
         </ul>
       )}
     </>
+  );
+}
+
+// One two-state pill: "In plan" / "Not in plan" for a charge, "Recurring" /
+// "Not recurring" for a vendor. Clicking always flips the state; an "edited"
+// tag says the user decided it. Quiet for the default (in) — every row would
+// say it; a charge the user took out wears amber, the one state they chose
+// to notice; what the detector left out on its own is plain grey.
+function MembershipPill({
+  kind,
+  inPlan,
+  edited,
+  onToggle,
+}: {
+  kind: "charge" | "vendor";
+  inPlan: boolean;
+  edited: boolean;
+  onToggle: () => void;
+}) {
+  const text = kind === "charge" ? (inPlan ? "In plan" : "Not in plan") : inPlan ? "Recurring" : "Not recurring";
+  const action =
+    kind === "charge"
+      ? inPlan ? "Take this charge out of the plan" : "Put this charge in the plan"
+      : inPlan ? "Mark vendor not recurring" : "Mark vendor recurring";
+  const tone = inPlan
+    ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+    : edited && kind === "charge"
+      ? "bg-[var(--warn)]/15 text-[var(--warn)] hover:bg-[var(--warn)]/25"
+      : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {edited && <StateTag edited />}
+      <button
+        type="button"
+        data-membership={inPlan ? "in" : "out"}
+        data-edited={edited ? "1" : undefined}
+        aria-label={action}
+        title={action}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        className={`shrink-0 rounded-full px-1.5 py-px text-[11px] font-medium transition-colors ${tone}`}
+      >
+        {text}
+      </button>
+    </span>
+  );
+}
+
+function ChargeHeader({ data }: { data: ChargeDetail | null }) {
+  if (!data) return <div className="truncate text-sm font-semibold">…</div>;
+  return (
+    <>
+      <div className="truncate text-sm font-semibold">{data.displayName}</div>
+      {data.displayName !== data.merchant && (
+        <div className="truncate text-[11px] text-[var(--muted)]">{data.merchant}</div>
+      )}
+      <div className="text-xs text-[var(--muted)]">
+        posted {monthDayYear(data.date)} · {data.account}
+        {data.pending ? " · pending" : ""}
+      </div>
+    </>
+  );
+}
+
+// The charge's shelf, in the shelf anatomy: two property cards — the date
+// (its editor: an effective date moves the charge to another month) and the
+// amount (bank data, read-only) — then the caption line with the category and
+// the plan membership, the note, and the charge's verbs. "Open vendor" drills
+// up to the vendor's shelf, with Back.
+function ChargeBody({
+  data,
+  cats,
+  onAddCategory,
+  onSetCategory,
+  onSetDate,
+  onSetNote,
+  onSetExcluded,
+  onSetMembership,
+  onSplit,
+  onUndoSplit,
+  onOpenVendor,
+}: {
+  data: ChargeDetail;
+  cats: Cat[];
+  onAddCategory: (c: Cat) => void;
+  onSetCategory: (categoryId: number | null) => void;
+  onSetDate: (effectiveDate: string | null) => void;
+  onSetNote: (note: string | null) => void;
+  onSetExcluded: (excluded: boolean) => void;
+  onSetMembership: (put: "in" | "out") => void;
+  onSplit: () => void;
+  onUndoSplit: () => void;
+  onOpenVendor: () => void;
+}) {
+  const newCat = useNewCategory<null>((cat) => {
+    onAddCategory(cat);
+    onSetCategory(cat.id);
+  });
+  const dateEdited = !!data.effectiveDate && data.effectiveDate !== data.date;
+  const isParent = data.splitParts > 0;
+  const excluded = data.excluded === 1;
+  const canSplit = data.amount < 0 && !data.pending && !isParent;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-2">
+        <PropertyCard label="date" edited={dateEdited}>
+          <span className="relative flex items-center justify-between">
+            <span className="text-[15px] font-semibold tabular-nums">{shortDate(data.effectiveDate ?? data.date)}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
+              <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input
+              type="date"
+              aria-label="Effective date"
+              value={data.effectiveDate ?? data.date}
+              onClick={(e) => (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()}
+              onChange={(e) => {
+                const v = e.target.value;
+                const eff = !v || v === data.date ? null : v;
+                if (eff !== (data.effectiveDate ?? null)) onSetDate(eff);
+              }}
+              className="absolute inset-0 w-full cursor-pointer opacity-0"
+            />
+          </span>
+        </PropertyCard>
+        <PropertyCard label="amount">
+          <AmountCell value={data.amount} excluded={excluded || !!data.categoryExcluded} className="text-[15px]" />
+        </PropertyCard>
+      </div>
+      <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
+        {dateEdited && <span className="whitespace-nowrap">posted {shortDate(data.date)}</span>}
+        <CaptionSelect
+          label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
+          value={data.categoryId ?? ""}
+          aria-label="Category"
+          onChange={(e) => {
+            if (e.target.value === NEW_CATEGORY) {
+              newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
+              return;
+            }
+            onSetCategory(e.target.value ? Number(e.target.value) : null);
+          }}
+        >
+          <option value="">Uncategorized</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.icon} {c.name}
+            </option>
+          ))}
+          <NewCategoryOption />
+        </CaptionSelect>
+        {newCat.popover}
+        {/* Plan membership, when the vendor has a plan to be in. A charge
+            excluded from totals can't join one. */}
+        {data.planKey && !excluded && (
+          <span className="flex items-center gap-1">
+            <MembershipPill
+              kind="charge"
+              inPlan={data.recurringId != null}
+              edited={data.recurringExcluded === 1 || data.recurringIncluded === 1}
+              onToggle={() => onSetMembership(data.recurringId != null ? "out" : "in")}
+            />
+            <span className="truncate">{data.planName}</span>
+          </span>
+        )}
+        {excluded && <span>not counted in totals</span>}
+        {isParent && <span>split · {data.splitParts} parts</span>}
+      </div>
+
+      <div>
+        <div className="stat-label mb-1.5">Note</div>
+        <CommitInput
+          key={data.note ?? ""}
+          defaultValue={data.note ?? ""}
+          placeholder="What was this for?"
+          aria-label="Note"
+          onCommit={(v) => {
+            const note = v.trim() || null;
+            if (note !== (data.note ?? null)) onSetNote(note);
+          }}
+          className="w-full rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+        />
+      </div>
+
+      {/* The charge's verbs. A split parent is excluded because its parts
+          count instead, so its totals toggle is hidden. */}
+      <div className="flex gap-2">
+        {!isParent && (
+          <button
+            onClick={() => onSetExcluded(!excluded)}
+            title="Leaves this charge out of your income and expense totals — a transfer, a card payment, a reimbursed cost."
+            className={`btn-ghost flex-1 text-xs ${excluded ? "text-[var(--warn)]" : ""}`}
+          >
+            {excluded ? "Count in totals" : "Exclude from totals"}
+          </button>
+        )}
+        {isParent ? (
+          <button onClick={onUndoSplit} className="btn-ghost flex-1 text-xs">
+            Undo split ({data.splitParts} parts)
+          </button>
+        ) : (
+          canSplit && (
+            <button onClick={onSplit} className="btn-ghost flex-1 text-xs">
+              Split…
+            </button>
+          )
+        )}
+      </div>
+      <button onClick={onOpenVendor} className="btn-link w-full justify-center rounded-lg px-2 py-2 text-[13px] hover:bg-[var(--hover)] hover:no-underline">
+        Open vendor →
+      </button>
+    </div>
+  );
+}
+
+// Split a single charge into category parts. Records a split rule keyed on the
+// charge's merchant + amount and applies it immediately (see the split route);
+// the parts must reconcile to the charge total before it can be saved.
+// Portaled + centered so it sits above the shelf.
+function SplitDialog({
+  tx,
+  cats,
+  onClose,
+  onDone,
+}: {
+  tx: ChargeDetail;
+  cats: Cat[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const total = Math.abs(tx.amount);
+  const [parts, setParts] = useState<{ categoryId: string; amount: string; label: string }[]>(() => [
+    { categoryId: tx.categoryId ? String(tx.categoryId) : "", amount: "", label: "" },
+    { categoryId: "", amount: "", label: "" },
+  ]);
+  const [saving, setSaving] = useState(false);
+  const mutate = useMutation();
+  const sum = parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const remaining = Number((total - sum).toFixed(2));
+  const valid =
+    parts.length >= 2 &&
+    parts.every((p) => p.categoryId !== "" && Number(p.amount) > 0) &&
+    Math.abs(remaining) <= 0.01;
+  const update = (i: number, patch: Partial<(typeof parts)[number]>) =>
+    setParts((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  async function submit() {
+    if (!valid || saving) return;
+    setSaving(true);
+    const ok = await mutate(
+      () =>
+        postJson(`/api/transactions/${tx.id}/split`, {
+          parts: parts.map((p) => ({
+            categoryId: Number(p.categoryId),
+            amount: Number(p.amount),
+            label: p.label.trim() || cats.find((c) => c.id === Number(p.categoryId))?.name || "Part",
+          })),
+        }),
+      { success: "Transaction split", error: "Couldn't split — please try again" },
+      { refresh: "never" }
+    );
+    if (ok) onDone();
+    else setSaving(false);
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose} role="dialog" aria-label="Split transaction">
+      <div className="card w-full max-w-md p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 text-sm font-semibold">Split transaction</div>
+        <div className="mb-3 text-xs text-[var(--muted)]">
+          {tx.displayName} · {usd(tx.amount, { sign: true })}
+        </div>
+        <div className="space-y-2">
+          {parts.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select
+                value={p.categoryId}
+                onChange={(e) => update(i, { categoryId: e.target.value })}
+                className="select-caret min-w-0 flex-1 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1.5 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+              >
+                <option value="">Category…</option>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icon} {c.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={p.amount}
+                onChange={(e) => update(i, { amount: e.target.value })}
+                placeholder="$"
+                inputMode="decimal"
+                className="w-20 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+              />
+              <input
+                value={p.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder={cats.find((c) => c.id === Number(p.categoryId))?.name ?? "Label"}
+                aria-label="Part label"
+                className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+              />
+              {parts.length > 2 ? (
+                <button onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove part" className="rounded px-1 text-[var(--muted)] hover:text-[var(--foreground)]">
+                  ✕
+                </button>
+              ) : (
+                <span className="w-5" />
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs">
+          <button onClick={() => setParts((prev) => [...prev, { categoryId: "", amount: "", label: "" }])} className="font-medium text-[var(--muted)] hover:text-[var(--foreground)]">
+            + Add part
+          </button>
+          <span className={Math.abs(remaining) > 0.01 ? "text-[var(--warn)] tabular-nums" : "text-[var(--muted)] tabular-nums"}>
+            {remaining === 0 ? "balanced" : `${usd(remaining)} left`}
+          </span>
+        </div>
+        <p className="mt-3 text-[11px] leading-snug text-[var(--muted)]">
+          Splits this and any future {tx.displayName} charge of {usd(total)} into the parts above.
+        </p>
+        <div className="mt-3 flex justify-end gap-2">
+          <button onClick={onClose} className="btn-ghost text-xs">
+            Cancel
+          </button>
+          <button onClick={submit} disabled={!valid || saving} className="btn-primary text-xs">
+            {saving ? "Splitting…" : "Split"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1320,50 +1739,14 @@ function ShelfRow({
           )}
         </span>
         {!membership && note && <span className="shrink-0 text-[11px] text-[var(--muted)]">{note}</span>}
-        {membership &&
-          // One two-state pill beside the amount, auto width so the date /
-          // name columns keep their edges and the amount stays flush right.
-          // Clicking always flips the state; an "edited" tag says the user
-          // decided it.
-          (() => {
-            const inPlan = recurring === "in";
-            const text =
-              membership.kind === "charge"
-                ? inPlan ? "In plan" : "Not in plan"
-                : inPlan ? "Recurring" : "Not recurring";
-            const action =
-              membership.kind === "charge"
-                ? inPlan ? "Take this charge out of the plan" : "Put this charge in the plan"
-                : inPlan ? "Mark vendor not recurring" : "Mark vendor recurring";
-            // Quiet for the default (in) — every row would say it; a charge
-            // the user took out wears amber, the one state they chose to
-            // notice; what the detector left out on its own is plain grey.
-            const edited = !!membership.edited;
-            const tone = inPlan
-              ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
-              : edited && membership.kind === "charge"
-                ? "bg-[var(--warn)]/15 text-[var(--warn)] hover:bg-[var(--warn)]/25"
-                : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
-            return (
-              <span className="flex shrink-0 items-center gap-1">
-                {edited && <StateTag edited />}
-                <button
-                  type="button"
-                  data-membership={recurring}
-                  data-edited={edited ? "1" : undefined}
-                  aria-label={action}
-                  title={action}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    membership.onToggle();
-                  }}
-                  className={`shrink-0 rounded-full px-1.5 py-px text-[11px] font-medium transition-colors ${tone}`}
-                >
-                  {text}
-                </button>
-              </span>
-            );
-          })()}
+        {membership && (
+          <MembershipPill
+            kind={membership.kind}
+            inPlan={recurring === "in"}
+            edited={!!membership.edited}
+            onToggle={membership.onToggle}
+          />
+        )}
         {/* A fixed amount column, so a pill beside it lands on one edge in every row. */}
         <AmountCell
           value={amount}

@@ -130,7 +130,7 @@ and §3 carry over unchanged.
   the *vendor* level (rename/combine/recategorize) or as overlays on the charge
   (category, note, effective-date, recurring membership, exclude-from-totals,
   split). This is the deliberate answer to "Complete the verbs" for
-  transactions. *(Capable)*
+  transactions; every overlay is reachable from the charge's shelf. *(Capable)*
 
 ### The one page — scales and anatomies
 
@@ -173,16 +173,18 @@ Then sections: a small-caps title above one card of rows.
 where the vendor is. Name in 13/500 with a 12/400 meta line only when it
 varies row to row. Category as a quiet property with a chevron. Amount right,
 tabular, in one of three states: settled (600, foreground), provisional (500,
-muted), overdue (600, warn). No row menu: verbs live in the shelf. The one
-written exception: the Transactions row keeps its ⋯ for the charge overlays
-(note, effective date, exclude from totals, split, membership) until the
-charge has a shelf of its own. The cells are shared code (`RowCells.tsx`:
-`CategoryProperty`, `AmountCell`).
+muted), overdue (600, warn). No row menu anywhere: verbs live in the shelf.
+The cells are shared code (`RowCells.tsx`: `CategoryProperty`, `AmountCell`).
 
 **Shelf anatomy** — header (name, descriptor, count and since); at most two
 property cards, each marked auto or edited; one caption line; evidence as a
 flush, edge-aligned list with the membership pill; then match and the action
-row. The footer link follows the content, not the panel edge.
+row. The footer link follows the content, not the panel edge. Three shelves,
+one anatomy: a **vendor** (or one of its plans), a **category**, and a
+**charge** — the charge's cards are its date (the editor for an effective
+date) and its amount (bank data); its caption carries the category and its
+plan membership; then the note and its verbs (exclude from totals, split).
+"Open vendor" drills up, with Back. A transaction row opens the charge.
 
 **Buttons** — three tiers, named: primary (accent fill, at most one per page),
 secondary (bordered), tertiary (text with an arrow, navigation only).
