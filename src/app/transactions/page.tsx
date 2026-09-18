@@ -488,6 +488,7 @@ export default function TransactionsPage() {
       {showQueues && (
         <>
           <CategorizeQueue
+            version={refreshKey}
             onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))}
             // The queue counts vendors across all time; the list is scoped to
             // a month, so widen it too or a caught-up month shows nothing.
@@ -497,9 +498,9 @@ export default function TransactionsPage() {
             }}
           />
 
-          <NameCleanupQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          <NameCleanupQueue version={refreshKey} onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
 
-          <MergeQueue onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
+          <MergeQueue version={refreshKey} onChange={() => loadStatic().then(() => setRefreshKey((k) => k + 1))} />
         </>
       )}
 

@@ -21,9 +21,11 @@ type Proposal = CategorySuggestion & { edited?: boolean };
 export function CategorizeQueue({
   onChange,
   onShowUncategorized,
+  version = 0,
 }: {
   onChange?: () => void;
   onShowUncategorized?: () => void; // filter the list below to the uncategorized charges
+  version?: number; // the page's refresh counter: a charge categorized in the list below empties this queue too
 }) {
   const [items, setItems] = useState<Proposal[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
@@ -56,7 +58,7 @@ export function CategorizeQueue({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-  }, [load]);
+  }, [load, version]); // `version`: re-read when the page behind this queue changes
   useSyncedRefresh(load);
 
   async function apply(s: CategorySuggestion) {

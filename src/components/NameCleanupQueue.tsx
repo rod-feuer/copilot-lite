@@ -11,7 +11,7 @@ import type { NameCleanupSuggestion } from "@/lib/nameCleanup";
 // blind bulk button. Apply the ones you want, dismiss the rest. Undo is
 // contextual: it appears only right after you tidy something (this session), not
 // as a standing button. Renders nothing when there's nothing to tidy or just-did.
-export function NameCleanupQueue({ onChange }: { onChange?: () => void }) {
+export function NameCleanupQueue({ onChange, version = 0 }: { onChange?: () => void; version?: number }) {
   const [items, setItems] = useState<NameCleanupSuggestion[]>([]);
   const [tidied, setTidied] = useState(false); // a tidy happened this session (→ Undo)
   const [busy, setBusy] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export function NameCleanupQueue({ onChange }: { onChange?: () => void }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-  }, [load]);
+  }, [load, version]); // `version`: re-read when the page behind this queue changes
   useSyncedRefresh(load);
 
   const keyOf = (s: NameCleanupSuggestion) => `${s.from} ${s.to}`;

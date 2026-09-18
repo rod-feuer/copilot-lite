@@ -16,7 +16,7 @@ type PreviewTx = { date: string; amount: number; account: string };
 // dismiss. `onChange` lets the host page refresh its own data after a combine
 // (which can re-stamp recurringId and fill a category). Renders nothing when the
 // queue is empty, so it's safe to drop into any page.
-export function MergeQueue({ onChange }: { onChange?: () => void }) {
+export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; version?: number }) {
   const [merges, setMerges] = useState<MergeSuggestion[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null); // expanded card key
@@ -30,7 +30,7 @@ export function MergeQueue({ onChange }: { onChange?: () => void }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-  }, [load]);
+  }, [load, version]); // `version`: re-read when the page behind this queue changes
   useSyncedRefresh(load);
 
   async function resolve(g: MergeSuggestion, action: "approve" | "dismiss") {
