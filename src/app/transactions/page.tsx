@@ -914,7 +914,7 @@ const TxRow = memo(function TxRow({
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
                 style={{ contentVisibility: "auto", containIntrinsicSize: "auto 52px" }}
-                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-2 pl-4 pr-4 sm:flex-nowrap sm:items-center sm:gap-3 ${ROW_FOCUS} ${
+                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-2 pl-4 pr-4 text-[13px] sm:flex-nowrap sm:items-center sm:gap-3 ${ROW_FOCUS} ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--hover)]"
