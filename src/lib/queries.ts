@@ -1394,7 +1394,7 @@ export function categoriesWithTotals(month?: string): CategoryWithTotals[] {
 
   // Suggested budget = the trailing-12-month average monthly spend (total spend
   // over the window ÷ 12, so an annual or sporadic expense smooths into a
-  // sensible monthly figure), rounded to the nearest $5. Drives the one-tap
+  // sensible monthly figure), to the nearest $5. Drives the one-tap
   // "use" on unbudgeted categories. Window is "now", independent of the viewed
   // month, so the suggestion reflects real recent behaviour.
   const now = new Date();
@@ -1435,7 +1435,7 @@ export function categoriesWithTotals(month?: string): CategoryWithTotals[] {
     const isBudgetable = c.name !== "Uncategorized";
     const suggestedBudget = isBudgetable && monthly >= 5 ? Math.round(monthly) : 0;
     // Annual suggestion = trailing-12 actual spend (a recurring monthly baseline
-    // implies 12× that), rounded to the nearest dollar.
+    // implies 12× that), to the nearest dollar.
     const annual = baselineAmt > 0 ? baselineAmt * 12 : trailing12ById.get(c.id) ?? 0;
     const suggestedAnnualBudget = isBudgetable && annual >= 5 ? Math.round(annual) : 0;
     const b = budgets[c.id];

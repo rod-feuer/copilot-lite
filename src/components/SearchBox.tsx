@@ -35,7 +35,7 @@ export function SearchBox({
           type="button"
           onClick={() => onChange("")}
           aria-label="Clear search"
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
         >
           ✕
         </button>

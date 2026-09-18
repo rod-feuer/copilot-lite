@@ -90,7 +90,7 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
       </p>
       <ul className="flex flex-col gap-2">
         {merges.map((g) => (
-          <li key={g.key} className="rounded-xl border border-[var(--border)] p-3">
+          <li key={g.key} className="rounded-lg border border-[var(--border)] p-3">
             <div className="flex items-start justify-between gap-3">
               <div
                 role="button"

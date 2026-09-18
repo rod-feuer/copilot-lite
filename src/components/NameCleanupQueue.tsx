@@ -94,7 +94,7 @@ export function NameCleanupQueue({ onChange, version = 0 }: { onChange?: () => v
   // Just-tidied with no remaining suggestions → a slim, contextual Undo only.
   if (items.length === 0) {
     return (
-      <div className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
         <span>Merchant names tidied.</span>
         <button
           onClick={undo}
@@ -125,7 +125,7 @@ export function NameCleanupQueue({ onChange, version = 0 }: { onChange?: () => v
         {items.map((s) => (
           <li
             key={keyOf(s)}
-            className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3"
+            className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] p-3"
           >
             <div className="min-w-0 text-[13px]">
               <span className="text-[var(--muted)] line-through">{s.from}</span>

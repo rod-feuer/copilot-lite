@@ -441,7 +441,7 @@ export default function RecurringsPage() {
                               e.stopPropagation();
                               dismissSuggestion(s);
                             }}
-                            className="rounded px-1.5 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
+                            className="rounded-lg px-1.5 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
                           >
                             ✕
                           </button>

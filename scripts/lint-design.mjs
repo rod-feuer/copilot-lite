@@ -45,8 +45,11 @@ function walk(dir, out = []) {
 
 const counts = Object.fromEntries(Object.keys(RULES).map((k) => [k, 0]));
 const offenders = Object.fromEntries(Object.keys(RULES).map((k) => [k, new Map()]));
+// Comments are prose, not classes ("rounded to the nearest $5" is not a
+// radius): strip line and block comments before matching.
+const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 for (const file of walk(SRC)) {
-  const text = readFileSync(file, "utf8");
+  const text = stripComments(readFileSync(file, "utf8"));
   const rel = relative(ROOT, file);
   for (const [rule, { re, bad }] of Object.entries(RULES)) {
     for (const m of text.match(re) ?? []) {

@@ -79,7 +79,7 @@ function EditingInput({ value, onCommit, onDone, className }: { value: string; o
     <input
       {...inputProps}
       autoFocus
-      className={`min-w-0 flex-1 rounded-md border border-[var(--border)] bg-card px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 ${className}`}
+      className={`min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 ${className}`}
     />
   );
 }

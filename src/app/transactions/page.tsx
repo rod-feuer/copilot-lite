@@ -620,7 +620,7 @@ export default function TransactionsPage() {
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute left-0 z-20 mt-1 w-40 rounded-xl border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
+                <div className="absolute left-0 z-20 mt-1 w-40 rounded-lg border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
                   {FILTERS.filter((f) => !shown(f.id)).map((f) => (
                     <button
                       key={f.id}
@@ -812,7 +812,7 @@ function MobileSortFilter({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
+          <div className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
             <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
               Sort
             </div>
@@ -1074,7 +1074,7 @@ function Chip({
       {children}
       <button
         onClick={onRemove}
-        className="rounded px-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
+        className="rounded-lg px-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
         aria-label="Remove filter"
       >
         ✕
