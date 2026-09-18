@@ -365,6 +365,16 @@ async function statementMode(browser) {
       // A day header is a band in the page grey, sticky while its rows scroll.
       const band = await page.evaluate(() => { const h = document.querySelector("[data-day-header]"); if (!h) return null; const cs = getComputedStyle(h); const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toLowerCase(); const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; }; return { washed: hex(cs.backgroundColor) === bg, sticky: cs.position === "sticky", label: h.querySelector(".stat-label") !== null }; });
       if (mode === "normal") record("statement mode", "day header is a page-grey band, sticky, in the label style", !!band && band.washed && band.sticky && band.label, band ? `washed=${band.washed}, sticky=${band.sticky}, label=${band.label}` : "no day header");
+      // A proposal's category can be changed in place before it is applied.
+      if (mode === "normal") {
+        const prop = await page.$("[data-suggestion] [data-category-property] select");
+        if (prop) {
+          const r = await page.evaluate(() => { const li = document.querySelector("[data-suggestion]"); const s = li.querySelector("[data-category-property] select"); const before = s.value; const other = [...s.options].find((o) => o.value && o.value !== before); s.value = other.value; s.dispatchEvent(new Event("change", { bubbles: true })); return { before, chosen: other.value }; });
+          await sleep(300);
+          const after = await page.evaluate(() => { const li = document.querySelector("[data-suggestion]"); return { value: li.querySelector("[data-category-property] select").value, edited: /edited/.test(li.textContent) }; });
+          record("statement mode", "a suggested category can be redirected before Apply, and says so", after.value === r.chosen && after.edited, `${r.before} → ${after.value}, edited=${after.edited}`);
+        } else record("statement mode", "a suggested category can be redirected before Apply, and says so", true, "no suggestions in the fixture");
+      }
       // The queue's "Show the uncategorized" filters the list to category = none.
       if (mode === "normal") {
         const link = await page.$("[data-show-uncategorized]");
