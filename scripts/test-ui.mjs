@@ -96,15 +96,17 @@ async function loadFixture() {
   const groceries = cats.find((c) => c.name === "Groceries");
   // A vendor with two charges filed by hand and a third that arrives later
   // uncategorized: the queue proposes the category from history, so the
-  // "change a suggestion before Apply" check has a real row.
+  // "change a suggestion before Apply" check has a real row. Irregular days
+  // and amounts, or three charges on the 9th would read as a monthly plan and
+  // the plan would backfill its category onto the third.
   {
     const first = await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=5")).json();
     if ((first.rows ?? []).length === 0) {
-      const csv2 = [["Date", "Name", "Amount", "Account"], [day(-3, 9), "Pinewood Hardware", "-40.00", "Credit"], [day(-2, 9), "Pinewood Hardware", "-22.00", "Credit"]].map((r) => r.join(",")).join("\n");
+      const csv2 = [["Date", "Name", "Amount", "Account"], [day(-3, 9), "Pinewood Hardware", "-40.00", "Credit"], [day(-3, 21), "Pinewood Hardware", "-9.00", "Credit"]].map((r) => r.join(",")).join("\n");
       await fetch(BASE + "/api/import", { method: "POST", body: csv2 });
       const rows = (await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=5")).json()).rows ?? [];
       for (const r of rows) await fetch(`${BASE}/api/transactions/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: groceries?.id ?? null }) });
-      const csv3 = [["Date", "Name", "Amount", "Account"], [day(-1, 9), "Pinewood Hardware", "-35.00", "Credit"]].map((r) => r.join(",")).join("\n");
+      const csv3 = [["Date", "Name", "Amount", "Account"], [day(-1, 4), "Pinewood Hardware", "-90.00", "Credit"]].map((r) => r.join(",")).join("\n");
       await fetch(BASE + "/api/import", { method: "POST", body: csv3 });
     }
   }
