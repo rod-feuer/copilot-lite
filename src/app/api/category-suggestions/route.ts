@@ -4,6 +4,7 @@ import {
   categorizeSuggestionsAI,
   applyCategorization,
   dismissCategorize,
+  undismissCategorize,
 } from "@/lib/categorizeSuggest";
 import { detectRecurrings } from "@/lib/core";
 
@@ -23,6 +24,10 @@ export async function POST(req: NextRequest) {
 
   if (body.action === "suggestAI") {
     return NextResponse.json({ suggestions: await categorizeSuggestionsAI() });
+  }
+
+  if (body.action === "undismissAll") {
+    return NextResponse.json({ ok: true, restored: undismissCategorize() });
   }
 
   if (body.action === "dismiss") {

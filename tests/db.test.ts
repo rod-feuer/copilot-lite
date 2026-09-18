@@ -12,7 +12,7 @@ import {
 } from "../src/lib/queries";
 import { applyNameCleanup, undoRenormalizeMerchants } from "../src/lib/db";
 import { nameCleanupSuggestions } from "../src/lib/nameCleanup";
-import { categorizeSuggestions, applyCategorization, dismissCategorize } from "../src/lib/categorizeSuggest";
+import { categorizeSuggestions, applyCategorization, dismissCategorize, undismissCategorize } from "../src/lib/categorizeSuggest";
 import { normalizeMerchant } from "../src/lib/merchant";
 
 cleanDbBeforeEach();
@@ -119,6 +119,13 @@ test("category suggestions: proposes from the vendor's history, applies (fills +
     undefined,
     "dismissed vendor stays hidden"
   );
+  // …but not for good: the queue counts it, and bringing dismissed vendors
+  // back restores the proposal (declining a wrong guess once hid the vendor
+  // permanently — 107 dismissals over 38 uncategorized vendors).
+  assert.equal(categorizeSuggestions().dismissedCount, 1, "the queue says how many are dismissed");
+  assert.equal(undismissCategorize(), 1, "one dismissal lifted");
+  assert.ok(categorizeSuggestions().suggestions.find((s) => s.merchant === "Powells Books"), "back in the queue");
+  assert.equal(categorizeSuggestions().dismissedCount, 0);
 });
 
 test("name-cleanup: suggests a stale name → its re-normalized form, applies just that pair, and undoes", () => {

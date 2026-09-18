@@ -40,15 +40,20 @@ function context(db: ReturnType<typeof getDb>) {
 export function categorizeSuggestions(): {
   suggestions: CategorySuggestion[];
   needsModelCount: number;
+  dismissedCount: number; // vendors still uncategorized that a Dismiss keeps out of the queue
   modelEnabled: boolean;
 } {
   const db = getDb();
   const { dismissed, byId, uncats } = context(db);
   const suggestions: CategorySuggestion[] = [];
   let needsModelCount = 0;
+  let dismissedCount = 0;
 
   for (const u of uncats) {
-    if (dismissed.has(u.merchant)) continue;
+    if (dismissed.has(u.merchant)) {
+      dismissedCount++;
+      continue;
+    }
     let categoryId = categorizeByRules(u.merchant);
     let source: CategorySuggestion["source"] = "rule";
     if (categoryId == null) {
@@ -71,7 +76,7 @@ export function categorizeSuggestions(): {
     });
   }
   suggestions.sort((a, b) => b.count - a.count || a.merchant.localeCompare(b.merchant));
-  return { suggestions, needsModelCount, modelEnabled: !!process.env.ANTHROPIC_API_KEY };
+  return { suggestions, needsModelCount, dismissedCount, modelEnabled: !!process.env.ANTHROPIC_API_KEY };
 }
 
 // Model proposals for the vendors rules/history can't resolve — on demand (one
@@ -125,4 +130,14 @@ export function dismissCategorize(merchant: string) {
   db.prepare(
     "INSERT INTO category_suggestion_dismissals (merchant) VALUES (?) ON CONFLICT(merchant) DO NOTHING"
   ).run(merchant);
+}
+
+// A Dismiss is not a one-way door: bring every dismissed vendor back into the
+// queue (and the model's ask). Declining a wrong guess used to hide the
+// vendor for good, so 107 dismissals once left "3 vendors need a closer look"
+// over 38 uncategorized.
+export function undismissCategorize() {
+  const db = getDb();
+  ensureDismissals(db);
+  return db.prepare("DELETE FROM category_suggestion_dismissals").run().changes;
 }
