@@ -65,10 +65,7 @@ export function CategorizeQueue({
     const ok = await mutate(
       () =>
         postJson("/api/category-suggestions", { action: "apply", merchant: s.merchant, categoryId: s.categoryId }),
-      {
-        success: `Categorized “${s.merchant}” as ${s.categoryName}`,
-        error: "Couldn't categorize — please try again",
-      },
+      { error: "Couldn't categorize — please try again" }, // the row leaving is the confirmation
       { refresh: "error" } // restore the optimistic removal on failure
     );
     if (ok) onChange?.();

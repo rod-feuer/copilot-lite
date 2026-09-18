@@ -38,7 +38,7 @@ export function NameCleanupQueue({ onChange }: { onChange?: () => void }) {
         await postJson("/api/name-cleanup", { action: "apply", from: s.from, to: s.to });
         setTidied(true);
       },
-      { success: `Tidied to “${s.to}”`, error: "Couldn't tidy — please try again" },
+      { error: "Couldn't tidy — please try again" },
       { refresh: "error" } // restore the optimistic removal on failure
     );
     if (ok) onChange?.();

@@ -113,6 +113,12 @@ and §3 carry over unchanged.
   net is shown projected with a "so far" actual; income reads "$X expected";
   bills read "paid so far of $X expected"; projections are withheld until
   enough of the month has elapsed. No ≈ or ~ in front of a figure. *(Honest)*
+- **A toast is for what you can't see.** A success message appears only when
+  the outcome is off-screen (a vendor combined, a category deleted, a split
+  applied), spans many things (Apply all, Overrides reset, dismissed vendors
+  brought back), or would need an undo. When the object you touched shows the
+  result — a row leaves a queue, a pill flips, a field shows its new value —
+  it says nothing. Errors always speak. *(Honest, One-pattern)*
 - **Review queues** surface low-confidence work (uncategorized, merge / name-cleanup
   candidates) for one-tap confirmation instead of auto-applying it. *(Correct-don't-configure)*
 - **Tokens & theme.** One accent, neutral grays, dark mode via `data-theme` + CSS

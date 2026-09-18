@@ -254,7 +254,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       await mutate(
         // One plan of several recategorizes only its own charges.
         () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId: mData?.seriesId ?? undefined }),
-        { success: `Recategorized "${merchant}"`, error: "Couldn't recategorize — please try again" },
+        { error: "Couldn't recategorize — please try again" },
         { refresh: "never" }
       )
     ) {
@@ -286,7 +286,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       await mutate(
         // Overrides live under the plan's key when the shelf is on one plan.
         () => postJson("/api/recurrings/settings", { merchant: mData?.settingsKey ?? merchant, ...patch }),
-        { success: message, error: "Couldn't save — please try again" },
+        // The property you edited shows its new value; only "Overrides
+        // reset", whose effect spans every field, gets a line.
+        { success: message === "Overrides reset" ? message : undefined, error: "Couldn't save — please try again" },
         { refresh: "never" }
       )
     ) {
@@ -350,7 +352,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         // "Not recurring" on one plan mutes that plan, not the vendor.
         () => postJson("/api/recurrings/override", { merchant: mData.settingsKey ?? merchant, status: makeIt ? "force" : "mute" }),
         {
-          success: makeIt ? "Marked recurring" : "No longer recurring",
           error: "Couldn't update — please try again",
         },
         { refresh: "never" }
@@ -370,9 +371,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     else if (target?.kind === "charge") fetchCharge(target.id, true);
   };
   // The charge's own overlays. Each is one PATCH on the charge; the shelf
-  // re-reads itself and the page behind it refreshes.
-  async function chargePatch(id: number, body: Record<string, unknown>, success: string | undefined, error: string) {
-    if (await mutate(() => patchJson(`/api/transactions/${id}`, body), { success, error }, { refresh: "never" })) {
+  // re-reads itself and the page behind it refreshes. No success toast: the
+  // card, caption or button you touched shows the result.
+  async function chargePatch(id: number, body: Record<string, unknown>, error: string) {
+    if (await mutate(() => patchJson(`/api/transactions/${id}`, body), { error }, { refresh: "never" })) {
       refreshTarget();
       onChange.current?.();
     }
@@ -392,7 +394,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       await mutate(
         () => patchJson(`/api/categories/${id}`, { excludeFromTotals }),
         {
-          success: excludeFromTotals ? "Left out of totals" : "Counted in totals again",
           error: "Couldn't update category — please try again",
         },
         { refresh: "never" }
@@ -430,7 +431,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             ? patchJson(`/api/transactions/${txId}`, { recurringExcluded: true })
             : patchJson(`/api/transactions/${txId}`, { recurringIncluded: plan }),
         {
-          success: put === "out" ? "Charge taken out of the plan" : "Charge put in the plan",
           error: "Couldn't update — please try again",
         },
         { refresh: "never" }
@@ -445,7 +445,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       await mutate(
         () => postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" }),
         {
-          success: makeIt ? "Marked recurring" : "No longer recurring",
           error: "Couldn't update — please try again",
         },
         { refresh: "never" }
@@ -559,14 +558,10 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 data={xData}
                 cats={cats}
                 onAddCategory={addCat}
-                onSetCategory={(categoryId) => chargePatch(xData.id, { categoryId }, "Recategorized", "Couldn't recategorize — please try again")}
-                onSetDate={(effectiveDate) =>
-                  chargePatch(xData.id, { effectiveDate }, effectiveDate ? "Date updated" : "Date reset to posted", "Couldn't update date — please try again")
-                }
-                onSetNote={(note) => chargePatch(xData.id, { note }, undefined, "Couldn't save note — please try again")}
-                onSetExcluded={(excluded) =>
-                  chargePatch(xData.id, { excluded }, excluded ? "Excluded from totals" : "Counted in totals again", "Couldn't update — please try again")
-                }
+                onSetCategory={(categoryId) => chargePatch(xData.id, { categoryId }, "Couldn't recategorize — please try again")}
+                onSetDate={(effectiveDate) => chargePatch(xData.id, { effectiveDate }, "Couldn't update date — please try again")}
+                onSetNote={(note) => chargePatch(xData.id, { note }, "Couldn't save note — please try again")}
+                onSetExcluded={(excluded) => chargePatch(xData.id, { excluded }, "Couldn't update — please try again")}
                 onSetMembership={(put) => txSetMembership(xData.id, put, xData.planKey)}
                 onSplit={() => setSplitting(true)}
                 onUndoSplit={() => chargeUndoSplit(xData.id)}
