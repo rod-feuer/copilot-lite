@@ -398,9 +398,11 @@ async function statementMode(browser) {
         const applied = !!link;
         const before = await page.$$eval("[data-drawer-row]", (r) => r.length);
         if (applied && before > 0) {
-          // The row's option list mounts on focus (long lists stay light at rest).
-          await page.evaluate(() => document.querySelector("[data-drawer-row] [data-category-property] select").focus());
-          await sleep(150);
+          // The row's option list mounts when the control is taken up (mousedown
+          // or focus — long lists stay light at rest); a headless page may not
+          // deliver focus, so press it.
+          await page.evaluate(() => document.querySelector("[data-drawer-row] [data-category-property] select").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+          await page.waitForFunction(() => document.querySelector("[data-drawer-row] [data-category-property] select").options.length > 2, { timeout: 5000 });
           await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] [data-category-property] select"); const opt = [...s.options].find((o) => o.value && o.value !== "none"); s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); });
           await page.waitForFunction((n) => document.querySelectorAll("[data-drawer-row]").length < n, { timeout: 10000 }, before).then(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, `${before} → ${before - 1} rows`)).catch(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, `still ${before} rows`));
         } else record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, applied ? "no uncategorized rows in the fixture" : "no queue link");
