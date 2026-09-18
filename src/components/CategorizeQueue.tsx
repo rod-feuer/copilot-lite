@@ -137,7 +137,7 @@ export function CategorizeQueue({
       <div className="mb-1 flex items-center gap-2">
         <span className="text-[15px] font-semibold">Suggested categories</span>
         {items.length > 0 && (
-          <span className="rounded-full bg-[var(--muted)]/15 px-2 py-0.5 text-xs text-[var(--muted)]">
+          <span className="rounded-full bg-[var(--muted)]/15 px-2 py-1 text-xs text-[var(--muted)]">
             {items.length}
           </span>
         )}
@@ -172,11 +172,11 @@ export function CategorizeQueue({
                   cats={cats}
                   onChange={(id) => redirect(s.merchant, id)}
                   ariaLabel={`Category for ${s.merchant}`}
-                  className="-ml-1.5"
+                  className="-ml-2"
                 />
                 <span className="shrink-0 text-xs text-[var(--muted)]">({s.count})</span>
                 {s.edited ? (
-                  <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-1.5 text-[11px] font-medium text-[var(--accent)]">edited</span>
+                  <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-2 text-[11px] font-medium text-[var(--accent)]">edited</span>
                 ) : (
                   <SourceTag source={s.source} />
                 )}
@@ -247,7 +247,7 @@ export function CategorizeQueue({
 function SourceTag({ source }: { source: CategorySuggestion["source"] }) {
   if (source === "ai")
     return (
-      <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-1.5 text-[11px] font-medium text-[var(--accent)]">
+      <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-2 text-[11px] font-medium text-[var(--accent)]">
         AI
       </span>
     );

@@ -165,7 +165,7 @@ step lighter; tints are the token at 10–25%. Semantic colour is never the
 accent and the accent is never semantic. Category colours are data, not chrome.
 
 **Space and shape** — spacing steps 4 · 8 · 12 · 16 · 24 · 32 (Tailwind 1 2 3
-4 6 8). Card padding 16; the summary card 20. Rows 8 vertical × 16
+4 6 8). Card padding 16; the summary card 24. Rows 8 vertical × 16
 horizontal. One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
@@ -201,7 +201,7 @@ plan membership; then the note and its verbs (exclude from totals, split).
 secondary (bordered), tertiary (text with an arrow, navigation only).
 Destructive: secondary with `--bad` text, and only in a shelf.
 
-**Pills and tags** — one pill: 11/500, full radius, 6px horizontal padding.
+**Pills and tags** — one pill: 11/500, full radius, 8px horizontal padding.
 Tone says state: quiet border for the default, warn tint for what the user
 chose, muted fill for what the system chose. The `edited` tag is the only tag.
 

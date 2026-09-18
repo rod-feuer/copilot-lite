@@ -55,7 +55,7 @@ export default function Shell({
           right, vertically centered against the whole block (not pinned to the
           title line) so the header reads balanced. Keep subtitles short enough to
           sit beside the actions; if they don't fit, the actions wrap below. */}
-      <header ref={head} className="z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--background)] px-5 py-3 sm:sticky sm:top-0 sm:px-8 sm:py-4">
+      <header ref={head} className="z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3 sm:sticky sm:top-0 sm:px-8 sm:py-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
           {subtitle && <p className="text-xs text-[var(--muted)]">{subtitle}</p>}
@@ -65,7 +65,7 @@ export default function Shell({
           {actions}
         </div>
       </header>
-      <div className="px-5 pb-6 pt-4 sm:px-8 sm:py-6">{children}</div>
+      <div className="px-4 pb-6 pt-4 sm:px-8 sm:py-6">{children}</div>
     </div>
   );
 }

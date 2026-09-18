@@ -486,7 +486,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               {back && (
                 <button
                   onClick={goBack}
-                  className="mb-0.5 text-xs text-[var(--accent)] hover:underline"
+                  className="mb-1 text-xs text-[var(--accent)] hover:underline"
                 >
                   ← Back
                 </button>
@@ -696,7 +696,7 @@ function MerchantHeader({
       {data && showNames && data.names.length > 1 && (
         <ul className="mt-2 flex flex-col divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
           {data.names.map((n) => (
-            <li key={n.name} className="flex items-center gap-2 px-2.5 py-1.5 text-xs">
+            <li key={n.name} className="flex items-center gap-2 px-3 py-2 text-xs">
               <Tooltip label={n.name} className="min-w-0 flex-1 truncate">
                 {n.name}
               </Tooltip>
@@ -764,7 +764,7 @@ function MembershipPill({
           e.stopPropagation();
           onToggle();
         }}
-        className={`shrink-0 rounded-full px-1.5 py-px text-[11px] font-medium transition-colors ${tone}`}
+        className={`shrink-0 rounded-full px-2 py-px text-[11px] font-medium transition-colors ${tone}`}
       >
         {text}
       </button>
@@ -904,7 +904,7 @@ function ChargeBody({
       </div>
 
       <div>
-        <div className="stat-label mb-1.5">Note</div>
+        <div className="stat-label mb-2">Note</div>
         <CommitInput
           key={data.note ?? ""}
           defaultValue={data.note ?? ""}
@@ -914,7 +914,7 @@ function ChargeBody({
             const note = v.trim() || null;
             if (note !== (data.note ?? null)) onSetNote(note);
           }}
-          className="w-full rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+          className="w-full rounded-lg border border-[var(--border)] bg-card px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
         />
       </div>
 
@@ -1036,7 +1036,7 @@ function SplitDialog({
               <select
                 value={p.categoryId}
                 onChange={(e) => update(i, { categoryId: e.target.value })}
-                className="select-caret min-w-0 flex-1 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-1.5 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                className="select-caret min-w-0 flex-1 cursor-pointer appearance-none rounded-lg border border-[var(--border)] bg-card py-2 pl-3 pr-8 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               >
                 <option value="">Category…</option>
                 {cats.map((c) => (
@@ -1050,14 +1050,14 @@ function SplitDialog({
                 onChange={(e) => update(i, { amount: e.target.value })}
                 placeholder="$"
                 inputMode="decimal"
-                className="w-20 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                className="w-20 rounded-lg border border-[var(--border)] bg-card px-2 py-2 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               />
               <input
                 value={p.label}
                 onChange={(e) => update(i, { label: e.target.value })}
                 placeholder={cats.find((c) => c.id === Number(p.categoryId))?.name ?? "Label"}
                 aria-label="Part label"
-                className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               />
               {parts.length > 2 ? (
                 <button onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove part" className="rounded-lg px-1 text-[var(--muted)] hover:text-[var(--foreground)]">
@@ -1366,7 +1366,7 @@ function MerchantBody({
       {/* Evidence before controls: the shelf exists to edit a vendor where its
           charges are on screen, so the charges come first. */}
       <div>
-        <div className="stat-label mb-1.5">Recent</div>
+        <div className="stat-label mb-2">Recent</div>
         {/* Each charge carries one two-state pill — "In plan" / "Not in
             plan" — and clicking always flips it. An "edited" tag beside it
             says the user decided (took it out, or put in a charge the
@@ -1419,8 +1419,8 @@ function MerchantBody({
 
       {data.byYear.length > 1 && (
         <div>
-          <div className="stat-label mb-1.5">By year</div>
-          <div className="flex flex-col gap-1.5">
+          <div className="stat-label mb-2">By year</div>
+          <div className="flex flex-col gap-2">
             {(() => {
               const max = Math.max(...data.byYear.map((y) => y.spent), 1);
               return data.byYear.map((y) => (
@@ -1492,7 +1492,7 @@ function MerchantBody({
           <Tooltip
             label="Marked ended — no longer counts as upcoming or expected"
             onlyIfTruncated={false}
-            className="inline-flex self-start rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]"
+            className="inline-flex self-start rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]"
           >
             Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
           </Tooltip>
@@ -1622,7 +1622,7 @@ function CategoryBody({
 
       {data.upcoming.length > 0 && (
         <div>
-          <div className="stat-label mb-1.5">Upcoming this month</div>
+          <div className="stat-label mb-2">Upcoming this month</div>
           <ul className="divide-y divide-[var(--border)] rounded-lg border border-dashed border-[var(--border)]">
             {data.upcoming.map((u) => (
               <ShelfRow
@@ -1649,7 +1649,7 @@ function CategoryBody({
       )}
 
       <div>
-        <div className="stat-label mb-1.5">Transactions</div>
+        <div className="stat-label mb-2">Transactions</div>
         {data.transactions.length === 0 ? (
           <p className="rounded-lg border border-[var(--border)] p-4 text-center text-xs text-[var(--muted)]">
             No transactions this month.
@@ -1930,7 +1930,7 @@ function CombineControl({
                         e.preventDefault();
                         chooseOther(v.merchant);
                       }}
-                      className="block w-full px-2 py-1.5 text-left leading-snug hover:bg-[var(--hover)]"
+                      className="block w-full px-2 py-2 text-left leading-snug hover:bg-[var(--hover)]"
                     >
                       {v.displayName}
                     </button>
@@ -1975,7 +1975,7 @@ function CombineControl({
               onFocus={() => setChoice("custom")}
               onChange={(e) => setCustom(e.target.value)}
               placeholder="Something else…"
-              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-0.5"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-card px-2 py-1"
             />
           </label>
           {categoriesDiffer && (
@@ -2025,7 +2025,7 @@ function CombineControl({
 // value or one the user changed — so corrections are visible and trusted.
 function StateTag({ edited }: { edited?: boolean }) {
   return edited ? (
-    <span className="rounded-full bg-[var(--accent)]/15 px-1.5 text-[11px] font-medium text-[var(--accent)]">
+    <span className="rounded-full bg-[var(--accent)]/15 px-2 text-[11px] font-medium text-[var(--accent)]">
       edited
     </span>
   ) : (
@@ -2070,7 +2070,7 @@ function MatchCorrection({
   };
   const sel = "btn-ghost select-caret cursor-pointer appearance-none pr-8 text-[13px]";
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <label className="stat-label">Match</label>
         <StateTag edited={rule != null} />
@@ -2115,7 +2115,7 @@ function MatchCorrection({
 // keyboard, caret visible. The same pattern the recurrings row uses.
 function CaptionSelect({ label, tag, className = "", children, ...select }: { label: string; tag?: ReactNode; className?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <span className={`relative inline-flex max-w-[11rem] items-center gap-0.5 rounded-lg py-0.5 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>
+    <span className={`relative inline-flex max-w-[11rem] items-center gap-1 rounded-lg py-1 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>
       <span className="truncate">{label}</span>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
         <path d="M6 9l6 6 6-6" />
@@ -2134,7 +2134,7 @@ function PropertyCard({ label, edited, children }: { label: string; edited?: boo
   return (
     <div data-property-card className="rounded-lg bg-[var(--background)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--accent)]/30">
       {children}
-      <div className="mt-0.5 flex items-center gap-1.5">
+      <div className="mt-1 flex items-center gap-2">
         <span className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{label}</span>
         {/* Only properties with a detected value carry an auto/edited state. */}
         {edited !== undefined && <StateTag edited={edited} />}

@@ -55,7 +55,7 @@ export function SummaryCard({
 }) {
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
   return (
-    <div className={`card p-5 ${className}`.trim()} data-summary>
+    <div className={`card p-6 ${className}`.trim()} data-summary>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <Fig f={primary} />
         {secondary && (
@@ -79,7 +79,7 @@ export function SummaryCard({
           style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
         />
       </div>
-      {status && <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-xs">{status}</div>}
+      {status && <div className="mt-3 flex flex-wrap items-center gap-x-2 text-xs">{status}</div>}
       {note && <p className="mt-2 text-[11px] text-[var(--muted)]">{note}</p>}
     </div>
   );

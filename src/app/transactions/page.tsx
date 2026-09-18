@@ -463,7 +463,7 @@ export default function TransactionsPage() {
     if (id === "recurring") setRecurring("");
   }
   const chipSelect =
-    "max-w-40 cursor-pointer appearance-none select-caret bg-transparent pr-5 text-xs focus:outline-none";
+    "max-w-40 cursor-pointer appearance-none select-caret bg-transparent pr-4 text-xs focus:outline-none";
 
   return (
     <Shell
@@ -613,7 +613,7 @@ export default function TransactionsPage() {
           <div className="relative hidden sm:block">
             <button
               onClick={() => setMenuOpen((o) => !o)}
-              className="rounded-lg border border-dashed border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
+              className="rounded-lg border border-dashed border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
             >
               + Filter
             </button>
@@ -628,7 +628,7 @@ export default function TransactionsPage() {
                         setAdded((a) => [...a, f.id]);
                         setMenuOpen(false);
                       }}
-                      className="block w-full rounded-lg px-3 py-1.5 text-left text-[13px] hover:bg-[var(--hover)]"
+                      className="block w-full rounded-lg px-3 py-2 text-left text-[13px] hover:bg-[var(--hover)]"
                     >
                       {f.label}
                     </button>
@@ -813,7 +813,7 @@ function MobileSortFilter({
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-[var(--border)] bg-card p-1 shadow-[0_4px_16px_rgba(16,24,40,0.12)]">
-            <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
               Sort
             </div>
             {SORT_OPTIONS.map(([v, label]) => (
@@ -825,7 +825,7 @@ function MobileSortFilter({
                   onSort(s, d);
                   setOpen(false);
                 }}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-[13px] hover:bg-[var(--hover)]"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] hover:bg-[var(--hover)]"
               >
                 {label}
                 {value === v && <span className="text-[var(--accent)]">✓</span>}
@@ -845,7 +845,7 @@ function MobileSortFilter({
                       onAddFilter(f.id);
                       setOpen(false);
                     }}
-                    className="block w-full rounded-lg px-3 py-1.5 text-left text-[13px] hover:bg-[var(--hover)]"
+                    className="block w-full rounded-lg px-3 py-2 text-left text-[13px] hover:bg-[var(--hover)]"
                   >
                     {f.label}
                   </button>
@@ -937,7 +937,7 @@ const TxRow = memo(function TxRow({
                       {/* Mobile: the category chip belongs in the subtitle here too —
                           the desktop pill is hidden on small screens, and suppressed
                           when the row matches the vendor's category. */}
-                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs leading-4 text-[var(--muted)]">
+                      <div className="flex flex-wrap items-center gap-x-2 text-xs leading-4 text-[var(--muted)]">
                         <CategoryProperty
                           categoryId={t.categoryId}
                           categoryName={t.categoryName}
@@ -978,7 +978,7 @@ const TxRow = memo(function TxRow({
                       </span>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-1.5 text-xs leading-4 text-[var(--muted)]">
+                  <div className="flex flex-wrap items-center gap-x-2 text-xs leading-4 text-[var(--muted)]">
                     {/* Mobile: the category as a compact chip inline in the
                         subtitle (denser than a full-width pill row). Desktop uses
                         the right-side pill above. */}
@@ -1022,7 +1022,7 @@ const TxRow = memo(function TxRow({
                   {/* A set note takes its own line below (edited in the charge's
                       shelf). Outside the mode ternary so statement view has it too. */}
                   {t.note && (
-                    <div className="mt-0.5 flex max-w-full items-baseline gap-1 text-xs italic text-[var(--muted)]">
+                    <div className="mt-1 flex max-w-full items-baseline gap-1 text-xs italic text-[var(--muted)]">
                       <span className="shrink-0 not-italic opacity-70">✎</span>
                       <span className="truncate">{t.note}</span>
                     </div>
@@ -1070,7 +1070,7 @@ function Chip({
   onRemove: () => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-card py-1 pl-2.5 pr-1 text-xs">
+    <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-card py-1 pl-3 pr-1 text-xs">
       {children}
       <button
         onClick={onRemove}

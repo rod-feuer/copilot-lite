@@ -105,7 +105,7 @@ export default function DashboardPage() {
   if (status === "ready" && months.length === 0) {
     return (
       <Shell title="Dashboard" subtitle="No data yet">
-        <div className="card flex flex-col items-center gap-4 p-12 text-center">
+        <div className="card flex flex-col items-center gap-4 p-8 text-center">
           <div className="text-2xl">📊</div>
           <div>
             <h2 className="text-lg font-semibold">Nothing here yet</h2>
@@ -149,7 +149,7 @@ export default function DashboardPage() {
       {status === "error" && <LoadError what="the dashboard" onRetry={boot} />}
       {status === "loading" && !data && <LoadingRows />}
       {status !== "error" && data && (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-6">
           {/* One summary card, as on Categories and Recurrings: the projected
               net leads (the one figure that answers "how am I doing"), income
               and expenses beside it, the budget bar, and the verdict as the
@@ -233,8 +233,8 @@ export default function DashboardPage() {
             />
           )}
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
-            <div className="card flex flex-col p-5 lg:col-span-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            <div className="card flex flex-col p-4 lg:col-span-3">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-[15px] font-semibold">Spending this month</h3>
                 {/* The projected figure lives once, in the footer strip below; the
@@ -331,7 +331,7 @@ export default function DashboardPage() {
               <PaceStrip pace={data.pace} spent={data.expenses} />
             </div>
 
-            <div className="card p-5 lg:col-span-2">
+            <div className="card p-4 lg:col-span-2">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-[15px] font-semibold">Spending by category</h3>
                 <SeeAll href="/categories" />
@@ -348,7 +348,7 @@ export default function DashboardPage() {
           </div>
 
           {data.upcoming.count > 0 && (
-            <div className="card p-5">
+            <div className="card p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-[15px] font-semibold">
                   Upcoming bills · next {data.upcoming.windowDays} days
@@ -361,7 +361,7 @@ export default function DashboardPage() {
                     <button
                       data-drawer-row
                       onClick={() => openTx(u.merchant, { onChange: refresh, series: u.series ?? undefined })}
-                      className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${
+                      className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors ${
                         shelfActive.isMerchant(u.merchant, u.series ?? undefined)
                           ? "bg-[var(--accent)]/10"
                           : "hover:bg-[var(--hover)]"
@@ -397,7 +397,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="card p-5">
+          <div className="card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-[15px] font-semibold">Recent activity</h3>
               <SeeAll href={`/transactions${month ? `?month=${month}` : ""}`} />
@@ -408,7 +408,7 @@ export default function DashboardPage() {
                   <button
                     data-drawer-row
                     onClick={() => openTx(t.merchant, { onChange: refresh })}
-                    className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${
+                    className={`group -mx-2 flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors ${
                       shelfActive.isMerchant(t.merchant)
                         ? "bg-[var(--accent)]/10"
                         : "hover:bg-[var(--hover)]"
@@ -416,7 +416,7 @@ export default function DashboardPage() {
                   >
                     <CategoryBadge icon={t.categoryIcon} color={t.categoryColor} fallback={t.displayName} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
                         <span className="truncate text-[13px] font-medium">{t.displayName}</span>
                         {recurringState(t) !== "none" && (
                           <HoverTip label={RECURRING_LABEL[recurringState(t)]} onlyIfTruncated={false} className="shrink-0 text-xs">
@@ -456,18 +456,18 @@ function ChartLegend({
 }) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--muted)]">
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-2">
         <span className="inline-block h-0.5 w-3.5 rounded-full bg-[#6d5efc]" />
         This month
       </span>
       {showProjected && (
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-2">
           <span className="inline-block w-3.5 border-t-2 border-dashed border-[#6d5efc]" />
           Projected
         </span>
       )}
       {showPrev && (
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-2">
           <span className="inline-block h-0.5 w-3.5 rounded-full bg-[#c3c6cc]" />
           Last month
         </span>
@@ -777,7 +777,7 @@ function UncategorizedResolver({
                   cats={cats}
                   onChange={(id) => id != null && assign(t, id)}
                   ariaLabel={`Category for ${t.displayName}`}
-                  className="-ml-1.5"
+                  className="-ml-2"
                 />
               </div>
             </div>
@@ -841,7 +841,7 @@ function CategoryBars({
                 <span>{r.icon}</span>
                 <span className="font-medium">{r.name}</span>
               </span>
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-2">
                 {/* The whole spent/budget pair right-aligns to one clean edge before
                     the chevron (matching the aligned chevron column), with the slash
                     snug between. Spent is ranked foreground; the budget reference is
@@ -951,7 +951,7 @@ function BudgetSummary({
           <span className="text-[var(--muted)]"> of {usd(budget.total, { cents: false })}</span>
         </span>
       </div>
-      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--border)]">
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--border)]">
         <div
           className="h-full rounded-full"
           style={{
@@ -960,7 +960,7 @@ function BudgetSummary({
           }}
         />
       </div>
-      <div className="mt-1.5 text-xs text-[var(--muted)]">
+      <div className="mt-2 text-xs text-[var(--muted)]">
         {pct}% used{partial ? " so far" : ""}
         {budget.projected != null && projDelta != null ? (
           <>

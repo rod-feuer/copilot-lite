@@ -159,7 +159,7 @@ export default function CategoriesPage() {
       />
 
       {showAddForm && (
-      <div className="card mb-5 p-4">
+      <div className="card mb-6 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-[15px] font-semibold">New category</h3>
           <button
@@ -204,7 +204,7 @@ export default function CategoriesPage() {
       />
       {/* While an attention filter is active, hide unrelated sections to focus. */}
       {!filter && income.length > 0 && (
-        <div className="mt-5">
+        <div className="mt-6">
           <Group
             title="Income"
             month={month}
@@ -216,7 +216,7 @@ export default function CategoriesPage() {
         </div>
       )}
       {!filter && excluded.length > 0 && (
-        <div className="mt-5">
+        <div className="mt-6">
           <Group
             title="Excluded from totals"
             hint="Not counted toward income or expenses — e.g. transfers, credit-card payments, reimbursements."
@@ -267,7 +267,7 @@ function BudgetSummary({
   if (budget === 0) {
     const totalSpent = expense.reduce((s, c) => s + c.total, 0);
     return (
-      <div className="card mb-5 p-5">
+      <div className="card mb-6 p-4">
         <div className="text-2xl font-semibold tracking-tight">
           {usd(totalSpent, { cents: false })}
         </div>
@@ -294,7 +294,7 @@ function BudgetSummary({
   const hasAnnual = budgeted.some((c) => c.budgetPeriod === "annual");
   return (
     <SummaryCard
-      className="mb-5"
+      className="mb-6"
       primary={{
         value: usd(spent, { cents: false }),
         label: `spent${partial ? " so far" : ""} of ${usd(budget, { cents: false })} budgeted`,
@@ -391,7 +391,7 @@ function Group({
       {hint && <p className="mb-2 px-1 text-xs text-[var(--muted)]">{hint}</p>}
       <div className="card divide-y divide-[var(--border)]">
         {cats.length === 0 && (
-          <p className="p-5 text-[13px] text-[var(--muted)]">No categories.</p>
+          <p className="p-4 text-[13px] text-[var(--muted)]">No categories.</p>
         )}
         {cats.map((c) => {
           const budgeted = onBudget != null && c.budget != null;
@@ -472,7 +472,7 @@ function Group({
                 </div>
 
                 {budgeted && (
-                  <div className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--muted)]/15">
+                  <div className="relative mt-2 h-2 overflow-hidden rounded-full bg-[var(--muted)]/15">
                     <div
                       className="h-full rounded-full"
                       style={{
@@ -604,11 +604,11 @@ function EditableCategoryBadge({
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  if (!onSave) return <CategoryBadge icon={icon} color={color} className="mt-0.5" />;
+  if (!onSave) return <CategoryBadge icon={icon} color={color} className="mt-1" />;
 
   // The editable badge is the shared chip's shape and tint, as a button.
   const badgeClass =
-    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px]";
+    "mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px]";
 
   return (
     // stopPropagation so editing the badge never opens the category shelf (the
@@ -635,7 +635,7 @@ function EditableCategoryBadge({
       {open && (
         <div className="absolute left-0 top-11 z-20 w-64 rounded-lg border border-[var(--border)] bg-card p-3 shadow-lg">
           <EmojiPicker value={icon} onPick={(e) => onSave({ icon: e })} />
-          <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-[var(--border)] pt-2.5">
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
             {PALETTE.map((p) => (
               <button
                 key={p}
@@ -651,14 +651,14 @@ function EditableCategoryBadge({
           {/* Type (expense↔income) — a correction, e.g. a category that should
               count inflows. Re-buckets the category and flips how its rows sum. */}
           {canEditKind && kind && (
-            <div className="mt-2.5 flex items-center justify-between border-t border-[var(--border)] pt-2.5">
+            <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
               <span className="text-xs text-[var(--muted)]">Type</span>
               <div className="flex overflow-hidden rounded-lg border border-[var(--border)] text-xs">
                 {(["expense", "income"] as const).map((k) => (
                   <button
                     key={k}
                     onClick={() => k !== kind && onSave({ kind: k })}
-                    className={`px-2.5 py-1 capitalize ${
+                    className={`px-3 py-1 capitalize ${
                       kind === k
                         ? "bg-[var(--accent)] text-white"
                         : "text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -772,7 +772,7 @@ function BudgetInput({
                   e.stopPropagation();
                   onSave(sug, period);
                 }}
-                className="whitespace-nowrap rounded-lg bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                className="whitespace-nowrap rounded-lg bg-[var(--accent)]/10 px-2 py-1 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
               >
                 Use {usd(sug, { cents: false })}
               </button>

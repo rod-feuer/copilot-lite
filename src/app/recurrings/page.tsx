@@ -278,7 +278,7 @@ export default function RecurringsPage() {
       ) : status === "error" ? (
         <LoadError what="recurring bills" onRetry={boot} />
       ) : recs.length === 0 ? (
-        <div className="card p-10 text-center">
+        <div className="card p-8 text-center">
           <div className="mb-2 text-2xl">↻</div>
           <p className="text-[13px] text-[var(--muted)]">
             No recurring patterns detected yet. Recurrings are found automatically
@@ -286,7 +286,7 @@ export default function RecurringsPage() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-6">
           {totalBills > 0 && (
             <SummaryCard
               primary={{
@@ -403,7 +403,7 @@ export default function RecurringsPage() {
                             amountHint: Math.abs(s.avgAmount),
                           })
                         )}
-                        className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${ROW_FOCUS} ${
+                        className={`group flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors ${ROW_FOCUS} ${
                           shelfActive.isMerchant(s.merchant)
                             ? "bg-[var(--accent)]/10"
                             : "hover:bg-[var(--hover)]"
@@ -441,7 +441,7 @@ export default function RecurringsPage() {
                               e.stopPropagation();
                               dismissSuggestion(s);
                             }}
-                            className="rounded-lg px-1.5 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
+                            className="rounded-lg px-2 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
                           >
                             ✕
                           </button>
@@ -457,7 +457,7 @@ export default function RecurringsPage() {
 
           {shownInactive.length > 0 && (
             <div>
-              <div className="mb-2 flex items-center gap-1.5">
+              <div className="mb-2 flex items-center gap-2">
                 <button
                   onClick={() => setShowInactive((s) => !s)}
                   className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -614,7 +614,7 @@ function BillList({
                 {r.cadence !== "monthly" && (
                   <span
                     data-cadence
-                    className="shrink-0 rounded-full bg-[var(--border)] px-1.5 text-[11px] font-medium text-[var(--muted)]"
+                    className="shrink-0 rounded-full bg-[var(--border)] px-2 text-[11px] font-medium text-[var(--muted)]"
                   >
                     {CADENCE_LABEL[r.cadence]}
                   </span>
@@ -623,7 +623,7 @@ function BillList({
                   <Tooltip
                     label="You marked this subscription ended — it no longer counts as upcoming or expected"
                     onlyIfTruncated={false}
-                    className="inline-flex shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]"
+                    className="inline-flex shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]"
                   >
                     Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
                   </Tooltip>

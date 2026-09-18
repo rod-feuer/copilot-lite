@@ -16,7 +16,7 @@ export default function SignOut({ variant }: { variant: "sidebar" | "tab" }) {
       <form method="post" action="/api/logout" className="flex flex-1">
         <button
           type="submit"
-          className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-[var(--muted)] transition-colors"
+          className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-[var(--muted)] transition-colors"
         >
           {icon}
           <span>Sign out</span>
