@@ -85,25 +85,29 @@ export function plaidSyncStartDate(): string {
 // transactions (pending -> posted, amount finalized) update in place. We flip
 // the amount sign (Plaid: + = outflow; ours: - = expense) and never overwrite an
 // existing categoryId on update, preserving rule/manual categorization.
+// Every row keeps its id across syncs, pending ones included: the app holds
+// ids in an open page (a tapped charge fetches by id), and a pending row that
+// was wiped and re-inserted on each sync came back under a new id, so a tap in
+// the seconds after launch found nothing. A pending row Plaid stops returning
+// has posted under a new id (or reconciled below) and is dropped then.
+// `updated` counts rows whose date, amount, account or pending flag actually
+// changed — not every row the pull happened to contain, which had the launch
+// toast reporting "1002 updated" when nothing had.
 export function importPlaidTransactions(items: PlaidItem[]): {
   inserted: number;
   updated: number;
   reconciled: number;
 } {
   const db = getDb();
-  // Hashes we already have, captured BEFORE the pending wipe so counts are
-  // accurate (a re-pulled still-pending row counts as updated, not new).
-  const seen = new Set(
-    (db.prepare("SELECT hash FROM transactions WHERE source = 'plaid'").all() as {
-      hash: string;
-    }[]).map((r) => r.hash)
-  );
-  // Snapshot user edits on the pending Plaid rows about to be wiped. Posted rows
-  // keep these through the upsert (it never overwrites them), but a pending row is
-  // deleted + recreated every sync — so without this, a category/note/date the
-  // user set on a still-pending charge is silently lost on the next sync. Keyed by
-  // the stable transaction_id (hash); reapplied after re-import, and redirected to
-  // the posted twin when the charge posts (see the reconciliation below).
+  type Held = { hash: string; date: string; merchant: string; amount: number; account: string; pending: number };
+  const held = new Map<string, Held>();
+  for (const r of db
+    .prepare("SELECT hash, date, merchant, amount, account, pending FROM transactions WHERE source = 'plaid'")
+    .all() as Held[])
+    held.set(r.hash, r);
+  // User edits on pending rows. A re-pulled pending row keeps them (the upsert
+  // never touches them); a pending row that posts under a NEW transaction_id
+  // vanishes, so its edits are carried onto the posted twin instead of lost.
   type Edits = { categoryId: number | null; note: string | null; effectiveDate: string | null };
   const pendingEdits = new Map<string, Edits>();
   for (const r of db
@@ -118,12 +122,6 @@ export function importPlaidTransactions(items: PlaidItem[]): {
         effectiveDate: r.effectiveDate,
       });
   }
-  // Clear transient pending Plaid rows before re-importing the window — this
-  // drops a pending charge that has fully posted (Plaid stops returning it).
-  // Posted rows are stable and keep their categoryId via the upsert below.
-  const clearPending = db.prepare(
-    "DELETE FROM transactions WHERE source = 'plaid' AND pending = 1"
-  );
   const upsert = db.prepare(
     `INSERT INTO transactions (date, merchant, rawMerchant, amount, categoryId, account, pending, source, hash)
      VALUES (@date, @merchant, @rawMerchant, @amount, @categoryId, @account, @pending, 'plaid', @hash)
@@ -135,6 +133,7 @@ export function importPlaidTransactions(items: PlaidItem[]): {
        account = excluded.account,
        pending = excluded.pending`
   );
+  const drop = db.prepare("DELETE FROM transactions WHERE hash = ?");
   // A posted twin for a pending charge: same account + amount, within 3 days.
   // Name affinity (checked in JS) then confirms it's the same vendor.
   const findPosted = db.prepare(
@@ -142,10 +141,13 @@ export function importPlaidTransactions(items: PlaidItem[]): {
      WHERE source = 'plaid' AND pending = 0 AND account = @account AND amount = @amount
        AND ABS(julianday(COALESCE(effectiveDate, date)) - julianday(@date)) <= 3`
   );
-  // Reapply a snapshotted edit onto wherever the charge now lives (the re-inserted
-  // pending row, or the posted twin it reconciled into). categoryId is overridden
-  // so the value the row carried wins over a fresh rules/history guess; note and
-  // effectiveDate fill only when the target doesn't already have one.
+  const postedTwin = (r: { account: string; amount: number; date: string; merchant: string }) =>
+    (findPosted.all({ account: r.account, amount: r.amount, date: r.date }) as { hash: string; merchant: string }[]).find(
+      (q) => nameAffinity(r.merchant, q.merchant) >= NAME_MATCH
+    );
+  // Carry a vanishing pending row's edits onto its posted twin. categoryId is
+  // overridden so the value the row carried wins over a fresh rules/history
+  // guess; note and effectiveDate fill only when the twin doesn't have one.
   const restoreEdits = db.prepare(
     `UPDATE transactions SET
        categoryId = COALESCE(@categoryId, categoryId),
@@ -153,13 +155,17 @@ export function importPlaidTransactions(items: PlaidItem[]): {
        effectiveDate = COALESCE(effectiveDate, @effectiveDate)
      WHERE hash = @hash`
   );
+  const carryEdits = (from: string, to: string) => {
+    const e = pendingEdits.get(from);
+    if (!e) return;
+    pendingEdits.delete(from);
+    restoreEdits.run({ hash: to, ...e });
+  };
 
   let inserted = 0;
   let updated = 0;
   let reconciled = 0;
   const tx = db.transaction((rows: PlaidItem[]) => {
-    clearPending.run();
-
     // Flatten + normalize, then import POSTED before PENDING so a pending row
     // can see its posted twin already in the table.
     const flat = rows.flatMap((item) => {
@@ -179,6 +185,7 @@ export function importPlaidTransactions(items: PlaidItem[]): {
     });
     flat.sort((a, b) => a.pending - b.pending); // posted (0) first
 
+    const pulled = new Set<string>();
     for (const r of flat) {
       // In-pull pending→posted reconciliation: Plaid returns BOTH versions of a
       // charge during the transition (different transaction_ids) and
@@ -186,22 +193,11 @@ export function importPlaidTransactions(items: PlaidItem[]): {
       // whose posted twin is already present. Same account+amount+near-date AND
       // a matching name (so a coincidental same-amount charge from another
       // vendor is spared). This approximates Plaid's pending_transaction_id link.
+      // Not marked as pulled, so a copy from an earlier sync is dropped below.
       if (r.pending) {
-        const twin = (findPosted.all({
-          account: r.account,
-          amount: r.amount,
-          date: r.date,
-        }) as { hash: string; merchant: string }[]).find(
-          (q) => nameAffinity(r.merchant, q.merchant) >= NAME_MATCH
-        );
+        const twin = postedTwin(r);
         if (twin) {
-          // The charge has posted: carry any edits off the vanishing pending row
-          // onto its posted twin so they survive the pending→posted transition.
-          const e = pendingEdits.get(r.hash);
-          if (e) {
-            pendingEdits.delete(r.hash);
-            pendingEdits.set(twin.hash, e);
-          }
+          carryEdits(r.hash, twin.hash);
           reconciled++;
           continue;
         }
@@ -213,17 +209,22 @@ export function importPlaidTransactions(items: PlaidItem[]): {
         // history (a repeat vendor under a new descriptor).
         categoryId: categorizeByRules(r.merchant) ?? categorizeByHistory(r.merchant),
       });
-      if (seen.has(r.hash)) updated++;
-      else {
-        inserted++;
-        seen.add(r.hash);
-      }
+      pulled.add(r.hash);
+      const was = held.get(r.hash);
+      if (!was) inserted++;
+      else if (was.date !== r.date || was.amount !== r.amount || was.account !== r.account || was.pending !== r.pending)
+        updated++;
     }
 
-    // Reapply the snapshotted edits now that every row has been re-imported — onto
-    // the re-inserted pending rows (same hash) and the posted twins edits were
-    // redirected to above. A hash no longer in the table matches nothing (no-op).
-    for (const [hash, e] of pendingEdits) restoreEdits.run({ hash, ...e });
+    // Pending rows this pull no longer carries have posted under a new id (or
+    // reconciled above): drop them, edits carried to the posted twin if one is
+    // in the table now.
+    for (const was of held.values()) {
+      if (!was.pending || pulled.has(was.hash)) continue;
+      const twin = postedTwin(was);
+      if (twin) carryEdits(was.hash, twin.hash);
+      drop.run(was.hash);
+    }
   });
   tx(items);
   return { inserted, updated, reconciled };

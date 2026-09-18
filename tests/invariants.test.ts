@@ -885,11 +885,11 @@ test("plaid sync reconciles a pending charge against its posted twin, sparing co
 });
 
 test("a category set on a pending Plaid charge survives the next sync and follows it to posted", () => {
-  // WHY: a pending Plaid row is wiped + recreated on every sync, so a category the
-  // user set on a still-pending charge must be preserved by transaction_id — else
-  // it silently reverts next sync (the "Asymmetrically won't keep its category"
-  // bug). And it must follow the charge onto its posted twin (a new id) so the
-  // edit isn't lost again at the pending→posted transition.
+  // WHY: a category the user set on a still-pending charge must survive the
+  // next sync (the "Asymmetrically won't keep its category" bug, when pending
+  // rows were wiped and recreated) and must follow the charge onto its posted
+  // twin (a new transaction_id) so it isn't lost at the pending→posted
+  // transition either.
   const pendingPull = {
     accounts: [{ account_id: "a1", name: "Checking" }],
     transactions: [
@@ -926,6 +926,55 @@ test("a category set on a pending Plaid charge survives the next sync and follow
     .get() as { n: number };
   assert.equal(posted.categoryId, CAT, "category follows the charge onto its posted twin");
   assert.equal(pendingGone.n, 0, "the pending row is reconciled away");
+});
+
+// WHY: the app holds transaction ids in an open page — a tapped charge fetches
+// by id. Pending rows were wiped and re-inserted on every sync, so a pending
+// charge came back under a new id and a tap in the seconds after launch (while
+// the launch sync ran) got a 404: "Couldn't load this charge". And every row
+// the pull contained counted as "updated", so the launch toast read
+// "Synced 0 new · 1002 updated" when nothing had changed.
+test("plaid sync keeps a pending charge's id, and counts updated only when something changed", () => {
+  const pull = (amount: number) => ({
+    accounts: [{ account_id: "a1", name: "Checking" }],
+    transactions: [
+      { transaction_id: "mh-pending", account_id: "a1", date: "2026-09-18", name: "Massage Heights", merchant_name: "Massage Heights", amount, pending: true },
+      { transaction_id: "cc-posted", account_id: "a1", date: "2026-09-17", name: "Classic Cleaners", merchant_name: "Classic Cleaners", amount: 175.15, pending: false },
+    ],
+  });
+  const first = importPlaidTransactions([pull(59.99)]);
+  assert.deepEqual([first.inserted, first.updated], [2, 0]);
+  const id = (getDb().prepare("SELECT id FROM transactions WHERE hash = 'mh-pending'").get() as { id: number }).id;
+
+  const again = importPlaidTransactions([pull(59.99)]);
+  assert.deepEqual([again.inserted, again.updated], [0, 0], "the same pull changes nothing");
+  assert.equal((getDb().prepare("SELECT id FROM transactions WHERE hash = 'mh-pending'").get() as { id: number }).id, id, "the pending row keeps its id");
+
+  const changed = importPlaidTransactions([pull(64.99)]);
+  assert.deepEqual([changed.inserted, changed.updated], [0, 1], "an amount change is one update");
+  assert.equal((getDb().prepare("SELECT id FROM transactions WHERE hash = 'mh-pending'").get() as { id: number }).id, id, "still the same row");
+});
+
+test("a pending charge Plaid stops returning is dropped, its category carried to the posted row that replaced it", () => {
+  const pending = {
+    accounts: [{ account_id: "a1", name: "Checking" }],
+    transactions: [
+      { transaction_id: "mh-pending", account_id: "a1", date: "2026-09-18", name: "Massage Heights", merchant_name: "Massage Heights", amount: 59.99, pending: true },
+    ],
+  };
+  importPlaidTransactions([pending]);
+  getDb().prepare("UPDATE transactions SET categoryId = ? WHERE hash = 'mh-pending'").run(CAT);
+  // The next pull carries only the posted version, under a new id.
+  const posted = {
+    accounts: [{ account_id: "a1", name: "Checking" }],
+    transactions: [
+      { transaction_id: "mh-posted", account_id: "a1", date: "2026-09-19", name: "Massage Heights", merchant_name: "Massage Heights", amount: 59.99, pending: false },
+    ],
+  };
+  const res = importPlaidTransactions([posted]);
+  assert.equal(res.inserted, 1);
+  const rows = getDb().prepare("SELECT hash, categoryId FROM transactions WHERE source = 'plaid'").all() as { hash: string; categoryId: number | null }[];
+  assert.deepEqual(rows, [{ hash: "mh-posted", categoryId: CAT }], "one row: the posted charge, with the category the user set while it was pending");
 });
 
 test("mergePreview returns each descriptor's recent charges, newest first", () => {
