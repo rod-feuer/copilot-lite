@@ -37,7 +37,7 @@ export function EmojiPicker({ value, onPick }: { value?: string; onPick: (emoji:
         placeholder="Search or paste an emoji…"
         className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
       />
-      <div className="grid max-h-40 grid-cols-8 gap-0.5 overflow-y-auto">
+      <div className="grid max-h-40 grid-cols-8 gap-1 overflow-y-auto">
         {pasted && tile(pasted, "pasted")}
         {shown.map((e) => tile(e.char, e.char))}
         {!pasted && shown.length === 0 && (

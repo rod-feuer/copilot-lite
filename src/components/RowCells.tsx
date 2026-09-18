@@ -48,7 +48,7 @@ export function CategoryProperty({
   return (
     <span
       data-category-property
-      className={`group/cat relative inline-flex max-w-full items-center gap-1 rounded-lg py-1 pl-1.5 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`}
+      className={`group/cat relative inline-flex max-w-full items-center gap-1 rounded-lg py-1 pl-2 pr-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`}
     >
       <span className={`truncate ${set ? "" : "italic"}`}>{label}</span>
       <svg
@@ -137,7 +137,7 @@ export function AmountCell({
     // sign as two prefixes and may break between them ("−" / "$12,748.12").
     <span data-amount-state={state} className={`inline-flex items-baseline justify-end whitespace-nowrap tabular-nums ${tone} ${className}`}>
       {delta != null && (
-        <span className="mr-1.5 text-[11px] font-medium text-[var(--muted)]">
+        <span className="mr-2 text-[11px] font-medium text-[var(--muted)]">
           {delta > 0 ? "+" : "−"}
           {usd(Math.abs(delta))}
         </span>

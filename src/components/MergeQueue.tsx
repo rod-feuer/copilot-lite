@@ -79,7 +79,7 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
     <div className="card mb-4 p-4">
       <div className="mb-1 flex items-center gap-2">
         <span className="text-[15px] font-semibold">Possible duplicate vendors</span>
-        <span className="rounded-full bg-[var(--muted)]/15 px-2 py-0.5 text-xs text-[var(--muted)]">
+        <span className="rounded-full bg-[var(--muted)]/15 px-2 py-1 text-xs text-[var(--muted)]">
           {merges.length}
         </span>
       </div>
@@ -102,12 +102,12 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-medium">{g.canonical}</span>
                   {g.lowConfidence && (
-                    <span className="rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]">
+                    <span className="rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]">
                       possible match
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 text-xs text-[var(--muted)]">
+                <div className="mt-1 text-xs text-[var(--muted)]">
                   {g.variants.map((v) => `${v.merchant} (${v.count})`).join("  ·  ")}
                 </div>
                 {g.note && (
@@ -152,9 +152,9 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
                         <span className="text-[var(--muted)]">({v.count})</span>
                       </div>
                       {!previews[g.key] ? (
-                        <div className="mt-0.5 text-xs text-[var(--muted)]">Loading…</div>
+                        <div className="mt-1 text-xs text-[var(--muted)]">Loading…</div>
                       ) : txs && txs.length > 0 ? (
-                        <div className="mt-0.5 flex flex-col gap-0.5">
+                        <div className="mt-1 flex flex-col gap-1">
                           {txs.map((t, i) => (
                             <div
                               key={i}
@@ -168,7 +168,7 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
                           ))}
                         </div>
                       ) : (
-                        <div className="mt-0.5 text-xs text-[var(--muted)]">No recent charges.</div>
+                        <div className="mt-1 text-xs text-[var(--muted)]">No recent charges.</div>
                       )}
                     </div>
                   );

@@ -62,7 +62,7 @@ body {
     @apply text-xs font-medium uppercase tracking-wide text-[var(--muted)];
   }
   .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium;
   }
   .nav-link {
     @apply flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--foreground)];
@@ -76,10 +76,10 @@ body {
      shelf. Each class carries its full base — Tailwind v4 can't @apply one
      custom component class inside another. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--hover)];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--hover)];
   }
   .btn-link {
     @apply inline-flex items-center gap-1 text-xs font-medium text-[var(--accent)] hover:underline;
