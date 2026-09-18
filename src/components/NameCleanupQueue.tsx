@@ -110,7 +110,7 @@ export function NameCleanupQueue({ onChange, version = 0 }: { onChange?: () => v
   return (
     <div className="card mb-4 p-4">
       <div className="mb-1 flex items-center gap-2">
-        <span className="text-sm font-semibold">Names to tidy</span>
+        <span className="text-[15px] font-semibold">Names to tidy</span>
         <span className="rounded-full bg-[var(--muted)]/15 px-2 py-0.5 text-xs text-[var(--muted)]">
           {items.length}
         </span>
@@ -127,7 +127,7 @@ export function NameCleanupQueue({ onChange, version = 0 }: { onChange?: () => v
             key={keyOf(s)}
             className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3"
           >
-            <div className="min-w-0 text-sm">
+            <div className="min-w-0 text-[13px]">
               <span className="text-[var(--muted)] line-through">{s.from}</span>
               <span className="mx-1.5 text-[var(--muted)]">→</span>
               <span className="font-medium">{s.to}</span>

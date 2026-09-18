@@ -24,7 +24,7 @@ export default function BottomNav({ signOut = false }: { signOut?: boolean }) {
             key={n.href}
             href={n.href}
             aria-current={active ? "page" : undefined}
-            className={`flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
+            className={`flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition-colors ${
               active ? "text-[var(--accent)]" : "text-[var(--muted)]"
             }`}
           >

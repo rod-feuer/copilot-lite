@@ -11,7 +11,7 @@ export function InlineEdit({
   onCommit,
   label = "Rename",
   className = "",
-  textClassName = "text-sm font-medium",
+  textClassName = "text-[13px] font-medium",
   inputClassName = "",
   cueOnHover = false,
 }: {
@@ -43,7 +43,7 @@ export function InlineEdit({
               carries it for assistive tech. */}
           <span
             aria-hidden
-            className={`shrink-0 text-[10px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)] ${cueOnHover ? "hidden group-hover/n:inline-block group-focus-within/n:inline-block" : ""}`}
+            className={`shrink-0 text-[11px] text-[var(--muted)] transition-colors group-hover/n:text-[var(--foreground)] ${cueOnHover ? "hidden group-hover/n:inline-block group-focus-within/n:inline-block" : ""}`}
           >
             <span className="inline-block -scale-x-100">✎</span>
           </span>

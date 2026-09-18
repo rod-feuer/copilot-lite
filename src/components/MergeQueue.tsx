@@ -78,7 +78,7 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
   return (
     <div className="card mb-4 p-4">
       <div className="mb-1 flex items-center gap-2">
-        <span className="text-sm font-semibold">Possible duplicate vendors</span>
+        <span className="text-[15px] font-semibold">Possible duplicate vendors</span>
         <span className="rounded-full bg-[var(--muted)]/15 px-2 py-0.5 text-xs text-[var(--muted)]">
           {merges.length}
         </span>
@@ -100,7 +100,7 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
                 className="min-w-0 cursor-pointer"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{g.canonical}</span>
+                  <span className="text-[13px] font-medium">{g.canonical}</span>
                   {g.lowConfidence && (
                     <span className="rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]">
                       possible match

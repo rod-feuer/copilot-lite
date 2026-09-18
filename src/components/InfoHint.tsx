@@ -55,7 +55,7 @@ export function InfoHint({ text, label = "What's this?" }: { text: string; label
         onMouseLeave={hide}
         onFocus={show}
         onBlur={hide}
-        className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[9px] font-semibold leading-none text-[var(--muted)] transition-colors hover:border-[var(--muted)] hover:text-[var(--foreground)]"
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[11px] font-semibold leading-none text-[var(--muted)] transition-colors hover:border-[var(--muted)] hover:text-[var(--foreground)]"
       >
         ?
       </button>

@@ -279,8 +279,8 @@ export default function RecurringsPage() {
         <LoadError what="recurring bills" onRetry={boot} />
       ) : recs.length === 0 ? (
         <div className="card p-10 text-center">
-          <div className="mb-2 text-4xl">↻</div>
-          <p className="text-sm text-[var(--muted)]">
+          <div className="mb-2 text-2xl">↻</div>
+          <p className="text-[13px] text-[var(--muted)]">
             No recurring patterns detected yet. Recurrings are found automatically
             from 3+ regular, similar-amount charges — load data or re-scan.
           </p>
@@ -371,13 +371,13 @@ export default function RecurringsPage() {
           />
 
           {!filtering && bills.length === 0 && incomeBills.length === 0 && (
-            <p className="card p-6 text-center text-sm text-[var(--muted)]">
+            <p className="card p-6 text-center text-[13px] text-[var(--muted)]">
               No recurring bills this month.
             </p>
           )}
 
           {noMatches && (
-            <p className="card p-6 text-center text-sm text-[var(--muted)]">
+            <p className="card p-6 text-center text-[13px] text-[var(--muted)]">
               No recurrings match {ql ? `“${q}”` : "this filter"}.
             </p>
           )}
@@ -411,7 +411,7 @@ export default function RecurringsPage() {
                       >
                         <CategoryBadge icon={s.category?.icon} color={s.category?.color} fallback={s.displayName} size="xs" plain />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{s.displayName}</div>
+                          <div className="truncate text-[13px] font-medium">{s.displayName}</div>
                           <div className="text-xs text-[var(--muted)]">
                             {s.reason === "variable"
                               ? `regular ${s.cadence ?? ""} bill · variable amount`
@@ -423,7 +423,7 @@ export default function RecurringsPage() {
                               : ""}
                           </div>
                         </div>
-                        <div className="w-20 text-right text-sm font-semibold tabular-nums text-[var(--muted)]">
+                        <div className="w-20 text-right text-[13px] font-semibold tabular-nums text-[var(--muted)]">
                           {usd(Math.abs(s.avgAmount))}
                         </div>
                         <button
@@ -566,7 +566,7 @@ function BillList({
             {i === dividerAt && showDivider && (
               <div
                 data-bill-anchor="up"
-                className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--hover)]/60 px-4 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]"
+                className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--hover)]/60 px-4 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]"
               >
                 <span className="w-12 shrink-0">Today</span>
                 <span className="tabular-nums">{shortDate(today)}</span>
@@ -614,7 +614,7 @@ function BillList({
                 {r.cadence !== "monthly" && (
                   <span
                     data-cadence
-                    className="shrink-0 rounded-full bg-[var(--border)] px-1.5 text-[10px] font-medium text-[var(--muted)]"
+                    className="shrink-0 rounded-full bg-[var(--border)] px-1.5 text-[11px] font-medium text-[var(--muted)]"
                   >
                     {CADENCE_LABEL[r.cadence]}
                   </span>
@@ -623,7 +623,7 @@ function BillList({
                   <Tooltip
                     label="You marked this subscription ended — it no longer counts as upcoming or expected"
                     onlyIfTruncated={false}
-                    className="inline-flex shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--warn)]"
+                    className="inline-flex shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]"
                   >
                     Ended{r.endedDate ? ` ${shortDate(r.endedDate)}` : ""}
                   </Tooltip>

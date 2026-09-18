@@ -161,7 +161,7 @@ export default function CategoriesPage() {
       {showAddForm && (
       <div className="card mb-5 p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">New category</h3>
+          <h3 className="text-[15px] font-semibold">New category</h3>
           <button
             onClick={() => setShowAddForm(false)}
             className="rounded px-1 text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -179,7 +179,7 @@ export default function CategoriesPage() {
           value={sort}
           onChange={(e) => setSort(e.target.value as typeof sort)}
           aria-label="Sort categories"
-          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-sm"
+          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-[13px]"
         >
           <option value="spent">Most spent</option>
           <option value="pressure">Budget used</option>
@@ -391,7 +391,7 @@ function Group({
       {hint && <p className="mb-2 px-1 text-xs text-[var(--muted)]">{hint}</p>}
       <div className="card divide-y divide-[var(--border)]">
         {cats.length === 0 && (
-          <p className="p-5 text-sm text-[var(--muted)]">No categories.</p>
+          <p className="p-5 text-[13px] text-[var(--muted)]">No categories.</p>
         )}
         {cats.map((c) => {
           const budgeted = onBudget != null && c.budget != null;
@@ -435,7 +435,7 @@ function Group({
                   {/* On mobile the spent+budget cluster drops to its own line
                       (flex-wrap above) rather than wrapping mid-number; each
                       monetary value stays nowrap so figures never split. */}
-                  <span className="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-sm">
+                  <span className="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-[13px]">
                     <span
                       className={`font-semibold tabular-nums ${
                         over
@@ -452,7 +452,7 @@ function Group({
                     {/* Annual budgets read year-to-date, not the viewed month —
                         mark the figure so it isn't mistaken for monthly spend. */}
                     {budgeted && annual && (
-                      <span className="text-[10px] font-medium uppercase text-[var(--muted)]">
+                      <span className="text-[11px] font-medium uppercase text-[var(--muted)]">
                         ytd
                       </span>
                     )}
@@ -563,7 +563,7 @@ function Group({
 // shelf header and recurrings rows. Plain text when not renamable (no onRename,
 // e.g. "Uncategorized").
 function CategoryName({ name, onRename }: { name: string; onRename?: (name: string) => void }) {
-  if (!onRename) return <span className="truncate text-sm font-medium">{name}</span>;
+  if (!onRename) return <span className="truncate text-[13px] font-medium">{name}</span>;
   return (
     <InlineEdit
       value={name}
@@ -608,7 +608,7 @@ function EditableCategoryBadge({
 
   // The editable badge is the shared chip's shape and tint, as a button.
   const badgeClass =
-    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base";
+    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px]";
 
   return (
     // stopPropagation so editing the badge never opens the category shelf (the
@@ -626,7 +626,7 @@ function EditableCategoryBadge({
             on hover. The card background + border keep it legible on any color. */}
         <span
           aria-hidden
-          className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[var(--border)] bg-card text-[8px] leading-none text-[var(--muted)] transition-colors group-hover/badge:text-[var(--foreground)]"
+          className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--border)] bg-card text-[11px] leading-none text-[var(--muted)] transition-colors group-hover/badge:text-[var(--foreground)]"
         >
           <span className="inline-block -scale-x-100">✎</span>
         </span>

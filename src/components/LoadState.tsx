@@ -15,8 +15,8 @@ export function LoadingRows({ rows = 4 }: { rows?: number }) {
 export function LoadError({ what, onRetry }: { what: string; onRetry: () => void }) {
   return (
     <div role="alert" className="card flex flex-col items-center gap-3 p-8 text-center">
-      <p className="text-sm text-[var(--muted)]">Couldn&rsquo;t load {what}.</p>
-      <button type="button" onClick={onRetry} className="btn-ghost text-sm">
+      <p className="text-[13px] text-[var(--muted)]">Couldn&rsquo;t load {what}.</p>
+      <button type="button" onClick={onRetry} className="btn-ghost text-[13px]">
         Retry
       </button>
     </div>

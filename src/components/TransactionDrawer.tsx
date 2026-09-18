@@ -626,7 +626,7 @@ function EditableName({
   return (
     <InlineEdit
       value={value}
-      textClassName="text-sm font-semibold"
+      textClassName="text-[15px] font-semibold"
       onCommit={(raw) => {
         const v = raw.trim();
         const next = v && v !== underlying ? v : null; // editing back to the bank name = clear
@@ -658,7 +658,7 @@ function MerchantHeader({
           onSave={onRename}
         />
       ) : (
-        <div className="truncate text-sm font-semibold">{merchant}</div>
+        <div className="truncate text-[15px] font-semibold">{merchant}</div>
       )}
       {/* The descriptor only when a name makes it differ from the title; a
           plan says what a plan shelf needs to say — that the vendor has more. */}
@@ -773,10 +773,10 @@ function MembershipPill({
 }
 
 function ChargeHeader({ data }: { data: ChargeDetail | null }) {
-  if (!data) return <div className="truncate text-sm font-semibold">…</div>;
+  if (!data) return <div className="truncate text-[15px] font-semibold">…</div>;
   return (
     <>
-      <div className="truncate text-sm font-semibold">{data.displayName}</div>
+      <div className="truncate text-[15px] font-semibold">{data.displayName}</div>
       {data.displayName !== data.merchant && (
         <div className="truncate text-[11px] text-[var(--muted)]">{data.merchant}</div>
       )}
@@ -1026,7 +1026,7 @@ function SplitDialog({
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose} role="dialog" aria-label="Split transaction">
       <div className="card w-full max-w-md p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-1 text-sm font-semibold">Split transaction</div>
+        <div className="mb-1 text-[15px] font-semibold">Split transaction</div>
         <div className="mb-3 text-xs text-[var(--muted)]">
           {tx.displayName} · {usd(tx.amount, { sign: true })}
         </div>
@@ -1102,7 +1102,7 @@ function CategoryHeader({ data, month }: { data: CatSummary | null; month: strin
   });
   return (
     <>
-      <div className="truncate text-sm font-semibold">
+      <div className="truncate text-[15px] font-semibold">
         {data ? `${data.icon} ${data.name}` : "…"}
       </div>
       {data && (
@@ -1492,7 +1492,7 @@ function MerchantBody({
           <Tooltip
             label="Marked ended — no longer counts as upcoming or expected"
             onlyIfTruncated={false}
-            className="inline-flex self-start rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--warn)]"
+            className="inline-flex self-start rounded-full bg-[var(--warn)]/15 px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]"
           >
             Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
           </Tooltip>
@@ -1965,7 +1965,7 @@ function CombineControl({
                 onChange={() => setChoice(opt.key)}
               />
               <span className="min-w-0 truncate">{opt.label}</span>
-              {opt.cleaner && <span className="shrink-0 text-[10px] text-[var(--accent)]">recommended</span>}
+              {opt.cleaner && <span className="shrink-0 text-[11px] text-[var(--accent)]">recommended</span>}
             </label>
           ))}
           <label className="flex items-center gap-2">
@@ -2068,7 +2068,7 @@ function MatchCorrection({
     if (!complete(m, t)) return; // wait for the text
     onSave({ matchMode: m as "exact" | "contains", matchText: m === "contains" ? t.trim() : null, amountTolerance: tl === "any" ? null : Number(tl) });
   };
-  const sel = "btn-ghost select-caret cursor-pointer appearance-none pr-8 text-sm";
+  const sel = "btn-ghost select-caret cursor-pointer appearance-none pr-8 text-[13px]";
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
@@ -2091,7 +2091,7 @@ function MatchCorrection({
             onBlur={() => save(mode, text, tol)}
             onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             placeholder="text in the description"
-            className="btn-ghost min-w-0 flex-1 text-sm"
+            className="btn-ghost min-w-0 flex-1 text-[13px]"
           />
         )}
         {mode && (
