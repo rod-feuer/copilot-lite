@@ -14,7 +14,7 @@ export function HeaderMenu({ children }: { children: React.ReactNode }) {
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="btn-ghost px-3 py-1.5 text-base leading-none"
+        className="btn-ghost px-3 py-1.5 text-[15px] leading-none"
       >
         ⋯
       </button>

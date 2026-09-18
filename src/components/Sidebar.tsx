@@ -79,7 +79,7 @@ export default function Sidebar({ signOut = false }: { signOut?: boolean }) {
   return (
     <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] bg-card px-3 py-5 sm:flex">
       <div className="mb-6 flex items-center gap-2 px-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-sm font-bold text-white">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-[13px] font-bold text-white">
           C
         </div>
         <div className="text-[15px] font-semibold tracking-tight">Copilot Lite</div>

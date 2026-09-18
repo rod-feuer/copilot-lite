@@ -28,7 +28,7 @@ export default function ThemeToggle() {
 
   return (
     <button onClick={toggle} className="nav-link w-full" aria-label="Toggle theme">
-      <span className="text-base">{theme === "dark" ? "☀️" : "🌙"}</span>
+      <span className="text-[15px]">{theme === "dark" ? "☀️" : "🌙"}</span>
       <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
     </button>
   );

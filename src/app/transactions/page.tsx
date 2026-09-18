@@ -628,7 +628,7 @@ export default function TransactionsPage() {
                         setAdded((a) => [...a, f.id]);
                         setMenuOpen(false);
                       }}
-                      className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)]"
+                      className="block w-full rounded-lg px-3 py-1.5 text-left text-[13px] hover:bg-[var(--hover)]"
                     >
                       {f.label}
                     </button>
@@ -646,7 +646,7 @@ export default function TransactionsPage() {
             setSort(s);
             setDir(d);
           }}
-          className="btn-ghost select-caret hidden cursor-pointer appearance-none pr-8 text-sm sm:ml-auto sm:block"
+          className="btn-ghost select-caret hidden cursor-pointer appearance-none pr-8 text-[13px] sm:ml-auto sm:block"
         >
           <option value="date-desc">Newest</option>
           <option value="date-asc">Oldest</option>
@@ -668,7 +668,7 @@ export default function TransactionsPage() {
             <LoadError what="transactions" onRetry={() => setRefreshKey((k) => k + 1)} />
           </div>
         ) : txs.length === 0 ? (
-          <p className="p-8 text-center text-sm text-[var(--muted)]">
+          <p className="p-8 text-center text-[13px] text-[var(--muted)]">
             No transactions match.
           </p>
         ) : (
@@ -677,7 +677,7 @@ export default function TransactionsPage() {
               <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
                 <CategoryBadge icon={modal.categoryIcon} color={modal.categoryColor} size="md" fallback={modal.displayName} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">{modal.displayName}</div>
+                  <div className="truncate text-[15px] font-semibold">{modal.displayName}</div>
                   <div className="truncate text-xs text-[var(--muted)]">
                     {modal.count} transaction{modal.count === 1 ? "" : "s"} ·{" "}
                     {modal.categoryName ?? "Uncategorized"}
@@ -685,10 +685,10 @@ export default function TransactionsPage() {
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-sm font-semibold tabular-nums">
+                  <div className="text-[13px] font-semibold tabular-nums">
                     {usd(modal.total, { sign: true })}
                   </div>
-                  <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                  <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
                     total
                   </div>
                 </div>
@@ -825,7 +825,7 @@ function MobileSortFilter({
                   onSort(s, d);
                   setOpen(false);
                 }}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)]"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-[13px] hover:bg-[var(--hover)]"
               >
                 {label}
                 {value === v && <span className="text-[var(--accent)]">✓</span>}
@@ -845,7 +845,7 @@ function MobileSortFilter({
                       onAddFilter(f.id);
                       setOpen(false);
                     }}
-                    className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)]"
+                    className="block w-full rounded-lg px-3 py-1.5 text-left text-[13px] hover:bg-[var(--hover)]"
                   >
                     {f.label}
                   </button>
@@ -925,11 +925,11 @@ const TxRow = memo(function TxRow({
                       <div className="flex items-center gap-2 leading-5">
                         <span className="whitespace-nowrap text-[13px] font-medium">{longDate(t.effectiveDate ?? t.date)}</span>
                         {t.splitParts > 0 ? (
-                          <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                          <span className="pill shrink-0 bg-[var(--background)] text-[11px] text-[var(--muted)]">
                             split · {t.splitParts} parts
                           </span>
                         ) : t.excluded ? (
-                          <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                          <span className="pill shrink-0 bg-[var(--background)] text-[11px] text-[var(--muted)]">
                             excluded
                           </span>
                         ) : null}
@@ -969,11 +969,11 @@ const TxRow = memo(function TxRow({
                       </Tooltip>
                     )}
                     {t.splitParts > 0 ? (
-                      <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                      <span className="pill shrink-0 bg-[var(--background)] text-[11px] text-[var(--muted)]">
                         split · {t.splitParts} parts
                       </span>
                     ) : t.excluded ? (
-                      <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
+                      <span className="pill shrink-0 bg-[var(--background)] text-[11px] text-[var(--muted)]">
                         excluded
                       </span>
                     ) : null}

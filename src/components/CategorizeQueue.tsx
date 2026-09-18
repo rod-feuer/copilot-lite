@@ -135,7 +135,7 @@ export function CategorizeQueue({
   return (
     <div className="card mb-4 p-4">
       <div className="mb-1 flex items-center gap-2">
-        <span className="text-sm font-semibold">Suggested categories</span>
+        <span className="text-[15px] font-semibold">Suggested categories</span>
         {items.length > 0 && (
           <span className="rounded-full bg-[var(--muted)]/15 px-2 py-0.5 text-xs text-[var(--muted)]">
             {items.length}
@@ -247,12 +247,12 @@ export function CategorizeQueue({
 function SourceTag({ source }: { source: CategorySuggestion["source"] }) {
   if (source === "ai")
     return (
-      <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-1.5 text-[10px] font-medium text-[var(--accent)]">
+      <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-1.5 text-[11px] font-medium text-[var(--accent)]">
         AI
       </span>
     );
   return (
-    <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+    <span className="shrink-0 text-[11px] uppercase tracking-wide text-[var(--muted)]">
       {source === "history" ? "history" : "rule"}
     </span>
   );

@@ -15,8 +15,8 @@ export function categoryIconOrNull(icon: string | null | undefined): string | nu
 }
 
 const SIZE = {
-  xs: "h-5 w-5 text-sm", // dense rows: the glyph alone, no tint (see `plain`)
-  sm: "h-9 w-9 text-base", // list rows
+  xs: "h-5 w-5 text-[13px]", // dense rows: the glyph alone, no tint (see `plain`)
+  sm: "h-9 w-9 text-[15px]", // list rows
   md: "h-10 w-10 text-lg", // statement / shelf headers
 };
 
@@ -43,7 +43,7 @@ export function CategoryBadge({
       style={plain ? undefined : { background: categoryTint(color) }}
     >
       {glyph ?? (
-        <span className="text-sm font-semibold text-[var(--muted)]">
+        <span className="text-[13px] font-semibold text-[var(--muted)]">
           {fallback?.trim() ? fallback.trim().slice(0, 1).toUpperCase() : "•"}
         </span>
       )}

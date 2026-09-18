@@ -106,10 +106,10 @@ export default function DashboardPage() {
     return (
       <Shell title="Dashboard" subtitle="No data yet">
         <div className="card flex flex-col items-center gap-4 p-12 text-center">
-          <div className="text-5xl">📊</div>
+          <div className="text-2xl">📊</div>
           <div>
             <h2 className="text-lg font-semibold">Nothing here yet</h2>
-            <p className="mt-1 max-w-sm text-sm text-[var(--muted)]">
+            <p className="mt-1 max-w-sm text-[13px] text-[var(--muted)]">
               Load realistic sample data to explore the app, or import a CSV export
               from your bank or Copilot.
             </p>
@@ -236,7 +236,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
             <div className="card flex flex-col p-5 lg:col-span-3">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Spending this month</h3>
+                <h3 className="text-[15px] font-semibold">Spending this month</h3>
                 {/* The projected figure lives once, in the footer strip below; the
                     header carries the trend the chart implies but never states — how
                     this month's projection compares to last month's full total. */}
@@ -333,7 +333,7 @@ export default function DashboardPage() {
 
             <div className="card p-5 lg:col-span-2">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Spending by category</h3>
+                <h3 className="text-[15px] font-semibold">Spending by category</h3>
                 <SeeAll href="/categories" />
               </div>
               {data.budget && (
@@ -350,7 +350,7 @@ export default function DashboardPage() {
           {data.upcoming.count > 0 && (
             <div className="card p-5">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold">
+                <h3 className="text-[15px] font-semibold">
                   Upcoming bills · next {data.upcoming.windowDays} days
                 </h3>
                 <SeeAll href="/recurrings" />
@@ -370,13 +370,13 @@ export default function DashboardPage() {
                       <CategoryBadge icon={u.categoryIcon} color={u.categoryColor} fallback={u.name} />
                       <div className="min-w-0 flex-1">
                         {/* Beside its amount, a series keyed by amount needn't repeat it. */}
-                        <div className="truncate text-sm font-medium">{withoutAmountQualifier(u.name)}</div>
+                        <div className="truncate text-[13px] font-medium">{withoutAmountQualifier(u.name)}</div>
                         <div className="text-xs text-[var(--muted)]">
                           {shortDate(u.nextDate)}
                           {u.categoryName ? ` · ${u.categoryName}` : ""}
                         </div>
                       </div>
-                      <div className="text-sm font-semibold tabular-nums">
+                      <div className="text-[13px] font-semibold tabular-nums">
                         {usd(u.amount, { sign: true })}
                       </div>
                       <DrillChevron />
@@ -399,7 +399,7 @@ export default function DashboardPage() {
 
           <div className="card p-5">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Recent activity</h3>
+              <h3 className="text-[15px] font-semibold">Recent activity</h3>
               <SeeAll href={`/transactions${month ? `?month=${month}` : ""}`} />
             </div>
             <ul className="divide-y divide-[var(--border)]">
@@ -417,7 +417,7 @@ export default function DashboardPage() {
                     <CategoryBadge icon={t.categoryIcon} color={t.categoryColor} fallback={t.displayName} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium">{t.displayName}</span>
+                        <span className="truncate text-[13px] font-medium">{t.displayName}</span>
                         {recurringState(t) !== "none" && (
                           <HoverTip label={RECURRING_LABEL[recurringState(t)]} onlyIfTruncated={false} className="shrink-0 text-xs">
                             <RecurringGlyph state={recurringState(t)} />
@@ -431,7 +431,7 @@ export default function DashboardPage() {
                     <Money
                       value={t.amount}
                       excluded={!!t.categoryExcluded}
-                      className="text-sm font-semibold"
+                      className="text-[13px] font-semibold"
                     />
                     <DrillChevron />
                   </button>
@@ -497,7 +497,7 @@ function PaceStrip({ pace, spent }: { pace: Dash["pace"]; spent: number }) {
     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 sm:grid-cols-4">
       {items.map((it) => (
         <div key={it.label}>
-          <div className="text-sm font-semibold tabular-nums">{it.value}</div>
+          <div className="text-[13px] font-semibold tabular-nums">{it.value}</div>
           <div className="stat-label">{it.label}</div>
         </div>
       ))}
@@ -817,7 +817,7 @@ function CategoryBars({
   const openCategory = useCategoryShelf();
   const shelfActive = useShelfActive();
   if (rows.length === 0)
-    return <p className="text-sm text-[var(--muted)]">No spending this month.</p>;
+    return <p className="text-[13px] text-[var(--muted)]">No spending this month.</p>;
   // Scale to the largest of spend, budget, or recurring baseline across rows so
   // over-budget bars and the recurring marker all land in range.
   const max = Math.max(
@@ -836,7 +836,7 @@ function CategoryBars({
         }`;
         const body = (
           <>
-            <div className="mb-1 flex items-center justify-between text-sm">
+            <div className="mb-1 flex items-center justify-between text-[13px]">
               <span className="flex items-center gap-2">
                 <span>{r.icon}</span>
                 <span className="font-medium">{r.name}</span>
@@ -942,7 +942,7 @@ function BudgetSummary({
     unbudgeted >= 250 || (totalExpenses > 0 && unbudgeted / totalExpenses >= 0.02);
   return (
     <div className="mb-4 rounded-xl bg-[var(--background)] p-3">
-      <div className="flex items-center justify-between text-sm">
+      <div className="flex items-center justify-between text-[13px]">
         <span className="font-medium">Budgeted spend</span>
         <span>
           <span className={overNow ? "font-semibold text-[var(--bad)]" : "font-semibold"}>
