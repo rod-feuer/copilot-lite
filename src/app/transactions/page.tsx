@@ -909,8 +909,8 @@ const TxRow = memo(function TxRow({
                 // scrolled off-screen — virtualizing the render without unmounting
                 // (so Cmd-F, scroll position, and a11y still work). The intrinsic
                 // size is an estimate that keeps the scrollbar stable.
-                style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}
-                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-3 pl-4 pr-3 sm:flex-nowrap sm:items-center sm:gap-3 sm:pr-4 ${ROW_FOCUS} ${
+                style={{ contentVisibility: "auto", containIntrinsicSize: "auto 52px" }}
+                className={`group flex cursor-pointer flex-wrap items-start gap-x-2 gap-y-2 py-2 pl-4 pr-4 sm:flex-nowrap sm:items-center sm:gap-3 ${ROW_FOCUS} ${
                   isShelfActive
                     ? "bg-[var(--accent)]/10"
                     : "hover:bg-[var(--hover)]"
@@ -922,7 +922,7 @@ const TxRow = memo(function TxRow({
                 <div className="min-w-0 flex-1">
                   {modal ? (
                     <>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 leading-5">
                         <span className="whitespace-nowrap text-[13px] font-medium">{longDate(t.effectiveDate ?? t.date)}</span>
                         {t.splitParts > 0 ? (
                           <span className="pill shrink-0 bg-[var(--background)] text-[10px] text-[var(--muted)]">
@@ -937,7 +937,7 @@ const TxRow = memo(function TxRow({
                       {/* Mobile: the category chip belongs in the subtitle here too —
                           the desktop pill is hidden on small screens, and suppressed
                           when the row matches the vendor's category. */}
-                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs leading-4 text-[var(--muted)]">
                         <CategoryProperty
                           categoryId={t.categoryId}
                           categoryName={t.categoryName}
@@ -959,7 +959,7 @@ const TxRow = memo(function TxRow({
                     </>
                   ) : (
                     <>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 leading-5">
                     <span className="truncate text-[13px] font-medium">{t.displayName}</span>
                     {/* Passive recurring marker — glanceable state; the toggle
                         lives in the charge's shelf. */}
@@ -978,7 +978,7 @@ const TxRow = memo(function TxRow({
                       </span>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--muted)]">
+                  <div className="flex flex-wrap items-center gap-x-1.5 text-xs leading-4 text-[var(--muted)]">
                     {/* Mobile: the category as a compact chip inline in the
                         subtitle (denser than a full-width pill row). Desktop uses
                         the right-side pill above. */}
