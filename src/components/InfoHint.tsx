@@ -69,7 +69,7 @@ export function InfoHint({ text, label = "What's this?" }: { text: string; label
               left: Math.min(rect.left, window.innerWidth - 268),
               top: rect.bottom + 6,
             }}
-            className="pointer-events-none fixed z-[100] max-w-[16rem] rounded-md bg-[var(--foreground)] px-2.5 py-1.5 text-xs leading-snug text-[var(--background)] shadow-lg"
+            className="pointer-events-none fixed z-[100] max-w-[16rem] rounded-lg bg-[var(--foreground)] px-2.5 py-1.5 text-xs leading-snug text-[var(--background)] shadow-lg"
           >
             {text}
           </div>,

@@ -6,7 +6,7 @@ export function LoadingRows({ rows = 4 }: { rows?: number }) {
   return (
     <div className="card space-y-3 p-4" aria-busy="true" aria-label="Loading">
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="h-9 animate-pulse rounded-xl bg-[var(--background)]" />
+        <div key={i} className="h-9 animate-pulse rounded-lg bg-[var(--background)]" />
       ))}
     </div>
   );

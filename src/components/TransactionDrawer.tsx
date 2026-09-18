@@ -472,7 +472,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
           <aside
             data-shelf
             ref={asideRef}
-            // Bottom sheet on mobile (slides up, capped height, rounded top);
+            // Bottom sheet on mobile (slides up, capped height, round top corners);
             // right-side panel on desktop (sm:+) exactly as before.
             className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88vh] flex-col rounded-t-2xl border-t border-[var(--border)] bg-card shadow-2xl sm:inset-x-auto sm:right-0 sm:top-0 sm:bottom-auto sm:h-full sm:max-h-none sm:w-full sm:max-w-sm sm:rounded-none sm:border-t-0 sm:border-l"
           >
@@ -506,7 +506,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             </div>
             <button
               onClick={close}
-              className="shrink-0 rounded-md px-2 py-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
+              className="shrink-0 rounded-lg px-2 py-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
               aria-label="Close"
             >
               ✕
@@ -527,9 +527,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               />
             ) : loading ? (
               <div className="space-y-2">
-                <div className="h-16 animate-pulse rounded-xl bg-[var(--background)]" />
-                <div className="h-9 animate-pulse rounded-xl bg-[var(--background)]" />
-                <div className="h-40 animate-pulse rounded-xl bg-[var(--background)]" />
+                <div className="h-16 animate-pulse rounded-lg bg-[var(--background)]" />
+                <div className="h-9 animate-pulse rounded-lg bg-[var(--background)]" />
+                <div className="h-40 animate-pulse rounded-lg bg-[var(--background)]" />
               </div>
             ) : target.kind === "merchant" && mData ? (
               <MerchantBody
@@ -709,7 +709,7 @@ function MerchantHeader({
                 >
                   <button
                     onClick={() => onUnlink(n.name)}
-                    className="rounded px-1 text-[var(--muted)] hover:text-[var(--bad)]"
+                    className="rounded-lg px-1 text-[var(--muted)] hover:text-[var(--bad)]"
                   >
                     ✕
                   </button>
@@ -1060,7 +1060,7 @@ function SplitDialog({
                 className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               />
               {parts.length > 2 ? (
-                <button onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove part" className="rounded px-1 text-[var(--muted)] hover:text-[var(--foreground)]">
+                <button onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove part" className="rounded-lg px-1 text-[var(--muted)] hover:text-[var(--foreground)]">
                   ✕
                 </button>
               ) : (
@@ -1623,7 +1623,7 @@ function CategoryBody({
       {data.upcoming.length > 0 && (
         <div>
           <div className="stat-label mb-1.5">Upcoming this month</div>
-          <ul className="divide-y divide-[var(--border)] rounded-xl border border-dashed border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)] rounded-lg border border-dashed border-[var(--border)]">
             {data.upcoming.map((u) => (
               <ShelfRow
                 key={u.merchant}
@@ -1651,11 +1651,11 @@ function CategoryBody({
       <div>
         <div className="stat-label mb-1.5">Transactions</div>
         {data.transactions.length === 0 ? (
-          <p className="rounded-xl border border-[var(--border)] p-4 text-center text-xs text-[var(--muted)]">
+          <p className="rounded-lg border border-[var(--border)] p-4 text-center text-xs text-[var(--muted)]">
             No transactions this month.
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
             {data.transactions.map((t) => (
               <ShelfRow
                 key={t.id}
@@ -1902,7 +1902,7 @@ function CombineControl({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 text-xs">
+    <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-xs">
       {!other ? (
         <>
           <div className="relative">
@@ -2115,7 +2115,7 @@ function MatchCorrection({
 // keyboard, caret visible. The same pattern the recurrings row uses.
 function CaptionSelect({ label, tag, className = "", children, ...select }: { label: string; tag?: ReactNode; className?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <span className={`relative inline-flex max-w-[11rem] items-center gap-0.5 rounded-md py-0.5 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>
+    <span className={`relative inline-flex max-w-[11rem] items-center gap-0.5 rounded-lg py-0.5 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>
       <span className="truncate">{label}</span>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
         <path d="M6 9l6 6 6-6" />

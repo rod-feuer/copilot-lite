@@ -164,7 +164,7 @@ export default function CategoriesPage() {
           <h3 className="text-[15px] font-semibold">New category</h3>
           <button
             onClick={() => setShowAddForm(false)}
-            className="rounded px-1 text-[var(--muted)] hover:text-[var(--foreground)]"
+            className="rounded-lg px-1 text-[var(--muted)] hover:text-[var(--foreground)]"
             aria-label="Close"
           >
             ✕
@@ -489,7 +489,7 @@ function Group({
                           label={`${usd(recur, { cents: false })} recurring${annual ? "/yr" : ""}`}
                           onlyIfTruncated={false}
                         >
-                          <span className="block h-2 w-0.5 rounded bg-[var(--foreground)]/40" />
+                          <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)]/40" />
                         </Tooltip>
                       </div>
                     )}
@@ -633,7 +633,7 @@ function EditableCategoryBadge({
         </button>
       </Tooltip>
       {open && (
-        <div className="absolute left-0 top-11 z-20 w-64 rounded-xl border border-[var(--border)] bg-card p-3 shadow-lg">
+        <div className="absolute left-0 top-11 z-20 w-64 rounded-lg border border-[var(--border)] bg-card p-3 shadow-lg">
           <EmojiPicker value={icon} onPick={(e) => onSave({ icon: e })} />
           <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-[var(--border)] pt-2.5">
             {PALETTE.map((p) => (
@@ -742,7 +742,7 @@ function BudgetInput({
           placeholder="—"
           inputMode="decimal"
           aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
-          className="rounded bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+          className="rounded-lg bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
         />
       </Tooltip>
       <Tooltip
@@ -751,7 +751,7 @@ function BudgetInput({
       >
         <button
           onClick={togglePeriod}
-          className="rounded px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
+          className="rounded-lg px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
         >
           {unit}
         </button>
@@ -772,7 +772,7 @@ function BudgetInput({
                   e.stopPropagation();
                   onSave(sug, period);
                 }}
-                className="whitespace-nowrap rounded-md bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                className="whitespace-nowrap rounded-lg bg-[var(--accent)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
               >
                 Use {usd(sug, { cents: false })}
               </button>

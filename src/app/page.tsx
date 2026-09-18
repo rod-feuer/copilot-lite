@@ -892,7 +892,7 @@ function CategoryBars({
                     onlyIfTruncated={false}
                     className="flex h-2 w-2 cursor-help justify-center"
                   >
-                    <span className="block h-2 w-0.5 rounded bg-[var(--foreground)]/40" />
+                    <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)]/40" />
                   </HoverTip>
                 </div>
               )}
@@ -941,7 +941,7 @@ function BudgetSummary({
   const unbudgetedMatters =
     unbudgeted >= 250 || (totalExpenses > 0 && unbudgeted / totalExpenses >= 0.02);
   return (
-    <div className="mb-4 rounded-xl bg-[var(--background)] p-3">
+    <div className="mb-4 rounded-lg bg-[var(--background)] p-3">
       <div className="flex items-center justify-between text-[13px]">
         <span className="font-medium">Budgeted spend</span>
         <span>

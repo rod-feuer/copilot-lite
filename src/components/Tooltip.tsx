@@ -52,7 +52,7 @@ export function Tooltip({
               <div
                 role="tooltip"
                 style={{ left: rect.left, top: above ? rect.top - 6 : rect.bottom + 6 }}
-                className={`pointer-events-none fixed z-[100] max-w-xs rounded-md bg-[var(--foreground)] px-2 py-1 text-xs text-[var(--background)] shadow-lg ${
+                className={`pointer-events-none fixed z-[100] max-w-xs rounded-lg bg-[var(--foreground)] px-2 py-1 text-xs text-[var(--background)] shadow-lg ${
                   above ? "-translate-y-full" : ""
                 }`}
               >
