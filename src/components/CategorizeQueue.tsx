@@ -28,6 +28,7 @@ export function CategorizeQueue({
   const [items, setItems] = useState<Proposal[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [needsModel, setNeedsModel] = useState(0);
+  const [dismissedCount, setDismissedCount] = useState(0);
   const [modelEnabled, setModelEnabled] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const toast = useToast();
@@ -40,6 +41,7 @@ export function CategorizeQueue({
     setItems(d.suggestions);
     setCats(cs);
     setNeedsModel(d.needsModelCount);
+    setDismissedCount(d.dismissedCount ?? 0);
     setModelEnabled(d.modelEnabled);
   }, []);
   // Redirect a proposal: the row keeps the vendor, takes the chosen category,
@@ -82,6 +84,16 @@ export function CategorizeQueue({
     );
   }
 
+  // Dismissed vendors come back into the queue; the count line says how
+  // many are waiting, so a Dismiss is never a silent, permanent hide.
+  async function undismissAll() {
+    await mutate(
+      () => postJson("/api/category-suggestions", { action: "undismissAll" }),
+      { success: "Dismissed vendors are back in the queue", error: "Couldn't bring them back — please try again" },
+      { refresh: "always" }
+    );
+  }
+
   async function applyAll() {
     setBusy("__all");
     const batch = items.map((s) => ({ merchant: s.merchant, categoryId: s.categoryId }));
@@ -119,7 +131,7 @@ export function CategorizeQueue({
     setBusy(null);
   }
 
-  if (items.length === 0 && needsModel === 0) return null;
+  if (items.length === 0 && needsModel === 0 && dismissedCount === 0) return null;
 
   return (
     <div className="card mb-4 p-4">
@@ -207,6 +219,14 @@ export function CategorizeQueue({
                 <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
                   Show all uncategorized →
                 </button>
+              )}
+              {dismissedCount > 0 && (
+                <span data-dismissed>
+                  · {dismissedCount} dismissed{" "}
+                  <button onClick={undismissAll} className="btn-link">
+                    Bring them back →
+                  </button>
+                </span>
               )}
             </>
           ) : (
