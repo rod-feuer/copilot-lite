@@ -86,8 +86,8 @@ async function loadFixture() {
     // Two vendors no rule knows, so they land uncategorized: the Uncategorized
     // filter, the queue's "Show all uncategorized", and "categorize → the row
     // leaves" have real rows to act on.
-    [day(0, 7), "Zylo Widget Works", "-31.00", "Credit"],
-    [day(0, 8), "Quorra Bakehouse", "-12.40", "Credit"],
+    [day(-1, 7), "Zylo Widget Works", "-31.00", "Credit"],
+    [day(-1, 8), "Quorra Bakehouse", "-12.40", "Credit"],
   ];
   const csv = rows.map((r) => r.join(",")).join("\n");
   const imp = await (await fetch(BASE + "/api/import", { method: "POST", body: csv })).json();
@@ -100,11 +100,11 @@ async function loadFixture() {
   {
     const first = await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=5")).json();
     if ((first.rows ?? []).length === 0) {
-      const csv2 = [["Date", "Name", "Amount", "Account"], [day(-2, 9), "Pinewood Hardware", "-40.00", "Credit"], [day(-1, 9), "Pinewood Hardware", "-22.00", "Credit"]].map((r) => r.join(",")).join("\n");
+      const csv2 = [["Date", "Name", "Amount", "Account"], [day(-3, 9), "Pinewood Hardware", "-40.00", "Credit"], [day(-2, 9), "Pinewood Hardware", "-22.00", "Credit"]].map((r) => r.join(",")).join("\n");
       await fetch(BASE + "/api/import", { method: "POST", body: csv2 });
       const rows = (await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=5")).json()).rows ?? [];
       for (const r of rows) await fetch(`${BASE}/api/transactions/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: groceries?.id ?? null }) });
-      const csv3 = [["Date", "Name", "Amount", "Account"], [day(0, 9), "Pinewood Hardware", "-35.00", "Credit"]].map((r) => r.join(",")).join("\n");
+      const csv3 = [["Date", "Name", "Amount", "Account"], [day(-1, 9), "Pinewood Hardware", "-35.00", "Credit"]].map((r) => r.join(",")).join("\n");
       await fetch(BASE + "/api/import", { method: "POST", body: csv3 });
     }
   }
@@ -393,16 +393,17 @@ async function statementMode(browser) {
       // Under an Uncategorized filter, categorizing a row makes it leave the
       // list (the page re-reads and reconciles), and the count follows.
       if (mode === "normal") {
-        await page.click("button::-p-text(+ Filter)").catch(() => {});
-        await page.click("button::-p-text(Category)").catch(() => {});
-        await sleep(300);
-        const applied = await page.evaluate(() => { const s = [...document.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.value === "none")); if (!s) return false; s.value = "none"; s.dispatchEvent(new Event("change", { bubbles: true })); return true; });
-        await page.waitForNetworkIdle({ idleTime: 400, timeout: 8000 }).catch(() => {});
+        const link = await page.$("[data-show-uncategorized]");
+        if (link) { await link.click(); await page.waitForNetworkIdle({ idleTime: 400, timeout: 8000 }).catch(() => {}); }
+        const applied = !!link;
         const before = await page.$$eval("[data-drawer-row]", (r) => r.length);
         if (applied && before > 0) {
+          // The row's option list mounts on focus (long lists stay light at rest).
+          await page.evaluate(() => document.querySelector("[data-drawer-row] [data-category-property] select").focus());
+          await sleep(150);
           await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] [data-category-property] select"); const opt = [...s.options].find((o) => o.value && o.value !== "none"); s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); });
           await page.waitForFunction((n) => document.querySelectorAll("[data-drawer-row]").length < n, { timeout: 10000 }, before).then(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, `${before} → ${before - 1} rows`)).catch(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, `still ${before} rows`));
-        } else record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, applied ? "no uncategorized rows in the fixture" : "no category filter");
+        } else record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, applied ? "no uncategorized rows in the fixture" : "no queue link");
         await page.goto(BASE + url, { waitUntil: "networkidle2" });
       }
       // A proposal's category can be changed in place before it is applied.
