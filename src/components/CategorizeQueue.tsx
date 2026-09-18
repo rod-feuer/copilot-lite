@@ -5,7 +5,13 @@ import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
+import { CategoryProperty } from "@/components/RowCells";
 import type { CategorySuggestion } from "@/lib/categorizeSuggest";
+import type { Category } from "@/lib/types";
+
+// A proposal the user may have redirected: the category to apply is the
+// row's current choice, and a redirected one says so.
+type Proposal = CategorySuggestion & { edited?: boolean };
 
 // "Suggested categories" — reviewable proposals for uncategorized vendors instead
 // of a blind Auto-categorize button. Rules/history load free; the model's guesses
@@ -19,18 +25,31 @@ export function CategorizeQueue({
   onChange?: () => void;
   onShowUncategorized?: () => void; // filter the list below to the uncategorized charges
 }) {
-  const [items, setItems] = useState<CategorySuggestion[]>([]);
+  const [items, setItems] = useState<Proposal[]>([]);
+  const [cats, setCats] = useState<Category[]>([]);
   const [needsModel, setNeedsModel] = useState(0);
   const [modelEnabled, setModelEnabled] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const toast = useToast();
 
   const load = useCallback(async () => {
-    const d = await fetch("/api/category-suggestions").then((r) => r.json());
+    const [d, cs] = await Promise.all([
+      fetch("/api/category-suggestions").then((r) => r.json()),
+      fetch("/api/categories").then((r) => r.json()),
+    ]);
     setItems(d.suggestions);
+    setCats(cs);
     setNeedsModel(d.needsModelCount);
     setModelEnabled(d.modelEnabled);
   }, []);
+  // Redirect a proposal: the row keeps the vendor, takes the chosen category,
+  // and Apply (or Apply all) commits that choice. Uncategorized is not a
+  // choice here — that is Dismiss.
+  function redirect(merchant: string, categoryId: number | null) {
+    const c = cats.find((x) => x.id === categoryId);
+    if (!c) return;
+    setItems((a) => a.map((x) => (x.merchant === merchant ? { ...x, categoryId: c.id, categoryName: c.name, categoryIcon: c.icon, edited: true } : x)));
+  }
   const mutate = useMutation(load);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -126,16 +145,30 @@ export function CategorizeQueue({
           {items.map((s) => (
             <li
               key={s.merchant}
-              className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3"
+              data-suggestion
+              className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] p-3"
             >
-              <div className="flex min-w-0 items-center gap-2 text-sm">
+              {/* The proposed category is the quiet property, so it can be
+                  changed in place before it is applied — not only taken or
+                  left. A redirected proposal wears the edited tag. */}
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
                 <span className="truncate font-medium">{s.merchant}</span>
                 <span className="text-[var(--muted)]">→</span>
-                <span className="shrink-0">
-                  {s.categoryIcon} {s.categoryName}
-                </span>
+                <CategoryProperty
+                  categoryId={s.categoryId}
+                  categoryName={s.categoryName}
+                  categoryIcon={s.categoryIcon}
+                  cats={cats}
+                  onChange={(id) => redirect(s.merchant, id)}
+                  ariaLabel={`Category for ${s.merchant}`}
+                  className="-ml-1.5"
+                />
                 <span className="shrink-0 text-xs text-[var(--muted)]">({s.count})</span>
-                <SourceTag source={s.source} />
+                {s.edited ? (
+                  <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-1.5 text-[11px] font-medium text-[var(--accent)]">edited</span>
+                ) : (
+                  <SourceTag source={s.source} />
+                )}
               </div>
               <div className="flex shrink-0 gap-2">
                 <button
