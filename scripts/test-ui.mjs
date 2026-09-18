@@ -365,6 +365,12 @@ async function statementMode(browser) {
       // A day header is a band in the page grey, sticky while its rows scroll.
       const band = await page.evaluate(() => { const h = document.querySelector("[data-day-header]"); if (!h) return null; const cs = getComputedStyle(h); const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toLowerCase(); const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; }; return { washed: hex(cs.backgroundColor) === bg, sticky: cs.position === "sticky", label: h.querySelector(".stat-label") !== null }; });
       if (mode === "normal") record("statement mode", "day header is a page-grey band, sticky, in the label style", !!band && band.washed && band.sticky && band.label, band ? `washed=${band.washed}, sticky=${band.sticky}, label=${band.label}` : "no day header");
+      // The row size is the row's, not the page's: the amount is the same size
+      // as the name (it inherited 16px from the body before).
+      if (mode === "normal") {
+        const fs = await page.evaluate(() => { const li = document.querySelector("[data-drawer-row]"); const a = li.querySelector("[data-amount-state]"); const leaf = [...a.querySelectorAll("span")].pop() ?? a; const n = li.querySelector("span.truncate"); return { amount: getComputedStyle(leaf).fontSize, name: n ? getComputedStyle(n).fontSize : null }; });
+        record("statement mode", "a row's amount is the row size, same as its name", fs.amount === fs.name && fs.amount === "13px", `amount ${fs.amount}, name ${fs.name}`);
+      }
       // Under an Uncategorized filter, categorizing a row makes it leave the
       // list (the page re-reads and reconciles), and the count follows.
       if (mode === "normal") {
