@@ -107,19 +107,49 @@ const DAY = 86_400_000;
 // counts as on-grid, so it keeps real bills with skipped periods (e.g. the
 // mortgage), but erratic spend whose median merely lands in a cadence window
 // (restaurants, coffee) scores low and is rejected.
+// The grid's tolerance is a third of the period — except every-two-months,
+// which keeps the monthly tolerance (~10 days): a two-month plan lands as
+// tightly as a monthly one, and a third of 61 days (three weeks) let random
+// restaurant and grocery visits at roughly two-month spacing read as plans.
+function gridTolerance(period: number): number {
+  return period === CADENCE_DAYS.bimonthly ? 0.35 * CADENCE_DAYS.monthly : 0.35 * period;
+}
 function onGridFraction(gaps: number[], period: number): number {
   if (!gaps.length) return 0;
   const on = gaps.filter((g) => {
     const k = Math.max(1, Math.round(g / period));
-    return Math.abs(g - k * period) <= 0.35 * period;
+    return Math.abs(g - k * period) <= gridTolerance(period);
   }).length;
   return on / gaps.length;
+}
+
+// A plan whose rhythm changed (Liquid IV: monthly for two years, then every
+// two months) has a median gap in no cadence's window. It is two plans back
+// to back: the current era — the last three gaps or more, each within ten
+// days of one period, monthly or longer — and before it a history that read
+// as a plan by the ordinary rules. Then the plan is the current rhythm and
+// the history is its history; each half is regular on its own grid, so the
+// whole is not measured against one. A vendor with no rhythm has neither half.
+function rhythmChange(gaps: number[]): Recurring["cadence"] | null {
+  const recent = recentCadence(gaps);
+  if (!recent || recent === "weekly" || recent === "biweekly") return null;
+  const period = CADENCE_DAYS[recent];
+  let n = 0;
+  while (n < gaps.length && Math.abs(gaps[gaps.length - 1 - n] - period) <= 0.35 * CADENCE_DAYS.monthly) n++;
+  if (n < 3) return null;
+  const before = gaps.slice(0, gaps.length - n);
+  if (before.length < 2) return null;
+  const was = classifyCadence(medianGap(before));
+  return was && onGridFraction(before, CADENCE_DAYS[was]) >= 0.6 ? recent : null;
 }
 
 export function classifyCadence(avgGapDays: number): Recurring["cadence"] | null {
   if (Math.abs(avgGapDays - 7) <= 2) return "weekly";
   if (Math.abs(avgGapDays - 14) <= 3) return "biweekly";
   if (avgGapDays >= 26 && avgGapDays <= 35) return "monthly";
+  // Every two months sits between monthly and quarterly; without it a plan
+  // that moved to a two-month rhythm (Liquid IV, late 2025) read as nothing.
+  if (avgGapDays >= 52 && avgGapDays <= 70) return "bimonthly";
   if (avgGapDays >= 80 && avgGapDays <= 100) return "quarterly";
   if (avgGapDays >= 165 && avgGapDays <= 200) return "semiannual";
   if (avgGapDays >= 330 && avgGapDays <= 400) return "yearly";
@@ -157,6 +187,7 @@ export function addCadence(date: string, cadence: Recurring["cadence"]): string 
   if (cadence === "weekly") d.setUTCDate(d.getUTCDate() + 7);
   else if (cadence === "biweekly") d.setUTCDate(d.getUTCDate() + 14);
   else if (cadence === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
+  else if (cadence === "bimonthly") d.setUTCMonth(d.getUTCMonth() + 2);
   else if (cadence === "quarterly") d.setUTCMonth(d.getUTCMonth() + 3);
   else if (cadence === "semiannual") d.setUTCMonth(d.getUTCMonth() + 6);
   else d.setUTCFullYear(d.getUTCFullYear() + 1);
@@ -449,21 +480,26 @@ function regularCore<T extends { date: string; amount: number }>(
   const first = (g: T[]) => byDate(g)[0].date;
   const monthsOf = (g: T[]) => new Set(g.map((t) => t.date.slice(0, 7))).size;
   // A plan must own most of the MONTHS since it began — not most of the
-  // charges, which usage swamps (a $100 plan beside ten $15 top-ups).
-  const ownsItsMonths = (g: T[]) => monthsOf(g) >= 0.6 * monthsOf(txs.filter((t) => t.date >= first(g)));
+  // charges, which usage swamps (a $100 plan beside ten $15 top-ups). A
+  // two-month plan can own at most half the months, so its months count
+  // double; longer cadences keep the month rule (a quarterly-looking subset
+  // of a monthly bill must not become the plan).
+  const ownsItsPeriods = (g: T[], period: number) =>
+    monthsOf(g) * (period === CADENCE_DAYS.bimonthly ? 2 : 1) >= 0.6 * monthsOf(txs.filter((t) => t.date >= first(g)));
   // And it must still be running: a plan whose last charge is more than two
   // periods before the vendor's latest activity has ended — it is history,
   // not the vendor's bill (Anthropic's $20 plan through 2024, with 2026 usage).
   const latest = byDate(txs)[txs.length - 1].date;
   const stillRunning = (g: T[], period: number) => (Date.parse(latest) - Date.parse(last(g))) / DAY <= 2 * period;
   const candidates = groups
-    .filter((g) => g.length >= 6 && ownsItsMonths(g))
+    .filter((g) => g.length >= 6)
     .sort((a, b) => last(b).localeCompare(last(a)));
   for (const core of candidates) {
     const cadence = regular(core, 0.8);
     // A plan with usage on top bills monthly or longer; a biweekly run of
     // similar gas fill-ups is a coincidence, not a plan.
     if (!cadence || cadence === "weekly" || cadence === "biweekly" || !consecutive(core, CADENCE_DAYS[cadence])) continue;
+    if (!ownsItsPeriods(core, CADENCE_DAYS[cadence])) continue;
     if (!stillRunning(core, CADENCE_DAYS[cadence])) continue;
     const rest = txs.filter((t) => !core.includes(t));
     // What ran ALONGSIDE the plan must be usage: three or more charges that
@@ -688,7 +724,14 @@ export function detectRecurrings(): Recurring[] {
     // and the strays stay unlinked. If the whole descriptor already reads
     // monthly, the ordinary path below keeps every charge.
     const oneDay = dayParts.length >= 1 && new Set(dayParts.map((p) => p.day)).size === 1;
-    if (oneDay && dayParts.reduce((n, p) => n + p.txs.length + p.held.length, 0) >= 0.6 * txs.length) {
+    // The day must still be the vendor's day: a cluster whose last charge is
+    // more than two months before the vendor's latest activity is a past era
+    // (Liquid IV on the 4th, monthly, until the plan moved to every two
+    // months), and rescuing it would make the dead era the plan.
+    const latestDate = txs[txs.length - 1].date;
+    const stillOn = (p: DayPart<Tx>) =>
+      (Date.parse(latestDate) - Date.parse(p.events[p.events.length - 1].date)) / DAY <= 2 * MONTH_DAYS + 5;
+    if (oneDay && dayParts.some(stillOn) && dayParts.reduce((n, p) => n + p.txs.length + p.held.length, 0) >= 0.6 * txs.length) {
       const all = txs.map((t) => Date.parse(t.date + "T00:00:00Z"));
       const allGaps = all.slice(1).map((d, i) => (d - all[i]) / DAY);
       if (classifyCadence(medianGap(allGaps)) !== "monthly") {
@@ -724,10 +767,12 @@ export function detectRecurrings(): Recurring[] {
     const dates = txs.map((t) => new Date(t.date + "T00:00:00Z").getTime());
     const gaps: number[] = [];
     for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i - 1]) / DAY);
-    const cadence = classifyCadence(medianGap(gaps));
-    if (!cadence) return plans;
+    let cadence = classifyCadence(medianGap(gaps));
     // Timing must be regular, not just a median that happens to land in range.
-    if (onGridFraction(gaps, CADENCE_DAYS[cadence]) < 0.6) return plans;
+    if (cadence && onGridFraction(gaps, CADENCE_DAYS[cadence]) < 0.6) cadence = null;
+    // Or the vendor is a plan that changed rhythm, regular in each era.
+    if (!cadence) cadence = rhythmChange(gaps);
+    if (!cadence) return plans;
 
     emitPart(merchant, { txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })) }, cadence);
     return plans;

@@ -21,6 +21,7 @@ const PERIOD: Record<string, number> = {
   weekly: 7,
   biweekly: 14,
   monthly: 30,
+  bimonthly: 61,
   quarterly: 91,
   semiannual: 182,
   yearly: 365,

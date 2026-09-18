@@ -96,6 +96,8 @@ test("classifyCadence buckets gaps, rejects off-cadence", () => {
   assert.equal(classifyCadence(7), "weekly");
   assert.equal(classifyCadence(14), "biweekly");
   assert.equal(classifyCadence(30), "monthly");
+  assert.equal(classifyCadence(61), "bimonthly"); // every two months: between monthly and quarterly
+  assert.equal(classifyCadence(45), null);
   assert.equal(classifyCadence(91), "quarterly");
   assert.equal(classifyCadence(182), "semiannual");
   assert.equal(classifyCadence(365), "yearly");

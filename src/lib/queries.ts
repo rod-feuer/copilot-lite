@@ -584,6 +584,7 @@ function advanceByCadence(d: Date, cadence: string): void {
   if (cadence === "weekly") d.setUTCDate(d.getUTCDate() + 7);
   else if (cadence === "biweekly") d.setUTCDate(d.getUTCDate() + 14);
   else if (cadence === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
+  else if (cadence === "bimonthly") d.setUTCMonth(d.getUTCMonth() + 2);
   else if (cadence === "quarterly") d.setUTCMonth(d.getUTCMonth() + 3);
   else if (cadence === "semiannual") d.setUTCMonth(d.getUTCMonth() + 6);
   else d.setUTCFullYear(d.getUTCFullYear() + 1);
@@ -611,7 +612,7 @@ function nextDueFromToday(nextDate: string, cadence: string): string {
 // periodic cadences only when the month distance is a whole number of periods.
 function expectedInMonth(cadence: string, anchorMonth: number, mm: number): boolean {
   const period =
-    cadence === "yearly" ? 12 : cadence === "semiannual" ? 6 : cadence === "quarterly" ? 3 : 0;
+    cadence === "yearly" ? 12 : cadence === "semiannual" ? 6 : cadence === "quarterly" ? 3 : cadence === "bimonthly" ? 2 : 0;
   if (period === 0) return true;
   return ((((mm - anchorMonth) % period) + period) % period) === 0;
 }
@@ -1557,6 +1558,8 @@ export function suggestedRecurrings(): RecurringSuggestion[] {
       ? "biweekly"
       : g >= 26 && g <= 35
       ? "monthly"
+      : g >= 52 && g <= 70
+      ? "bimonthly"
       : g >= 80 && g <= 100
       ? "quarterly"
       : g >= 165 && g <= 200

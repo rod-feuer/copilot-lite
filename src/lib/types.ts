@@ -47,7 +47,7 @@ export type Recurring = {
   merchant: string;
   categoryId: number | null;
   avgAmount: number;
-  cadence: "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
+  cadence: "weekly" | "biweekly" | "monthly" | "bimonthly" | "quarterly" | "semiannual" | "yearly";
   lastDate: string;
   nextDate: string;
   count: number;
