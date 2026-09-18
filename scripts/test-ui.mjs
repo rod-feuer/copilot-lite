@@ -83,12 +83,31 @@ async function loadFixture() {
     [day(-3, 28), "Spotify", "-9.99", "Credit"],
     [day(-2, 28), "Spotify", "-9.99", "Credit"],
     [day(-1, 28), "Spotify", "-9.99", "Credit"],
+    // Two vendors no rule knows, so they land uncategorized: the Uncategorized
+    // filter, the queue's "Show all uncategorized", and "categorize → the row
+    // leaves" have real rows to act on.
+    [day(0, 7), "Zylo Widget Works", "-31.00", "Credit"],
+    [day(0, 8), "Quorra Bakehouse", "-12.40", "Credit"],
   ];
   const csv = rows.map((r) => r.join(",")).join("\n");
   const imp = await (await fetch(BASE + "/api/import", { method: "POST", body: csv })).json();
   if (!imp.inserted) throw new Error("fixture import inserted nothing: " + JSON.stringify(imp));
   const cats = await (await fetch(BASE + "/api/categories")).json();
   const groceries = cats.find((c) => c.name === "Groceries");
+  // A vendor with two charges filed by hand and a third that arrives later
+  // uncategorized: the queue proposes the category from history, so the
+  // "change a suggestion before Apply" check has a real row.
+  {
+    const first = await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=5")).json();
+    if ((first.rows ?? []).length === 0) {
+      const csv2 = [["Date", "Name", "Amount", "Account"], [day(-2, 9), "Pinewood Hardware", "-40.00", "Credit"], [day(-1, 9), "Pinewood Hardware", "-22.00", "Credit"]].map((r) => r.join(",")).join("\n");
+      await fetch(BASE + "/api/import", { method: "POST", body: csv2 });
+      const rows = (await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=5")).json()).rows ?? [];
+      for (const r of rows) await fetch(`${BASE}/api/transactions/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: groceries?.id ?? null }) });
+      const csv3 = [["Date", "Name", "Amount", "Account"], [day(0, 9), "Pinewood Hardware", "-35.00", "Credit"]].map((r) => r.join(",")).join("\n");
+      await fetch(BASE + "/api/import", { method: "POST", body: csv3 });
+    }
+  }
   if (!groceries) throw new Error("seed has no Groceries category");
   const b = await fetch(`${BASE}/api/categories/${groceries.id}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },
