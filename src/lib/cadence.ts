@@ -11,6 +11,7 @@ export const CADENCE_DAYS: Record<Cadence, number> = {
   weekly: 7,
   biweekly: 14,
   monthly: 30,
+  bimonthly: 61, // every two months — a subscription that moved from monthly to a two-month plan
   quarterly: 91,
   semiannual: 182,
   yearly: 365,
@@ -21,6 +22,7 @@ export const PER_YEAR: Record<Cadence, number> = {
   weekly: 52,
   biweekly: 26,
   monthly: 12,
+  bimonthly: 6,
   quarterly: 4,
   semiannual: 2,
   yearly: 1,

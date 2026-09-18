@@ -2037,6 +2037,7 @@ const CADENCE_LABELS: Record<string, string> = {
   weekly: "Weekly",
   biweekly: "Biweekly",
   monthly: "Monthly",
+  bimonthly: "Every 2 months",
   quarterly: "Quarterly",
   semiannual: "Every 6 months",
   yearly: "Yearly",

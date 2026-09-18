@@ -36,6 +36,7 @@ const CADENCE_LABEL: Record<Rec["cadence"], string> = {
   weekly: "Weekly",
   biweekly: "Biweekly",
   monthly: "Monthly",
+  bimonthly: "Every 2 months",
   quarterly: "Quarterly",
   semiannual: "Every 6 months",
   yearly: "Yearly",

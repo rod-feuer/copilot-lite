@@ -1735,3 +1735,46 @@ test("a charge the user put into a plan stays in it across rebuilds until taken 
   clearRecurringTxExclusionsForMerchant(v);
   assert.equal(getRecurringTxInclusions().has("stray353"), false, "not recurring clears the pin too");
 });
+
+// A subscription that moved from monthly to every two months. Liquid IV billed
+// monthly through mid-2025, then every ~60 days; with no cadence between
+// monthly and quarterly the whole vendor classified as nothing, the two 2026
+// charges under a relabeled descriptor stayed "not detected", and the plan
+// read as stale since May. Every-two-months is a cadence now: the current
+// plan is the two-month one, the monthly era joins as history, the relabeled
+// charges join through the vendor key, and the month view expects it only in
+// every other month.
+test("detector reads a plan that moved to every two months, history and relabel included", () => {
+  const fit = addCat("Fitness (bimonthly)");
+  const v = "Sp Liquid I.v";
+  for (const d of ["2025-02-04", "2025-03-04", "2025-04-04", "2025-05-04", "2025-06-04", "2025-07-04", "2025-09-04"])
+    tx(v, { amount: -34.98, date: d, categoryId: fit });
+  for (const d of ["2025-11-02", "2026-01-11", "2026-03-10", "2026-05-10"]) tx(v, { amount: -52.47, date: d, categoryId: fit });
+  tx("Liquid I.v", { amount: -52.48, date: "2026-07-11", categoryId: fit });
+  tx("Liquid I.v", { amount: -52.48, date: "2026-09-11", categoryId: fit });
+  const recs = detectRecurrings();
+  const plans = recs.filter((r) => /liquid/i.test(r.merchant));
+  assert.equal(plans.length, 1, "one plan for the vendor");
+  const plan = plans[0];
+  assert.equal(plan.cadence, "bimonthly");
+  assert.equal(plan.lastDate, "2026-09-11", "the relabeled charge is its latest");
+  assert.equal(plan.nextDate, "2026-11-11", "due two months on");
+  assert.equal(plan.avgAmount, -52.48);
+  const linked = getDb().prepare("SELECT COUNT(*) AS n FROM transactions WHERE recurringId = ?").get(plan.id) as { n: number };
+  assert.equal(linked.n, 13, "the monthly era joins as history; both relabeled charges are members");
+  assert.equal(recurringsForMonth("2026-10").find((r) => r.id === plan.id)?.expectedThisMonth, false, "not every month");
+  assert.equal(recurringsForMonth("2026-11").find((r) => r.id === plan.id)?.expectedThisMonth, true, "every other month");
+});
+
+// The rhythm-change reading needs BOTH halves: a current era on one period and,
+// before it, a history that was a plan on its own. Three two-month gaps at the
+// end of erratic shopping are a coincidence, not a plan that changed rhythm —
+// without the history test, every store visited a few times at roughly
+// two-month spacing became an every-two-months bill.
+test("three two-month gaps after erratic visits do not read as a plan that changed rhythm", () => {
+  const v = "Dollar General";
+  for (const d of ["2025-01-03", "2025-01-20", "2025-03-01", "2025-03-12", "2025-05-02", "2025-05-25", "2025-07-10"])
+    tx(v, { amount: -19, date: d, categoryId: CAT });
+  for (const d of ["2025-09-10", "2025-11-10", "2026-01-10", "2026-03-10"]) tx(v, { amount: -19, date: d, categoryId: CAT });
+  assert.equal(detectRecurrings().filter((r) => r.merchant === v).length, 0, "no plan");
+});

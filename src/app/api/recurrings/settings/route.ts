@@ -11,7 +11,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CADENCES = ["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"];
+const CADENCES = ["weekly", "biweekly", "monthly", "bimonthly", "quarterly", "semiannual", "yearly"];
 
 const ALL_NULL_SETTINGS = {
   matchMode: null,
