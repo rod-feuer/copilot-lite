@@ -724,11 +724,10 @@ function UncategorizedResolver({
   async function assign(t: UncatTx, categoryId: number) {
     setBusy(t.id);
     setRows((prev) => prev.filter((x) => x.id !== t.id)); // optimistic
-    const c = cats.find((x) => x.id === categoryId);
     await mutate(
       () => patchJson(`/api/transactions/${t.id}`, { categoryId }),
       {
-        success: `Categorized “${t.displayName}”${c ? ` as ${c.name}` : ""}`,
+        // The row leaving the queue is the confirmation (DESIGN.md §2, toasts).
         error: "Couldn't categorize — please try again",
       },
       { refresh: "always" }

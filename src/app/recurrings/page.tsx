@@ -126,7 +126,6 @@ export default function RecurringsPage() {
     };
     if (
       !(await mutate(write, {
-        success: `Added "${s.merchant}" to recurrings`,
         error: "Couldn't update — please try again",
       }))
     )
@@ -168,10 +167,7 @@ export default function RecurringsPage() {
     const recurringId = r.vendor !== r.merchant ? r.id : undefined;
     await mutate(
       () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId }),
-      {
-        success: `Recategorized "${merchant}"`,
-        error: "Couldn't recategorize — please try again",
-      }
+      { error: "Couldn't recategorize — please try again" }
     );
   }
 
@@ -183,7 +179,9 @@ export default function RecurringsPage() {
           patch === "clear" ? { merchant, clear: true } : { merchant, ...patch }
         ),
       {
-        success: patch === "clear" ? "Settings reset" : "Recurring updated",
+        // A field you edited shows its new value; only a reset of every
+        // override, whose effect spans fields, gets a line.
+        success: patch === "clear" ? "Settings reset" : undefined,
         error: "Couldn't save — please try again",
       }
     );
