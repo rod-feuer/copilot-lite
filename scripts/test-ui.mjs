@@ -365,6 +365,21 @@ async function statementMode(browser) {
       // A day header is a band in the page grey, sticky while its rows scroll.
       const band = await page.evaluate(() => { const h = document.querySelector("[data-day-header]"); if (!h) return null; const cs = getComputedStyle(h); const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toLowerCase(); const hex = (rgb) => { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("") : rgb; }; return { washed: hex(cs.backgroundColor) === bg, sticky: cs.position === "sticky", label: h.querySelector(".stat-label") !== null }; });
       if (mode === "normal") record("statement mode", "day header is a page-grey band, sticky, in the label style", !!band && band.washed && band.sticky && band.label, band ? `washed=${band.washed}, sticky=${band.sticky}, label=${band.label}` : "no day header");
+      // Under an Uncategorized filter, categorizing a row makes it leave the
+      // list (the page re-reads and reconciles), and the count follows.
+      if (mode === "normal") {
+        await page.click("button::-p-text(+ Filter)").catch(() => {});
+        await page.click("button::-p-text(Category)").catch(() => {});
+        await sleep(300);
+        const applied = await page.evaluate(() => { const s = [...document.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.value === "none")); if (!s) return false; s.value = "none"; s.dispatchEvent(new Event("change", { bubbles: true })); return true; });
+        await page.waitForNetworkIdle({ idleTime: 400, timeout: 8000 }).catch(() => {});
+        const before = await page.$$eval("[data-drawer-row]", (r) => r.length);
+        if (applied && before > 0) {
+          await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] [data-category-property] select"); const opt = [...s.options].find((o) => o.value && o.value !== "none"); s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); });
+          await page.waitForFunction((n) => document.querySelectorAll("[data-drawer-row]").length < n, { timeout: 10000 }, before).then(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, `${before} → ${before - 1} rows`)).catch(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, `still ${before} rows`));
+        } else record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, applied ? "no uncategorized rows in the fixture" : "no category filter");
+        await page.goto(BASE + url, { waitUntil: "networkidle2" });
+      }
       // A proposal's category can be changed in place before it is applied.
       if (mode === "normal") {
         const prop = await page.$("[data-suggestion] [data-category-property] select");

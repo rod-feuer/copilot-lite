@@ -115,6 +115,7 @@ export function AmountCell({
   delta = null,
   unsigned = false,
   sign = true,
+  quiet = false,
   className = "",
 }: {
   value: number;
@@ -123,6 +124,7 @@ export function AmountCell({
   delta?: number | null; // paid − expected, when it differs
   unsigned?: boolean; // a bill's amount: magnitude only — no sign, and never green
   sign?: boolean;
+  quiet?: boolean; // a list where every amount is settled: medium, not semibold
   className?: string;
 }) {
   const shown = unsigned ? Math.abs(value) : value;
@@ -131,7 +133,9 @@ export function AmountCell({
       ? "font-semibold text-[var(--warn)]"
       : state === "provisional"
         ? "font-medium text-[var(--muted)]"
-        : "font-semibold";
+        : quiet
+          ? "font-medium"
+          : "font-semibold";
   return (
     // An amount never wraps: the line-breaker treats the minus and the dollar
     // sign as two prefixes and may break between them ("−" / "$12,748.12").

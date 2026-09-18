@@ -361,11 +361,15 @@ export default function TransactionsPage() {
             : t
         )
       );
-      // "error" re-syncs the optimistic update from the server on failure.
+      // The optimistic update is the instant feedback; the page then re-reads
+      // and reconciles — under a category filter the row leaves because it
+      // no longer matches, the "N shown" count follows, and the queues above
+      // re-read with the same counter. (On failure the re-read restores the
+      // row's real category.)
       await mutate(
         () => patchJson(`/api/transactions/${id}`, { categoryId }),
         { error: "Couldn't save category — please try again" },
-        { refresh: "error" }
+        { refresh: "always" }
       );
     },
     [cats, mutate]
@@ -1044,7 +1048,9 @@ const TxRow = memo(function TxRow({
                     />
                   </span>
                 )}
-                <AmountCell value={t.amount} excluded={!!t.excluded || !!t.categoryExcluded} className="w-24 shrink-0" />
+                {/* Every amount here is settled, so the settled-vs-provisional
+                    weight contrast has no job; medium keeps the name first. */}
+                <AmountCell value={t.amount} excluded={!!t.excluded || !!t.categoryExcluded} quiet className="w-24 shrink-0" />
               </li>
   );
 });
