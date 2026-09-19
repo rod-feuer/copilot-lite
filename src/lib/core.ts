@@ -742,7 +742,14 @@ export function detectRecurrings(): Recurring[] {
     if (oneDay && dayParts.some(stillOn) && dayParts.reduce((n, p) => n + p.txs.length + p.held.length, 0) >= 0.6 * txs.length) {
       const all = txs.map((t) => Date.parse(t.date + "T00:00:00Z"));
       const allGaps = all.slice(1).map((d, i) => (d - all[i]) / DAY);
-      if (classifyCadence(medianGap(allGaps)) !== "monthly") {
+      // "Reads monthly" is the ordinary path's own two tests, both of them: a
+      // monthly median AND gaps on the monthly grid. With only the median, a
+      // vendor whose strays left the median at 28 days but put 6 of 14 gaps
+      // off the grid (Chubb: a policy on the 17th plus a quarterly one on the
+      // 4th) skipped this rescue and then failed the ordinary path — no plan
+      // at all, for a bill charged every month for a year.
+      const readsMonthly = classifyCadence(medianGap(allGaps)) === "monthly" && onGridFraction(allGaps, CADENCE_DAYS.monthly) >= 0.6;
+      if (!readsMonthly) {
         if (dayParts.length === 1) emitPart(merchant, dayParts[0]);
         else emitSplit(dayParts.filter((p) => rawOverrides[partKey(merchant, p, dayParts)] !== "mute"));
         return plans;
