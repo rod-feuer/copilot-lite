@@ -6,7 +6,10 @@ import {
   linkMerchant,
   distinctMerchants,
   isRecurringActive,
+  getRecurringOverrides,
+  getRecurringSettings,
 } from "./queries";
+import { CADENCE_DAYS, type Cadence } from "./cadence";
 
 // US state codes as normalizeMerchant title-cases them (e.g. "IN" -> "In").
 const STATES = new Set(
@@ -261,6 +264,131 @@ export function nameEqualityMergeSuggestions(exclude: Set<string>): MergeSuggest
   return out.sort((a, b) => b.total - a.total);
 }
 
+// Handoff detector: a bank rename seen from behaviour alone. One plan stops, and
+// within about one billing period another vendor starts at the same amount, on
+// the same account, in the same category — and the old name never appears
+// again. No name test is needed to find it (Uplift became Upgrade; "Adtsecurity
+// Myadt.co" became "Adt"), which is why the name-based detectors above missed
+// thirteen of these in one year, six of them on the day Plaid replaced the
+// Copilot import and shortened every descriptor. Left split, the old plan
+// reads as lapsed and the new one as three charges old.
+//
+// Precision comes from the conjunction, not from any one test:
+// - the successor's first charge lands 0.5–1.6 periods after the plan's last;
+// - the successor repeats at that amount (≥2 charges within 3%, and most of
+//   its charges) — a gas fill-up at a similar price does not;
+// - same account, and the successor's category is the plan's (or none yet);
+// - the old vendor has no charge of any kind after the successor's first;
+// - neither side is marked Not recurring: a mark on one name mutes the whole
+//   combined vendor, so approving would erase the plan it meant to extend;
+// - the old vendor carries ONE plan: a descriptor that held two policies has
+//   no single successor (Chubb's old name billed the car and the house; its
+//   successors are two vendors), and folding it into one drags the other along.
+// A pair whose names share no word is surfaced as a "possible match", and is
+// dropped when either side also has a candidate whose name does (two $15
+// newsletters that both changed descriptor in one month pair up four ways; the
+// names say which two are real). The vendor that carries the user's settings
+// stays canonical, else the newer name — the one future charges arrive under.
+// Dismiss key = "handoff:<old>><new>".
+export function handoffSuggestions(exclude: Set<string>): MergeSuggestion[] {
+  const db = getDb();
+  const dismissed = dismissedKeys(db);
+  const links = getMerchantLinks();
+  const overrides = getRecurringOverrides();
+  const settings = getRecurringSettings();
+  const DAY = 86_400_000;
+  type Tx = { date: string; amount: number; account: string; merchant: string; recurringId: number | null; categoryId: number | null };
+  // Charges that count. (A split parent is excluded, so its parts stand for it.)
+  const txs = db
+    .prepare("SELECT date, amount, account, merchant, recurringId, categoryId FROM transactions WHERE excluded = 0 ORDER BY date, id")
+    .all() as Tx[];
+  const byVendor = new Map<string, Tx[]>();
+  for (const t of txs) {
+    const c = canonicalMerchant(t.merchant, links);
+    (byVendor.get(c) ?? byVendor.set(c, []).get(c)!).push(t);
+  }
+  const mode = <T,>(xs: T[]): T | undefined => {
+    const n = new Map<T, number>();
+    for (const x of xs) n.set(x, (n.get(x) ?? 0) + 1);
+    return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
+  const near = (a: number, b: number) =>
+    Math.sign(a) === Math.sign(b) && Math.abs(Math.abs(a) - Math.abs(b)) <= 0.03 * Math.max(Math.abs(a), Math.abs(b));
+  const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z ]+/g, " ").split(/\s+/).filter((w) => w.length >= 4));
+  const muted = (vendor: string) => (byVendor.get(vendor) ?? []).some((t) => overrides[t.merchant] === "mute") || overrides[vendor] === "mute";
+  const hasSettings = (vendor: string) => Object.keys(settings).some((k) => canonicalMerchant(seriesVendor(k), links) === vendor);
+
+  const plans = db.prepare("SELECT id, merchant, cadence FROM recurrings").all() as { id: number; merchant: string; cadence: Cadence }[];
+  const linkedBy = new Map<number, Tx[]>();
+  for (const t of txs) if (t.recurringId != null) (linkedBy.get(t.recurringId) ?? linkedBy.set(t.recurringId, []).get(t.recurringId)!).push(t);
+  const plansOf = new Map<string, number>();
+  for (const p of plans) {
+    const v = canonicalMerchant(seriesVendor(p.merchant), links);
+    plansOf.set(v, (plansOf.get(v) ?? 0) + 1);
+  }
+  // Successors in date order of their first charge, so each plan scans only
+  // the vendors that began inside its window.
+  const starts = [...byVendor.entries()].map(([vendor, t]) => ({ vendor, t, first: t[0], at: Date.parse(t[0].date) })).sort((a, b) => a.at - b.at);
+  type Pair = { old: string; next: string; shared: boolean; note: string; categoryId: number | null };
+  const pairs: Pair[] = [];
+  for (const plan of plans) {
+    const old = canonicalMerchant(seriesVendor(plan.merchant), links);
+    const mine = byVendor.get(old);
+    const linked = linkedBy.get(plan.id) ?? [];
+    if (!mine || linked.length < 3 || plansOf.get(old) !== 1 || exclude.has(old) || muted(old)) continue;
+    const period = CADENCE_DAYS[plan.cadence] ?? 30;
+    const last = linked[linked.length - 1];
+    const lastAt = Date.parse(last.date);
+    const vendorLast = mine[mine.length - 1].date;
+    const account = mode(linked.map((t) => t.account));
+    const category = mode(linked.map((t) => t.categoryId)) ?? null;
+    for (const { vendor: next, t: theirs, first, at } of starts) {
+      const gap = (at - lastAt) / DAY;
+      if (gap < 0.5 * period) continue;
+      if (gap > 1.6 * period) break;
+      if (next === old || exclude.has(next)) continue;
+      if (first.date <= vendorLast) continue; // the old name never appears again
+      const same = theirs.filter((t) => near(t.amount, last.amount));
+      if (!near(first.amount, last.amount) || same.length < 2 || same.length < 0.6 * theirs.length) continue;
+      if (mode(theirs.map((t) => t.account)) !== account) continue;
+      const theirCategory = mode(theirs.map((t) => t.categoryId)) ?? null;
+      if (theirCategory != null && theirCategory !== category) continue;
+      if (muted(next) || dismissed.has(`handoff:${old}>${next}`)) continue;
+      const shared = [...words(old)].some((w) => words(next).has(w));
+      pairs.push({
+        old,
+        next,
+        shared,
+        categoryId: category,
+        note: `Picks up where “${old}” left off: $${Math.abs(last.amount).toFixed(2)} ${plan.cadence}, ${Math.round(gap)} days after its last charge, same account${theirCategory != null ? " and category" : ""}`,
+      });
+    }
+  }
+  // Names break ties: a vendor with a name-sharing partner keeps only that one.
+  const namedOld = new Set(pairs.filter((p) => p.shared).map((p) => p.old));
+  const namedNext = new Set(pairs.filter((p) => p.shared).map((p) => p.next));
+  const kept = pairs.filter((p) => p.shared || (!namedOld.has(p.old) && !namedNext.has(p.next)));
+  const seen = new Set<string>();
+  const out: MergeSuggestion[] = [];
+  for (const p of kept) {
+    if (seen.has(p.old) || seen.has(p.next)) continue; // one card per vendor
+    seen.add(p.old).add(p.next);
+    const canonical = hasSettings(p.old) && !hasSettings(p.next) ? p.old : p.next;
+    const variants = [p.old, p.next].map((m) => ({ merchant: m, count: byVendor.get(m)!.length }));
+    out.push({
+      canonical,
+      key: `handoff:${p.old}>${p.next}`,
+      dismissKeys: [`handoff:${p.old}>${p.next}`],
+      variants,
+      total: variants.reduce((a, v) => a + v.count, 0),
+      note: p.note,
+      categoryId: p.categoryId ?? undefined,
+      lowConfidence: !p.shared,
+    });
+  }
+  return out;
+}
+
 // The full review queue: behaviour-based matches first (most time-sensitive),
 // then punctuation/spacing twins, then location-suffix groups. A merchant
 // surfaced by an earlier detector is not double-suggested by a later one.
@@ -269,8 +397,10 @@ export function allMergeSuggestions(): MergeSuggestion[] {
   const covered = new Set(loc.flatMap((g) => g.variants.map((v) => v.merchant)));
   const rec = recurringMatchSuggestions(covered);
   for (const g of rec) for (const v of g.variants) covered.add(v.merchant);
+  const handoff = handoffSuggestions(covered);
+  for (const g of handoff) for (const v of g.variants) covered.add(v.merchant);
   const eq = nameEqualityMergeSuggestions(covered);
-  const all = [...rec, ...eq, ...loc];
+  const all = [...rec, ...handoff, ...eq, ...loc];
   // Confident suggestions keep their natural order; borderline ones sink to the end.
   return [...all.filter((s) => !s.lowConfidence), ...all.filter((s) => s.lowConfidence)];
 }

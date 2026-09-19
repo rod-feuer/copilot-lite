@@ -53,6 +53,8 @@ import {
   NAME_MATCH,
   approveMerge,
   dismissMerge,
+  handoffSuggestions,
+  allMergeSuggestions,
 } from "../src/lib/merges";
 import { createSplitRule, applySplitRules, undoSplit } from "../src/lib/splits";
 import { importPlaidTransactions, plaidSyncStartDate } from "../src/lib/plaid";
@@ -1993,4 +1995,98 @@ test("detector keeps a monthly plan when a quarterly charge from the same vendor
   const linked = getDb().prepare("SELECT date FROM transactions WHERE recurringId = ? ORDER BY date").all(plans[0].id) as { date: string }[];
   assert.equal(linked.length, 12, "every charge on the 17th");
   assert.ok(!linked.some((r) => quarterly.includes(r.date)), "the quarterly policy's charges are not this plan's");
+});
+
+// ---- merge queue: the handoff pattern (a bank rename seen from behaviour) ----
+const monthly = (merchant: string, from: [number, number], n: number, amount: number, day = 15, account = "Visa", categoryId: number | null = CAT) => {
+  for (let i = 0; i < n; i++) {
+    const m = from[1] - 1 + i;
+    tx(merchant, { amount, date: `${from[0] + Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`, account, categoryId });
+  }
+};
+
+// WHY: when a bank renames a vendor, the old plan reads as lapsed and the new
+// one as three charges old — Uplift became Upgrade, and a year of payments read
+// as nine. No name test finds that pair; behaviour does: one plan stops and,
+// a period later, another vendor starts at the same amount on the same account
+// in the same category, and the old name never charges again. It is offered as
+// a "possible match" because the names share nothing, and one tap makes the
+// history whole.
+test("merge queue suggests a handoff: a plan that stopped and the vendor that picked it up", () => {
+  monthly("Uplift, Inc.", [2025, 10], 4, -100, 1, "Checking");
+  monthly("Upgrade", [2026, 2], 4, -100, 1, "Checking");
+  detectRecurrings();
+  const [s, ...rest] = handoffSuggestions(new Set());
+  assert.equal(rest.length, 0);
+  assert.deepEqual(s.variants, [{ merchant: "Uplift, Inc.", count: 4 }, { merchant: "Upgrade", count: 4 }]);
+  assert.equal(s.canonical, "Upgrade", "the newer name is the one future charges arrive under");
+  assert.equal(s.lowConfidence, true, "the names share no word: a possible match, for the user to confirm");
+  assert.match(s.note!, /left off: \$100\.00 monthly, 31 days after its last charge, same account and category/);
+  assert.ok(allMergeSuggestions().some((x) => x.key === s.key), "it is in the queue the page reads");
+
+  approveMerge(s.canonical, s.variants.map((v) => v.merchant), s.categoryId);
+  const plans = detectRecurrings().filter((r) => /upgrade|uplift/i.test(r.merchant));
+  assert.equal(plans.length, 1, "one plan");
+  assert.equal(plans[0].count, 8, "with the whole history");
+  assert.equal(handoffSuggestions(new Set()).length, 0, "and nothing left to suggest");
+});
+
+// WHY: a review queue earns its place by not crying wolf. Each of these looks
+// like a handoff on one axis and is not one; the first would do harm — a Not
+// recurring mark on one name mutes the whole combined vendor, so approving
+// would erase the plan it meant to extend (Paige's Music, on real data).
+test("merge queue does not suggest a handoff that isn't one", () => {
+  const reset = () => getDb().exec("DELETE FROM transactions; DELETE FROM recurrings; DELETE FROM recurring_overrides");
+  const suggestions = () => { detectRecurrings(); return handoffSuggestions(new Set()).length; };
+
+  monthly("Old Gym", [2025, 1], 6, -40); monthly("New Gym", [2025, 7], 3, -40);
+  assert.equal(suggestions(), 1, "the control: this shape IS a handoff");
+  setRecurringOverride("New Gym", "mute");
+  assert.equal(suggestions(), 0, "the successor is marked Not recurring");
+
+  reset(); monthly("Old Gym", [2025, 1], 6, -40); monthly("New Gym", [2025, 7], 3, -40);
+  tx("Old Gym", { amount: -40, date: "2025-08-20", account: "Visa", categoryId: CAT });
+  assert.equal(suggestions(), 0, "the old name charged again after the new one began: two vendors");
+
+  reset(); monthly("Old Gym", [2025, 1], 6, -40);
+  for (const [d, a] of [["2025-07-14", -40.5], ["2025-07-29", -52.1], ["2025-08-09", -31], ["2025-08-30", -47.75]] as [string, number][]) tx("Gas Stop", { amount: a, date: d, account: "Visa", categoryId: CAT });
+  assert.equal(suggestions(), 0, "a similar first charge that doesn't repeat is a coincidence");
+
+  reset(); monthly("Old Gym", [2025, 1], 6, -40, 15, "Visa"); monthly("New Gym", [2025, 7], 3, -40, 15, "Amex");
+  assert.equal(suggestions(), 0, "a different card");
+
+  reset(); monthly("Old Gym", [2025, 1], 6, -40); monthly("New Gym", [2025, 7], 3, -40, 15, "Visa", CAT_X);
+  assert.equal(suggestions(), 0, "a different category");
+
+  reset(); monthly("Old Gym", [2025, 1], 6, -40); monthly("New Gym", [2025, 11], 3, -40);
+  assert.equal(suggestions(), 0, "four months later is a new subscription, not a rename");
+});
+
+// WHY: two $15 newsletters that both changed descriptor in the same month pair
+// up four ways on behaviour alone. The names say which two are real; the
+// crossed pairs must not be offered, or one tap merges Lenny into Peter.
+test("merge queue lets names break a tie between simultaneous handoffs", () => {
+  monthly("Lennys Newslesan Francisco", [2025, 1], 6, -15, 28);
+  monthly("Lennys Newsletter", [2025, 7], 4, -15, 28);
+  monthly("Peters Newslesan Mateo", [2025, 1], 6, -15, 24);
+  monthly("Peters Newsletter", [2025, 7], 4, -15, 24);
+  detectRecurrings();
+  const pairs = handoffSuggestions(new Set()).map((s) => s.variants.map((v) => v.merchant.split(" ")[0]).join(">")).sort();
+  assert.deepEqual(pairs, ["Lennys>Lennys", "Peters>Peters"]);
+  assert.ok(handoffSuggestions(new Set()).every((s) => !s.lowConfidence), "a shared name is a confident match");
+});
+
+// WHY: the user's name and rules for a vendor live under its canonical
+// descriptor. When the old name carries them, it stays canonical, so combining
+// doesn't swap "ADT Security" back to a raw bank string. And a dismissed pair
+// stays dismissed.
+test("a handoff keeps the side that carries the user's settings, and stays dismissed", () => {
+  monthly("Adtsecurity Myadt.co", [2025, 1], 6, -58.06, 25);
+  monthly("Adt", [2025, 7], 3, -58.06, 25);
+  setRecurringSetting("Adtsecurity Myadt.co", { alias: "ADT Security" } as never);
+  detectRecurrings();
+  const [s] = handoffSuggestions(new Set());
+  assert.equal(s.canonical, "Adtsecurity Myadt.co");
+  for (const k of s.dismissKeys) dismissMerge(k);
+  assert.equal(handoffSuggestions(new Set()).length, 0);
 });
