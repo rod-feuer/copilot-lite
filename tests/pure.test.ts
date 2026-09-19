@@ -5,6 +5,7 @@ import { classifyCadence, addCadence, txHash } from "../src/lib/core";
 import { medianGap, monthlyFactor, CADENCE_DAYS, PER_YEAR, CADENCE_LABEL } from "../src/lib/cadence";
 import { seriesKey, seriesVendor, isSeriesKey } from "../src/lib/series";
 import { parseCsv } from "../src/lib/import";
+import { budgetOutlook, BUDGET_TOLERANCE } from "../src/lib/budgetOutlook";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
 import { createLatestGuard } from "../src/lib/latestGuard";
@@ -204,4 +205,20 @@ test("parseCsv keeps quoted commas and quotes, and ignores blank lines and CRLF"
     ["2026-03-01", 'Smith, Jones "LLC"', "-12.50"],
     ["2026-03-02", "Plain", "4"],
   ]);
+});
+
+// WHY: a projection is an estimate, so a miss inside its own noise is not a miss.
+// "$88 over" on a $42,530 budget — 0.2% — wore the same red as a real overrun,
+// and the dashboard's headline shouted about nothing. Within 1% a forecast is ON
+// budget. A finished month is a fact, not a forecast: $88 over is $88 over. The
+// headline and the budget block both read this one function, so they can never
+// disagree about which it is.
+test("budgetOutlook: a forecast within 1% of the budget is on budget; a finished month is exact", () => {
+  assert.equal(BUDGET_TOLERANCE, 0.01);
+  assert.deepEqual(budgetOutlook(42530, 42618, true), { kind: "on", delta: 88 });
+  assert.equal(budgetOutlook(42530, 42530 - 400, true).kind, "on", "and the same going under");
+  assert.equal(budgetOutlook(42530, 43200, true).kind, "over", "1.6% is a real overrun");
+  assert.equal(budgetOutlook(42530, 41000, true).kind, "under");
+  assert.equal(budgetOutlook(42530, 42618, false).kind, "over", "once the month is done, $88 over is over");
+  assert.equal(budgetOutlook(42530, 42530.4, false).kind, "on", "to the dollar");
 });

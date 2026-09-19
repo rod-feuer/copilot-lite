@@ -1,0 +1,19 @@
+// Where a month is heading against its budget, in one place so the dashboard's
+// headline and its budget block can never disagree.
+//
+// A projection is an estimate, so a miss inside its own noise is not a miss:
+// "$88 over" on a $42,530 budget (0.2%) wore the same red as a real overrun.
+// Within TOLERANCE of the budget the month is ON budget — said in neutral words,
+// without a dollar figure that pretends to a precision the forecast doesn't have.
+// A finished month is a fact, not a forecast, so it gets no tolerance: $88 over
+// is $88 over.
+export const BUDGET_TOLERANCE = 0.01;
+
+export type BudgetOutlook = { kind: "over" | "under" | "on"; delta: number };
+
+export function budgetOutlook(total: number, projected: number, isForecast: boolean): BudgetOutlook {
+  const delta = projected - total;
+  const slack = isForecast ? BUDGET_TOLERANCE * total : 0.5; // a finished month: on budget only to the dollar
+  if (Math.abs(delta) <= slack) return { kind: "on", delta };
+  return { kind: delta > 0 ? "over" : "under", delta };
+}

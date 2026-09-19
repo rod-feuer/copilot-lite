@@ -2406,3 +2406,24 @@ test("when TypeSafe cannot be reached, Haiku answers; with no fallback the failu
     assert.equal(sent.length, 0, "no key, no request");
   });
 });
+
+// WHY: a finished month is a fact. Whether a month is still in progress was read
+// from the date of its last transaction, so a closed month whose last charge
+// fell before the final day had "days remaining": it was run-rated, shown as
+// "net cash flow, projected" with its real figures captioned "so far". Only the
+// month we are in can be projected.
+test("a finished month is never projected, however early its last charge fell", () => {
+  const inc = addCat("Salary (closed)", "income");
+  setBudget(CAT, 900);
+  for (const mth of ["2025-01", "2025-02"]) {
+    tx("Employer", { amount: 5000, date: `${mth}-01`, categoryId: inc });
+    for (const d of ["03", "08", "12", "16", "20"]) tx("Corner Shop", { amount: -100, date: `${mth}-${d}`, categoryId: CAT });
+  }
+  const d = dashboard("2025-02"); // last charge on the 20th of a 28-day month
+  assert.equal(d.pace.projectedMonthEnd, null);
+  assert.equal(d.projectedIncome, null);
+  assert.equal(d.projectedNet, null);
+  assert.equal(d.budget?.projected, d.budget?.spent, "the budget's outcome is what was spent");
+  assert.equal(d.net, 4500);
+  assert.ok(d.pace.series.every((p) => p.projected == null), "and the chart draws no dashed forecast");
+});

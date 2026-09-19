@@ -39,6 +39,7 @@ export function SummaryCard({
   secondary,
   progress,
   barLabel,
+  barCaption,
   alarm = false,
   status,
   note,
@@ -48,6 +49,7 @@ export function SummaryCard({
   secondary?: Figure | Figure[];
   progress: number; // 0..1
   barLabel: string; // what the bar measures, for assistive tech ("70% of expected bills paid")
+  barCaption?: ReactNode; // the same, in sight — where the figures above don't already say it
   alarm?: boolean; // the bar turns red (over budget)
   status?: ReactNode; // the line under the bar; the caller sets its colours
   note?: ReactNode; // small helper sentence
@@ -56,18 +58,26 @@ export function SummaryCard({
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
   return (
     <div className={`card p-6 ${className}`.trim()} data-summary>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      {/* Figures share a top line. Bottom-aligned, a taller caption under one
+          figure pushed its number up, and the three big numbers sat on three
+          different lines. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <Fig f={primary} />
         {secondary && (
-          <div className="flex flex-wrap items-end justify-end gap-6">
+          <div className="flex flex-wrap items-start justify-end gap-6">
             {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
               <Fig key={i} f={f} align="right" />
             ))}
           </div>
         )}
       </div>
+      {barCaption && (
+        <div data-bar-caption className="mt-4 text-xs text-[var(--muted)]">
+          {barCaption}
+        </div>
+      )}
       <div
-        className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--background)]"
+        className={`${barCaption ? "mt-1" : "mt-3"} h-2.5 overflow-hidden rounded-full bg-[var(--background)]`}
         role="progressbar"
         aria-label={barLabel}
         aria-valuenow={Math.round(pct)}

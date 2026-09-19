@@ -357,6 +357,22 @@ async function dashboardAnatomy(browser) {
     });
     record("dashboard", "one summary card with net, income and expenses and a bar", r.figures >= 3 && r.bar, `${r.figures} figures, bar=${r.bar}`);
     record("dashboard", "no card nested in a card", r.nested === 0, `${r.nested} nested`);
+    // One frame: the three big figures are all month-end views or all actuals,
+    // never a mix, and the headline can be checked on the card — income minus
+    // expenses is the net. (It used to lead with a projected net beside two
+    // actuals, built from a projected spend the card never showed.) They share a
+    // top line, and the bar says what it measures.
+    const f = await page.evaluate(() => {
+      const card = document.querySelector("[data-summary]");
+      const figs = [...card.querySelectorAll(".text-2xl")].map((el) => ({ value: Number(el.textContent.replace(/[^0-9.]/g, "")) * (/[−-]/.test(el.textContent) ? -1 : 1), label: el.nextElementSibling?.textContent.toLowerCase() ?? "", sub: el.nextElementSibling?.nextElementSibling?.textContent.toLowerCase() ?? "", top: Math.round(el.getBoundingClientRect().top) }));
+      return { figs, caption: card.querySelector("[data-bar-caption]")?.textContent ?? "" };
+    });
+    const [net, income, expenses] = f.figs;
+    const forward = f.figs.map((x) => /projected|expected/.test(x.label));
+    const oneFrame = forward.every(Boolean) || !forward.some(Boolean);
+    record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && oneFrame && Math.abs(income.value - expenses.value - net.value) <= 1, f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
+    record("dashboard", "a projected figure carries its actual so far beneath it", !forward[0] || f.figs.every((x) => x.sub.includes("so far")), forward[0] ? f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month");
+    record("dashboard", "the figures share a top line, and the bar says what it measures", new Set(f.figs.map((x) => x.top)).size === 1 && / of \$[\d,]+ (budget|income)/.test(f.caption), `tops ${f.figs.map((x) => x.top).join(",")}; "${f.caption}"`);
     record("dashboard", "uncategorized queue is standard rows below the summary (when present)", !r.hasQueue || (r.rows > 0 && r.summaryFirst), r.hasQueue ? `${r.rows} rows, summary first=${r.summaryFirst}` : "no queue in the fixture");
   });
 }
@@ -422,11 +438,15 @@ async function partialMonthQualifiers(browser) {
         record("qualifiers", `${route} ${month} "${n}"`, present === expect, expect ? (present ? "present" : "MISSING") : (present ? "SHOWN on a past month" : "absent"));
       }
     };
-    await check("/", CUR, ["Expenses so far", "% used so far"], true);
+    await check("/", CUR, ["so far", "% used so far"], true); // "expenses so far", or "expenses, projected" over "$X so far"
     await check("/categories", CUR, ["spent so far of", "left so far"], true);
     await check("/recurrings", CUR, ["paid so far of"], true);
     await check("/transactions", CUR, ["· net", "so far"], true);
     await check("/", PAST, ["Expenses so far", "% used so far"], false);
+    // A finished month's summary is plain actuals: no forward-looking word in the
+    // card. (Scoped to the card: the chart's legend says "Projected" on any month.)
+    const pastCard = (await page.evaluate(() => document.querySelector("[data-summary]")?.innerText ?? "")).toLowerCase();
+    record("qualifiers", `/ ${PAST} summary card is plain actuals`, pastCard.length > 0 && !/so far|projected|expected|on pace/.test(pastCard), pastCard.replace(/\s+/g, " ").slice(0, 120));
     await check("/categories", PAST, ["spent so far of"], false);
     await check("/recurrings", PAST, ["paid so far of"], false);
     await check("/transactions", PAST, ["so far"], false);

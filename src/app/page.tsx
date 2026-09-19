@@ -1,5 +1,6 @@
 "use client";
 
+import { budgetOutlook } from "@/lib/budgetOutlook";
 import { withoutAmountQualifier } from "@/lib/series";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -159,7 +160,14 @@ export default function DashboardPage() {
             const current = isCurrentMonth(month);
             const b = data.budget;
             const v = buildVerdict(data, current);
-            const net = data.projectedNet ?? data.net;
+            // One frame. While the month is being projected, all three big
+            // figures are the month-end view and each carries its actual "so far"
+            // beneath — so the headline can be checked on the card itself:
+            // expected income − projected expenses = projected net. Before, the
+            // headline was projected and the two beside it were actuals, and the
+            // projected spend it was built from appeared only under the chart.
+            const projecting = data.projectedNet != null && data.projectedIncome != null && data.pace.projectedMonthEnd != null;
+            const net = projecting ? (data.projectedNet as number) : data.net;
             const progress = b && b.total > 0 ? b.spent / b.total : data.income > 0 ? data.expenses / data.income : 0;
             const barLabel =
               b && b.total > 0
@@ -170,11 +178,11 @@ export default function DashboardPage() {
               <SummaryCard
                 primary={{
                   value: usd(net, { sign: true, cents: false }),
-                  label: data.projectedNet != null ? "net cash flow, projected" : "net cash flow",
+                  label: projecting ? "net cash flow, projected" : "net cash flow",
                   tone: net >= 0 ? "good" : "bad",
                   href: `/transactions?month=${month}`,
                   sub:
-                    data.projectedNet != null ? (
+                    projecting ? (
                       // Mid-month net is misleading (income hasn't posted) — lead
                       // with the projected month-end figure, keep the actual as context.
                       <span>{usd(data.net, { sign: true, cents: false })} so far</span>
@@ -184,27 +192,44 @@ export default function DashboardPage() {
                 }}
                 secondary={[
                   {
-                    value: usd(data.income, { cents: false }),
-                    label: "income",
+                    value: usd(projecting ? (data.projectedIncome as number) : data.income, { cents: false }),
+                    label: projecting ? "income, expected" : "income",
                     href: `/transactions?month=${month}&type=income`,
                     sub:
-                      data.projectedIncome != null ? (
+                      projecting ? (
                         // Income posts late in the month, so a vs-prior delta on the
-                        // amount-so-far is noise — show what's expected instead.
-                        <span>{usd(data.projectedIncome, { cents: false })} expected</span>
+                        // amount-so-far is noise — what has arrived is the context.
+                        <span>{usd(data.income, { cents: false })} so far</span>
                       ) : (
                         <DeltaLine cur={data.income} prev={data.prev?.income} prevLabel={prevLabel} higherIsGood />
                       ),
                   },
                   {
-                    value: usd(data.expenses, { cents: false }),
-                    label: current ? "expenses so far" : "expenses",
+                    value: usd(projecting ? (data.pace.projectedMonthEnd as number) : data.expenses, { cents: false }),
+                    label: projecting ? "expenses, projected" : current ? "expenses so far" : "expenses",
                     href: `/transactions?month=${month}&type=expense`,
-                    sub: <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />,
+                    sub: projecting ? (
+                      // The like-for-like delta belongs to the actual, so it sits
+                      // under it — on its own line, or the block grows too wide to
+                      // share a phone's row with Income.
+                      <span className="flex flex-col items-end">
+                        <span>{usd(data.expenses, { cents: false })} so far</span>
+                        <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />
+                      </span>
+                    ) : (
+                      <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />
+                    ),
                   },
                 ]}
                 progress={progress}
                 barLabel={barLabel}
+                // Say what the bar measures, as the other two tabs do: it sat
+                // under net, income and expenses and was about none of them.
+                barCaption={
+                  b && b.total > 0
+                    ? `${usd(b.spent, { cents: false })} of ${usd(b.total, { cents: false })} budget${current ? " used so far" : " used"}`
+                    : `${usd(data.expenses, { cents: false })} of ${usd(data.income, { cents: false })} income spent${current ? " so far" : ""}`
+                }
                 alarm={!!b && b.total > 0 && b.spent > b.total}
                 status={
                   <span
@@ -553,13 +578,13 @@ function buildVerdict(
         tone: "neutral",
         text: `${m(b.spent)} of your ${m(b.total)} budget used — too early to project the month`,
       };
-    // Mirror BudgetSummary's delta exactly (projected − total, same usd call) so
-    // the headline and the budget block can never disagree by a rounding dollar.
-    const delta = b.projected - b.total;
+    // budgetOutlook is shared with BudgetSummary, so the headline and the
+    // budget block can never disagree — including about what counts as "on".
+    const o = budgetOutlook(b.total, b.projected, isCurrentMonth);
     const verb = isCurrentMonth ? "On pace to finish" : "Finished";
-    if (Math.round(delta) > 0) return { tone: "bad", text: `${verb} ${m(delta)} over budget` };
-    if (Math.round(delta) < 0) return { tone: "good", text: `${verb} ${m(delta)} under budget` };
-    return { tone: "good", text: `${verb} right on budget` };
+    if (o.kind === "over") return { tone: "bad", text: `${verb} ${m(o.delta)} over budget` };
+    if (o.kind === "under") return { tone: "good", text: `${verb} ${m(o.delta)} under budget` };
+    return { tone: "neutral", text: `${verb} on budget` };
   }
   // No budgets set — fall back to cash flow. Mid-month net is partial, so stay
   // factual rather than calling a verdict on an incomplete month.
@@ -931,7 +956,7 @@ function BudgetSummary({
 }) {
   const pct = budget.total > 0 ? Math.round((budget.spent / budget.total) * 100) : 0;
   const overNow = budget.spent > budget.total;
-  const projDelta = budget.projected != null ? budget.projected - budget.total : null;
+  const outlook = budget.projected != null ? budgetOutlook(budget.total, budget.projected, partial) : null;
   // Spend in categories that have no budget — reconciles this card's "budgeted"
   // figure with the all-expenses total shown in the Expenses stat / pace chart.
   const unbudgeted = Math.max(0, Number((totalExpenses - budget.spent).toFixed(2)));
@@ -962,13 +987,16 @@ function BudgetSummary({
       </div>
       <div className="mt-2 text-xs text-[var(--muted)]">
         {pct}% used{partial ? " so far" : ""}
-        {budget.projected != null && projDelta != null ? (
+        {budget.projected != null && outlook != null ? (
           <>
             {" · "}projected {usd(budget.projected, { cents: false })}{" "}
-            <span className={projDelta > 0 ? "text-[var(--bad)]" : "text-[var(--good)]"}>
-              ({projDelta >= 0 ? "over" : "under"} by{" "}
-              {usd(Math.abs(projDelta), { cents: false })})
-            </span>
+            {outlook.kind === "on" ? (
+              <span data-budget-outlook="on">(on budget)</span>
+            ) : (
+              <span data-budget-outlook={outlook.kind} className={outlook.kind === "over" ? "text-[var(--bad)]" : "text-[var(--good)]"}>
+                ({outlook.kind} by {usd(Math.abs(outlook.delta), { cents: false })})
+              </span>
+            )}
           </>
         ) : (
           " · too early to project"

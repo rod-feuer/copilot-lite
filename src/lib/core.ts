@@ -1073,13 +1073,17 @@ export function dashboard(month?: string): DashboardData {
   const [yy, mm] = m.split("-").map(Number);
   const daysInMonth = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
   const lastDataDay = rows.length ? Number(rows[rows.length - 1].date.slice(8, 10)) : 0;
-  const remainingDays = daysInMonth - lastDataDay;
   // Like-for-like month-over-month: when the viewed month is the current month
   // and still in progress, the income/expenses above are month-to-date, so the
   // prior-month baseline must be bounded to the same day-of-month — otherwise a
   // 9-day partial gets compared against a full 30-day month. Past/complete
   // months compare full-vs-full (compareThroughDay = null).
   const isCurrentMonth = m === new Date().toISOString().slice(0, 7);
+  // Days still to come — only the month we are in has any. Measured from the
+  // last transaction alone, a FINISHED month whose last charge fell on the 28th
+  // had "3 days remaining", so it was run-rated, projected, and captioned "so
+  // far": a closed month presented as a forecast.
+  const remainingDays = isCurrentMonth ? daysInMonth - lastDataDay : 0;
   const compareThroughDay =
     isCurrentMonth && lastDataDay > 0 && lastDataDay < daysInMonth ? lastDataDay : null;
 
