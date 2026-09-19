@@ -13,9 +13,13 @@ export type CategorySuggestion = {
   categoryIcon: string;
   count: number; // uncategorized transactions this would fill
   source: "rule" | "history" | "ai";
-  // A model guess it was not sure of (TypeSafe confidence between "show" and
-  // "sure"): shown last, tagged, and left out of Apply all.
+  // How sure the model was, when it said. Unset: sure (or a provider with no
+  // confidence). "possible": between the two bars. "guess": below the lower bar,
+  // where it was right about 4 times in 10 — still shown, because a vendor you
+  // have to go and find is worse than a guess you can see is a guess. Both are
+  // tagged, sorted after the sure ones, and left out of Apply all.
   possible?: boolean;
+  guess?: boolean;
   alternatives?: number[]; // the model's most probable categories, best first — the first choices when redirecting
 };
 
@@ -63,12 +67,10 @@ function context(db: ReturnType<typeof getDb>) {
 // Proposals for every uncategorized vendor: rules and the vendor's own history
 // (free, deterministic), then what the model has already said about the rest.
 // No model call — cheap enough to load with the page. `needsModelCount` is the
-// vendors nobody has been asked about yet; `unsureCount` those the model was
-// asked about and would only be guessing at.
+// vendors nobody has been asked about yet.
 export function categorizeSuggestions(): {
   suggestions: CategorySuggestion[];
   needsModelCount: number;
-  unsureCount: number;
   dismissedCount: number; // vendors still uncategorized that a Dismiss keeps out of the queue
   modelEnabled: boolean;
 } {
@@ -77,7 +79,6 @@ export function categorizeSuggestions(): {
   const answers = modelAnswers(db, cats);
   const suggestions: CategorySuggestion[] = [];
   let needsModelCount = 0;
-  let unsureCount = 0;
   let dismissedCount = 0;
 
   for (const u of uncats) {
@@ -92,6 +93,7 @@ export function categorizeSuggestions(): {
       source = "history";
     }
     let possible: true | undefined;
+    let guess: true | undefined;
     let alternatives: number[] | undefined;
     if (categoryId == null) {
       const a = answers.get(u.merchant);
@@ -99,13 +101,10 @@ export function categorizeSuggestions(): {
         needsModelCount++;
         continue;
       }
-      if (a.confidence != null && a.confidence < CONFIDENCE.show) {
-        unsureCount++; // a guess: counted, not shown
-        continue;
-      }
       categoryId = a.categoryId;
       source = "ai";
-      possible = a.confidence != null && a.confidence < CONFIDENCE.sure ? true : undefined;
+      guess = a.confidence != null && a.confidence < CONFIDENCE.show ? true : undefined;
+      possible = !guess && a.confidence != null && a.confidence < CONFIDENCE.sure ? true : undefined;
       alternatives = (JSON.parse(a.alternatives) as number[]).filter((id) => byId.has(id));
     }
     const cat = byId.get(categoryId);
@@ -118,12 +117,14 @@ export function categorizeSuggestions(): {
       count: u.count,
       source,
       possible,
+      guess,
       alternatives: alternatives?.length ? alternatives : undefined,
     });
   }
-  // Sure ones first, then possible matches; busiest vendor first within each.
-  suggestions.sort((a, b) => Number(!!a.possible) - Number(!!b.possible) || b.count - a.count || a.merchant.localeCompare(b.merchant));
-  return { suggestions, needsModelCount, unsureCount, dismissedCount, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
+  // Sure ones first, then possible matches, then guesses; busiest vendor first within each.
+  const tier = (s: CategorySuggestion) => (s.guess ? 2 : s.possible ? 1 : 0);
+  suggestions.sort((a, b) => tier(a) - tier(b) || b.count - a.count || a.merchant.localeCompare(b.merchant));
+  return { suggestions, needsModelCount, dismissedCount, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
 }
 
 // Up to three merchants the user has already filed under each category (its

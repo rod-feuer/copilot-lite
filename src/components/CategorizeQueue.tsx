@@ -29,9 +29,6 @@ export function CategorizeQueue({
   const [items, setItems] = useState<Proposal[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [needsModel, setNeedsModel] = useState(0);
-  // Vendors the model was asked about and would only be guessing at. They still
-  // need a category; asking again would only repeat the answer.
-  const [unsure, setUnsure] = useState(0);
   // The model is asked without a press: a suggestion you have to click to see
   // is a suggestion you mostly don't see. "asking" while it runs; "failed" if
   // it could not be reached, said in place (not a toast on every page load).
@@ -49,7 +46,6 @@ export function CategorizeQueue({
     setItems(d.suggestions);
     setCats(cs);
     setNeedsModel(d.needsModelCount);
-    setUnsure(d.unsureCount ?? 0);
     setDismissedCount(d.dismissedCount ?? 0);
     setModelEnabled(d.modelEnabled);
     return d as { needsModelCount: number; modelEnabled: boolean };
@@ -123,14 +119,14 @@ export function CategorizeQueue({
     );
   }
 
-  // Apply all commits what is sure. A possible match is a question to the user,
-  // so it waits for its own Apply — unless they already redirected it, which is
-  // their answer.
-  const sure = items.filter((s) => !s.possible || s.edited);
+  // Apply all commits what is sure. A possible match or a guess is a question to
+  // the user, so it waits for its own Apply — unless they already redirected
+  // it, which is their answer.
+  const sure = items.filter((s) => (!s.possible && !s.guess) || s.edited);
   async function applyAll() {
     setBusy("__all");
     const batch = sure.map((s) => ({ merchant: s.merchant, categoryId: s.categoryId }));
-    setItems((a) => a.filter((s) => s.possible && !s.edited)); // optimistic
+    setItems((a) => a.filter((s) => (s.possible || s.guess) && !s.edited)); // optimistic
     const ok = await mutate(
       () => postJson("/api/category-suggestions", { action: "applyAll", items: batch }),
       {
@@ -143,7 +139,7 @@ export function CategorizeQueue({
     setBusy(null);
   }
 
-  if (items.length === 0 && needsModel === 0 && unsure === 0 && dismissedCount === 0) return null;
+  if (items.length === 0 && needsModel === 0 && dismissedCount === 0) return null;
 
   return (
     <div className="card mb-4 p-4">
@@ -191,10 +187,12 @@ export function CategorizeQueue({
                 <span className="shrink-0 text-xs text-[var(--muted)]">({s.count})</span>
                 {s.edited ? (
                   <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-2 text-[11px] font-medium text-[var(--accent)]">edited</span>
-                ) : s.possible ? (
-                  // The same tag the merge queue uses for a match it is not sure of.
-                  <span data-possible className="shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]">
-                    possible match
+                ) : s.possible || s.guess ? (
+                  // The same tag the merge queue uses for a match it is not sure of;
+                  // "a guess" when the model was mostly unsure. Shown either way: the
+                  // words say how far to trust it.
+                  <span data-possible={s.guess ? "guess" : "possible"} className="shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]">
+                    {s.guess ? "a guess" : "possible match"}
                   </span>
                 ) : (
                   <SourceTag source={s.source} />
@@ -223,7 +221,7 @@ export function CategorizeQueue({
         </ul>
       )}
 
-      {(needsModel > 0 || unsure > 0 || dismissedCount > 0) && (
+      {(needsModel > 0 || dismissedCount > 0) && (
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted)] ${items.length > 0 ? "mt-3" : ""}`}>
           {/* One line says where the rest stand. The model is asked without a
               press, so there is no "Suggest" button: only what it is doing, what
@@ -253,20 +251,15 @@ export function CategorizeQueue({
               {needsModel} vendor{needsModel === 1 ? " needs" : "s need"} a closer look.
             </span>
           )}
-          {unsure > 0 && (
-            <span data-unsure>
-              The model wasn&rsquo;t sure about {unsure} vendor{unsure === 1 ? "" : "s"}.
-            </span>
-          )}
           {/* The hand-work path: the list itself, filtered to what needs a category. */}
-          {(needsModel > 0 || unsure > 0) && onShowUncategorized && (
+          {needsModel > 0 && onShowUncategorized && (
             <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
               Show all uncategorized →
             </button>
           )}
           {dismissedCount > 0 && (
             <span data-dismissed>
-              {needsModel > 0 || unsure > 0 ? "· " : ""}
+              {needsModel > 0 ? "· " : ""}
               {dismissedCount} dismissed{" "}
               <button onClick={undismissAll} className="btn-link">
                 Bring them back →

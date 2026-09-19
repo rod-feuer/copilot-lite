@@ -98,10 +98,11 @@ export type ModelProposal = {
   alternatives?: number[]; // TypeSafe only: the most probable categories, best first (includes categoryId)
 };
 
-// How the queue reads a confidence. Below SHOW the model is guessing (38% right
-// in the test): the vendor stays under "need a closer look". Between SHOW and
-// SURE it is shown as a possible match, for the user to confirm. Thresholds are
-// from the 200-merchant test, not from the docs' examples.
+// How the queue reads a confidence. At SURE and above, a suggestion. Between
+// SHOW and SURE, a "possible match". Below SHOW the model is guessing (38% right
+// in the test) — shown as "a guess", never hidden. All but the sure ones wait
+// for their own Apply. Thresholds are from the 200-merchant test, not from the
+// docs' examples.
 export const CONFIDENCE = { show: 0.5, sure: 0.8 } as const;
 
 const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
