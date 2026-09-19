@@ -35,11 +35,29 @@ export function scaleParts(parts: SplitPart[], total: number): SplitPart[] {
   return parts.map((p, i) => ({ ...p, amount: cents[i] / 100 }));
 }
 
-type Rule = { pattern: string; amount: number; parts: SplitPart[] };
+type Rule = { id: number; pattern: string; amount: number; parts: SplitPart[] };
 export function splitRules(): Rule[] {
-  return (getDb().prepare("SELECT pattern, amount, parts FROM split_rules").all() as { pattern: string; amount: number; parts: string }[]).map(
-    (r) => ({ pattern: r.pattern, amount: r.amount, parts: JSON.parse(r.parts) as SplitPart[] })
+  return (getDb().prepare("SELECT id, pattern, amount, parts FROM split_rules ORDER BY id").all() as { id: number; pattern: string; amount: number; parts: string }[]).map(
+    (r) => ({ id: r.id, pattern: r.pattern, amount: r.amount, parts: JSON.parse(r.parts) as SplitPart[] })
   );
+}
+
+// The rules that act on a vendor, for its shelf: a rule was invisible unless
+// you found a charge it had split, and a price change can leave a vendor with
+// two. `merchants` are the vendor's own bank descriptors (not the part-vendors
+// a split creates, whose names also contain the pattern). `applied` counts the
+// charges the rule has split.
+export type SplitRuleInfo = { id: number; amount: number; parts: SplitPart[]; applied: number };
+export function splitRulesFor(merchants: string[]): SplitRuleInfo[] {
+  const names = merchants.map((m) => m.toLowerCase());
+  const applied = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM transactions t
+     WHERE LOWER(t.merchant) LIKE ? AND t.amount < 0 AND ABS(ABS(t.amount) - ?) < 0.01 AND t.excluded = 1
+       AND t.hash NOT LIKE '%:s%' AND EXISTS (SELECT 1 FROM transactions s WHERE s.hash LIKE t.hash || ':s%')`
+  );
+  return splitRules()
+    .filter((r) => names.some((m) => m.includes(r.pattern)))
+    .map((r) => ({ id: r.id, amount: r.amount, parts: r.parts, applied: (applied.get(`%${r.pattern}%`, r.amount) as { n: number }).n }));
 }
 
 export function splitDriftFor(
@@ -146,7 +164,21 @@ export function undoSplit(parentId: number): number {
       .all(Math.abs(parent.amount)) as { id: number; pattern: string; amount: number }[]
   ).find((r) => parent.merchant.toLowerCase().includes(r.pattern));
   if (!rule) return 0;
+  return undoRule(rule);
+}
 
+// Remove a rule by id (the vendor shelf's control). null: no such rule. A rule
+// that never applied — one recorded for a new price that hasn't charged yet —
+// restores nothing and is still removed.
+export function removeSplitRule(id: number): number | null {
+  const rule = getDb().prepare("SELECT id, pattern, amount FROM split_rules WHERE id = ?").get(id) as
+    | { id: number; pattern: string; amount: number }
+    | undefined;
+  return rule ? undoRule(rule) : null;
+}
+
+function undoRule(rule: { id: number; pattern: string; amount: number }): number {
+  const db = getDb();
   const parents = db
     .prepare(
       `SELECT id, hash FROM transactions

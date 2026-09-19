@@ -1,4 +1,4 @@
-import { splitDriftFor, splitRules, type SplitDrift } from "./splits";
+import { splitDriftFor, splitRules, splitRulesFor, type SplitDrift } from "./splits";
 import { isSeriesKey, seriesVendor } from "./series";
 import { displayMerchant, merchantKey } from "./merchant";
 import {
@@ -937,6 +937,11 @@ export function merchantSummary(merchant: string, series?: string | null) {
     recurringDetail,
     byYear,
     priceChange,
+    // Split rules acting on this vendor's own descriptors (a part-vendor's
+    // rows are all parts, so it lists none).
+    splitRules: splitRulesFor(
+      (db.prepare(`SELECT DISTINCT merchant FROM transactions WHERE merchant IN (${ph}) AND hash NOT LIKE '%:s%'`).all(...variants) as { merchant: string }[]).map((r) => r.merchant)
+    ),
     categoryId: cat?.id ?? null,
     categoryName: cat?.name ?? null,
     categoryColor: cat?.color ?? null,
