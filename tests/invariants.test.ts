@@ -2130,3 +2130,42 @@ test("a charge takes its plan's name when the user named the plan", () => {
   detectRecurrings();
   assert.equal(transactionById(id("h200-09"))!.displayName, v);
 });
+
+// WHY: a bank can fold two bills into one new name. "Sofi Lending Loan Paymt"
+// (the mortgage) and a personal loan both became "Sofi". As a vendor, "Sofi"
+// has mixed amounts and its first charge was the loan, so it matched nothing:
+// the mortgage read as lapsed beside its own continuation, "Sofi · 1st". Read
+// plan by plan, the handoff is plain. The old name carries the user's name for
+// it, so it stays canonical — a cadence override on the new name is a setting,
+// not a name. And the level has its own guard: a catch-all descriptor has a plan at
+// nearly every price, so the names must agree.
+test("merge queue suggests a handoff into one plan of a vendor that carries several", () => {
+  const mortgage = "Sofi Lending Loan Paymt";
+  monthly(mortgage, [2025, 10], 9, -4397.28, 1, "Checking");
+  setRecurringSetting(mortgage, { alias: "Sofi Mortgage (Carmel)" } as never);
+  monthly("Sofi", [2026, 7], 3, -4453.91, 1, "Checking"); // a 1.3% escrow change
+  monthly("Sofi", [2026, 6], 3, -1350.95, 21, "Checking", CAT_X); // the loan, under the same new name
+  setRecurringSetting("Sofi", { cadence: "monthly" } as never); // a setting, but not a name
+  const plans = detectRecurrings().map((r) => r.merchant).filter((m) => m.startsWith("Sofi")).sort();
+  assert.deepEqual(plans, ["Sofi Lending Loan Paymt", "Sofi · 1st", "Sofi · 21st"], "fixture: the old plan and the new name's two");
+
+  const [s, ...rest] = handoffSuggestions(new Set());
+  assert.equal(rest.length, 0, "the loan plan is nobody's successor");
+  assert.deepEqual(s.variants.map((v) => v.merchant), [mortgage, "Sofi"]);
+  assert.match(s.note!, /^Its plan “Sofi · 1st” picks up where “Sofi Lending Loan Paymt” left off/);
+  assert.equal(s.canonical, mortgage, "the side with the user's name for it");
+  assert.equal(s.lowConfidence, false);
+
+  approveMerge(s.canonical, s.variants.map((v) => v.merchant), s.categoryId);
+  const after = detectRecurrings().filter((r) => r.merchant.startsWith("Sofi"));
+  const byCount = after.map((r) => r.count).sort((a, b) => b - a);
+  assert.deepEqual(byCount, [12, 3], "the mortgage is whole again, and the loan is still its own plan");
+
+  // the same shape into a descriptor whose name shares nothing is not offered
+  getDb().exec("DELETE FROM transactions; DELETE FROM recurrings; DELETE FROM merchant_links; DELETE FROM recurring_settings");
+  monthly("Youtube Tv", [2025, 10], 6, -72.98, 10);
+  monthly("Apple.com-bill", [2026, 4], 4, -74.89, 10);
+  monthly("Apple.com-bill", [2025, 10], 10, -9.99, 22);
+  detectRecurrings();
+  assert.equal(handoffSuggestions(new Set()).length, 0);
+});
