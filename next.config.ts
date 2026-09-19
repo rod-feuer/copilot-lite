@@ -24,6 +24,12 @@ const nextConfig: NextConfig = {
   // is opened from a phone over the LAN by hostname/IP instead of localhost. Allow
   // this machine's own LAN names. (No effect on a production build.)
   allowedDevOrigins: lanOrigins,
+  // Dev only: hide Next's round "N" badge. On a phone it sat on top of the
+  // bottom nav's Dashboard tab, and touching it made Safari throw inside Next's
+  // own dev tools ("NotFoundError … releasePointerCapture"), which the badge
+  // then reported as "1 issue" in the app. Build and runtime errors still
+  // surface without it (per the Next docs).
+  devIndicators: false,
 };
 
 export default nextConfig;
