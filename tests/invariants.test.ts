@@ -1967,3 +1967,30 @@ test("an effective date moves a charge's month and survives the next Plaid sync"
   setTransactionEffectiveDate(id, null);
   assert.equal(dashboard("2026-04").expenses, 2000, "clearing it returns the charge to its posted month");
 });
+
+// WHY: a bill charged on the same day every month for a year is a plan, whatever
+// else the vendor also charges. Chubb bills one policy on the 17th and another
+// quarterly on the 4th. The quarterly charges left the vendor's median gap at
+// 28 days ("monthly") but put 6 of 14 gaps off the monthly grid — so the
+// one-billing-day rescue was skipped (it only asked about the median) and the
+// ordinary path then refused the vendor (it also asks about the grid). Result:
+// no plan at all, and combining the vendor's two bank names erased the one it
+// had. The rescue now asks both questions, like the path it stands in for.
+test("detector keeps a monthly plan when a quarterly charge from the same vendor breaks the grid", () => {
+  const v = "Chubb";
+  for (const [d, a] of [
+    ["2025-10-17", -470.92], ["2025-11-18", -470.92], ["2025-12-17", -470.92], ["2026-01-17", -470.92], ["2026-02-18", -470.83],
+    ["2026-03-17", -1227.74], ["2026-04-17", -544.94], ["2026-05-19", -544.94], ["2026-06-17", -544.94], ["2026-07-17", -544.94],
+    ["2026-08-18", -544.94], ["2026-09-18", -544.94],
+  ] as [string, number][]) tx(v, { amount: a, date: d, categoryId: CAT });
+  const quarterly = ["2025-11-04", "2026-02-04", "2026-05-05"];
+  for (const d of quarterly) tx(v, { amount: -168.75, date: d, categoryId: CAT });
+  const plans = detectRecurrings().filter((r) => r.merchant.startsWith(v));
+  assert.equal(plans.length, 1, "the policy on the 17th is a plan");
+  assert.equal(plans[0].cadence, "monthly");
+  assert.equal(plans[0].avgAmount, -544.94, "at its current price");
+  assert.equal(plans[0].lastDate, "2026-09-18");
+  const linked = getDb().prepare("SELECT date FROM transactions WHERE recurringId = ? ORDER BY date").all(plans[0].id) as { date: string }[];
+  assert.equal(linked.length, 12, "every charge on the 17th");
+  assert.ok(!linked.some((r) => quarterly.includes(r.date)), "the quarterly policy's charges are not this plan's");
+});
