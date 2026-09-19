@@ -71,6 +71,35 @@ export function merchantDisplayName(
   return settings[canonicalMerchant(merchant, links)]?.alias ?? displayMerchant(merchant);
 }
 
+// The names the user gave to plans that share a bank descriptor, by plan id.
+// "In 529 Dir Ach Contrib" carries two plans — $200 for one child, $300 for the
+// other — each named on the Recurrings page. A charge is linked to its plan, so
+// it can carry that name; naming it by vendor alone made both read as the bank
+// string on every page but Recurrings. Only names the user set: the detector's
+// own label ("… · $200") beside a $200.00 amount says the same thing twice.
+export function planNames(settings: Record<string, RecurringSettings>): Map<number, string> {
+  const out = new Map<number, string>();
+  const named = Object.keys(settings).filter((k) => isSeriesKey(k) && settings[k].alias);
+  if (!named.length) return out;
+  const rows = getDb()
+    .prepare(`SELECT id, merchant FROM recurrings WHERE merchant IN (${named.map(() => "?").join(",")})`)
+    .all(...named) as { id: number; merchant: string }[];
+  for (const r of rows) out.set(r.id, settings[r.merchant].alias as string);
+  return out;
+}
+
+// What a CHARGE is called: its plan's name when the user gave it one, else its
+// vendor's. (A vendor is still called by merchantDisplayName: the vendor
+// picker lists vendors, not charges.)
+export function chargeDisplayName(
+  row: { merchant: string; recurringId: number | null },
+  settings: Record<string, RecurringSettings>,
+  links: Record<string, string>,
+  plans: Map<number, string>
+): string {
+  return (row.recurringId != null ? plans.get(row.recurringId) : undefined) ?? merchantDisplayName(row.merchant, settings, links);
+}
+
 // Distinct merchant strings with transaction counts — powers the link picker.
 export function distinctMerchants(): { merchant: string; count: number }[] {
   return getDb()
@@ -272,9 +301,16 @@ function buildTxFilter(opts: TxFilter): { whereSql: string; params: Record<strin
         const ph = merchants.map((_, i) => `@sm${i}`);
         merchants.forEach((m, i) => (params[`sm${i}`] = m));
         clauses.push(`t.merchant IN (${ph.join(",")})`);
-      } else {
-        clauses.push("0"); // text was given but matched no vendor
       }
+      // A plan's own name finds that plan's charges — "Henry" finds the $200
+      // contributions and not the $300 ones under the same bank name.
+      const planIds = [...planNames(getRecurringSettings())].filter(([, name]) => name.toLowerCase().includes(opts.q!.toLowerCase())).map(([id]) => id);
+      if (planIds.length) {
+        const ph = planIds.map((_, i) => `@sp${i}`);
+        planIds.forEach((id, i) => (params[`sp${i}`] = id));
+        clauses.push(`t.recurringId IN (${ph.join(",")})`);
+      }
+      if (!merchants.length && !planIds.length) clauses.push("0"); // text was given but matched nothing
     }
     if (digits) {
       clauses.push("CAST(ABS(t.amount) AS TEXT) LIKE @qn");
@@ -359,7 +395,8 @@ export function listTransactions(
   })[];
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
-  return rows.map((r) => ({ ...r, displayName: merchantDisplayName(r.merchant, settings, links) }));
+  const plans = planNames(settings);
+  return rows.map((r) => ({ ...r, displayName: chargeDisplayName(r, settings, links, plans) }));
 }
 
 // One charge, for its shelf: the list row's fields plus its plan — the plan it
@@ -417,7 +454,7 @@ export function transactionById(id: number): ChargeDetail | null {
   ).n;
   return {
     ...row,
-    displayName: merchantDisplayName(row.merchant, settings, links),
+    displayName: chargeDisplayName(row, settings, links, planNames(settings)),
     planKey: plan?.merchant ?? null,
     planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
     recent,
@@ -1785,6 +1822,7 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
           }))
           .sort((a, b) => a.dueDate.localeCompare(b.dueDate)); // soonest first
 
+  const plans = planNames(settings);
   return {
     ...cat,
     month,
@@ -1796,7 +1834,7 @@ export function categorySummary(categoryId: number, month: string): CategorySumm
     upcoming,
     transactions: txns.map((t) => ({
       ...t,
-      displayName: merchantDisplayName(t.merchant, settings, links),
+      displayName: chargeDisplayName(t, settings, links, plans),
     })),
   };
 }

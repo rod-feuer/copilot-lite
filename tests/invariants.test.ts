@@ -42,6 +42,7 @@ import {
   upcomingRecurringExpenses,
   transactionById,
   setTransactionEffectiveDate,
+  categorySummary,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -2089,4 +2090,43 @@ test("a handoff keeps the side that carries the user's settings, and stays dismi
   assert.equal(s.canonical, "Adtsecurity Myadt.co");
   for (const k of s.dismissKeys) dismissMerge(k);
   assert.equal(handoffSuggestions(new Set()).length, 0);
+});
+
+// WHY: one bank descriptor can carry two plans the user tells apart by name —
+// "In 529 Dir Ach Contrib" is $200 for one child and $300 for the other, named
+// on the Recurrings page. A charge is linked to its plan, so it carries that
+// name everywhere a charge is shown; named by vendor alone, both read as the
+// bank string on every page but Recurrings, and the two tabs disagreed about
+// what the same money was. Only the user's names travel: a plan's detector
+// label ("… · $200") beside a $200.00 amount says nothing new. And what a row
+// is called is what search finds.
+test("a charge takes its plan's name when the user named the plan", () => {
+  const v = "In 529 Dir Ach Contrib";
+  for (const m of ["04", "05", "06", "07", "08", "09"]) {
+    tx(v, { amount: -200, date: `2026-${m}-18`, categoryId: CAT, hash: `h200-${m}` });
+    tx(v, { amount: -300, date: `2026-${m}-18`, categoryId: CAT, hash: `h300-${m}` });
+  }
+  const plans = detectRecurrings().filter((r) => r.merchant.startsWith(v)).map((r) => r.merchant).sort();
+  assert.deepEqual(plans, [`${v} · $200`, `${v} · $300`], "fixture: two plans under one descriptor");
+  setRecurringSetting(`${v} · $200`, { alias: "529 Contribution - Henry" } as never);
+
+  const names = (rows: { amount: number; displayName: string }[]) => [...new Set(rows.map((r) => `${r.amount}: ${r.displayName}`))].sort();
+  const expected = ["-200: 529 Contribution - Henry", `-300: ${v}`];
+  assert.deepEqual(names(listTransactions({ month: "2026-09" })), expected, "the Transactions row; the unnamed plan keeps the vendor's name");
+  assert.deepEqual(names(categorySummary(CAT, "2026-09")!.transactions), expected, "the category shelf's list");
+  const id = (hash: string) => (getDb().prepare("SELECT id FROM transactions WHERE hash = ?").get(hash) as { id: number }).id;
+  assert.equal(transactionById(id("h200-09"))!.displayName, "529 Contribution - Henry", "the charge shelf");
+  assert.equal(transactionById(id("h200-09"))!.merchant, v, "with the bank's descriptor still on the row");
+
+  // search finds the plan by its name — and only that plan's charges
+  const found = listTransactions({ q: "henry" });
+  assert.equal(found.length, 6);
+  assert.ok(found.every((r) => r.amount === -200));
+  assert.equal(transactionsSummary({ q: "henry" }).count, 6, "the count above the list agrees with the list");
+  assert.equal(listTransactions({ q: "529 dir" }).length, 12, "the bank's name still finds both");
+
+  // a charge the user took out of the plan is no longer that plan's
+  setTransactionRecurringExcluded(id("h200-09"), true);
+  detectRecurrings();
+  assert.equal(transactionById(id("h200-09"))!.displayName, v);
 });
