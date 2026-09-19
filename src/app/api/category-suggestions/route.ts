@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   if (body.action === "suggestAI") {
-    return NextResponse.json({ suggestions: await categorizeSuggestionsAI() });
+    return NextResponse.json(await categorizeSuggestionsAI());
   }
 
   if (body.action === "undismissAll") {

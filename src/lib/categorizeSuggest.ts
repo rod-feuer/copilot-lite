@@ -1,6 +1,6 @@
 import { getDb } from "./db";
 import { categorizeByRules, categorizeByHistory, learnRule } from "./core";
-import { proposeCategoriesWithModel } from "./categorize";
+import { proposeCategories, CONFIDENCE } from "./categorize";
 import type { Category } from "./types";
 
 // A proposed category for an uncategorized vendor, with where it came from so the
@@ -13,6 +13,10 @@ export type CategorySuggestion = {
   categoryIcon: string;
   count: number; // uncategorized transactions this would fill
   source: "rule" | "history" | "ai";
+  // A model guess it was not sure of (TypeSafe confidence between "show" and
+  // "sure"): shown last, tagged, and left out of Apply all.
+  possible?: boolean;
+  alternatives?: number[]; // the model's most probable categories, best first — the first choices when redirecting
 };
 
 function ensureDismissals(db: ReturnType<typeof getDb>) {
@@ -76,12 +80,34 @@ export function categorizeSuggestions(): {
     });
   }
   suggestions.sort((a, b) => b.count - a.count || a.merchant.localeCompare(b.merchant));
-  return { suggestions, needsModelCount, dismissedCount, modelEnabled: !!process.env.ANTHROPIC_API_KEY };
+  return { suggestions, needsModelCount, dismissedCount, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
 }
 
-// Model proposals for the vendors rules/history can't resolve — on demand (one
-// model call), returned for review WITHOUT applying or learning a rule.
-export async function categorizeSuggestionsAI(): Promise<CategorySuggestion[]> {
+// Up to three merchants the user has already filed under each category (its
+// busiest, never one being asked about): the context a model needs to tell
+// "Lake Home" from "Carmel Home".
+function categoryExamples(db: ReturnType<typeof getDb>, asking: Set<string>): Map<number, string[]> {
+  const rows = db
+    .prepare(
+      `SELECT categoryId, merchant, COUNT(*) n FROM transactions
+       WHERE categoryId IS NOT NULL AND excluded = 0 AND hash NOT LIKE '%:s%'
+       GROUP BY categoryId, merchant ORDER BY n DESC`
+    )
+    .all() as { categoryId: number; merchant: string; n: number }[];
+  const out = new Map<number, string[]>();
+  for (const r of rows) {
+    if (asking.has(r.merchant)) continue;
+    const e = out.get(r.categoryId) ?? out.set(r.categoryId, []).get(r.categoryId)!;
+    if (e.length < 3) e.push(r.merchant);
+  }
+  return out;
+}
+
+// Model proposals for the vendors rules/history can't resolve — on demand,
+// returned for review WITHOUT applying or learning a rule. `unsure` counts the
+// vendors the model answered below the "show" bar or not at all: they stay
+// under "need a closer look" rather than appear as a guess.
+export async function categorizeSuggestionsAI(): Promise<{ suggestions: CategorySuggestion[]; unsure: number; provider: string | null }> {
   const db = getDb();
   const { dismissed, cats, byId, uncats } = context(db);
   const needsModel = uncats.filter(
@@ -90,17 +116,16 @@ export async function categorizeSuggestionsAI(): Promise<CategorySuggestion[]> {
       categorizeByRules(u.merchant) == null &&
       categorizeByHistory(u.merchant) == null
   );
-  if (needsModel.length === 0) return [];
+  if (needsModel.length === 0) return { suggestions: [], unsure: 0, provider: null };
   const countByMerchant = new Map(needsModel.map((u) => [u.merchant, u.count]));
-  const proposals = await proposeCategoriesWithModel(
-    needsModel.map((u) => u.merchant),
-    cats
-  );
+  const asking = needsModel.map((u) => u.merchant);
+  const { provider, proposals } = await proposeCategories(asking, cats, categoryExamples(db, new Set(asking)));
   const out: CategorySuggestion[] = [];
   for (const p of proposals) {
     const count = countByMerchant.get(p.merchant);
     const cat = byId.get(p.categoryId);
     if (count == null || !cat) continue;
+    if (p.confidence != null && p.confidence < CONFIDENCE.show) continue; // a guess: not shown
     out.push({
       merchant: p.merchant,
       categoryId: p.categoryId,
@@ -108,9 +133,13 @@ export async function categorizeSuggestionsAI(): Promise<CategorySuggestion[]> {
       categoryIcon: cat.icon,
       count,
       source: "ai",
+      possible: p.confidence != null && p.confidence < CONFIDENCE.sure ? true : undefined,
+      alternatives: p.alternatives,
     });
   }
-  return out;
+  // Sure ones first, then possible matches; busiest vendor first within each.
+  out.sort((a, b) => Number(!!a.possible) - Number(!!b.possible) || b.count - a.count || a.merchant.localeCompare(b.merchant));
+  return { suggestions: out, unsure: needsModel.length - out.length, provider };
 }
 
 // Apply an approved suggestion: learn it as a user rule (so it's never asked

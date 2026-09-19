@@ -47,7 +47,8 @@ All optional. Put them in a `.env.local` file at the repo root (gitignored).
 
 | Variable | Used for | Default |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | **Auto-categorize** — sends only genuinely unknown merchants to Claude (see below). Without it, unknowns stay uncategorized. | unset |
+| `TYPESAFE_API_KEY` | **Suggest categories** (preferred) — asks TypeSafe's Jev model about genuinely unknown merchants and gets a confidence back, so sure guesses, possible matches and "not sure" are told apart. Sends merchant names, category names, and up to three already-filed merchant names per category; never amounts, dates or accounts. | unset |
+| `ANTHROPIC_API_KEY` | **Suggest categories** (fallback) — Claude Haiku answers when TypeSafe is unset or unreachable. No confidence, so every guess looks equally sure. Without either key, unknowns stay uncategorized. | unset |
 | `PLAID_CLI_PATH` | **Sync from bank** — path to a `plaid` CLI binary that emits the expected JSON (advanced; the sync shells out to it). | `plaid` on `PATH` |
 | `COPILOT_DB_PATH` | Override the SQLite file location. Tests set this to a throwaway file so they never touch `data/copilot.db`. | `data/copilot.db` |
 | `APP_PASSWORD` | **Login gate.** When set, every page/API requires a session cookie (log in at `/login`). Leave unset for plain localhost dev — auth is off and nothing changes. **Set this before exposing the app beyond localhost** (e.g. over a private network / Tailscale). | unset (auth off) |
@@ -82,10 +83,16 @@ used for exactly one thing — classifying a *genuinely unseen* merchant into a 
 | Dedupe, import, dashboard totals, cash-flow | Deterministic code (`src/lib/core.ts`) |
 | Recurring detection (3+ regular, similar-amount charges) | Deterministic pattern match — **not** the model |
 | Known-merchant categorization | Rule table (substring match), applied for free |
-| **Unknown**-merchant categorization | One Claude Haiku call, batched; result cached as a rule so it's never re-asked |
+| **Unknown**-merchant categorization | On request: one TypeSafe Choice per merchant (or a batched Claude Haiku call as the fallback). Proposals go to the review queue; applying one caches it as a rule so it's never re-asked |
 
-Without an `ANTHROPIC_API_KEY`, unknown merchants are simply left uncategorized
-(surfaced in the UI, never silently faked).
+On 200 of the owner's already-categorized merchants the two tied on accuracy
+(TypeSafe 59.5%, Haiku 61.5%, ±9.6). TypeSafe is preferred for its confidence:
+at ≥0.8 it was right 80% of the time, below 0.5 only 38% — so the queue shows
+the first as suggestions, the middle as "possible matches", and leaves the rest
+under "need a closer look" instead of guessing.
+
+Without either key, unknown merchants are simply left uncategorized (surfaced
+in the UI, never silently faked).
 
 ## Data sources
 
