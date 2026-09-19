@@ -423,7 +423,12 @@ function Group({
                 onSave={onEditAppearance ? (patch) => onEditAppearance(c.id, patch) : undefined}
               />
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 sm:flex-nowrap">
+                {/* When the figures wrap under the name (a phone, an unbudgeted
+                    row with its "Use $X" chip), the two lines sit 12px apart:
+                    the name's pencil and the "/mo" toggle are both touch
+                    targets, and at 4px the lower one's hit area took the
+                    upper one's. */}
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-3 sm:flex-nowrap">
                   <CategoryName
                     name={c.name}
                     onRename={
@@ -515,10 +520,14 @@ function Group({
                           : "text-[var(--foreground)]"
                       }`}
                     >
-                      {remaining >= 0
-                        ? `${usd(remaining, { cents: false })} left`
-                        : `${usd(-remaining, { cents: false })} over`}
-                      {annual ? " this year" : isCurrentMonth(month) ? " so far" : ""}
+                      {/* Two units — "$1,344 left so far" and "· $6,683 recurring" —
+                          so a narrow row breaks between them, never inside one. */}
+                      <span className="whitespace-nowrap">
+                        {remaining >= 0
+                          ? `${usd(remaining, { cents: false })} left`
+                          : `${usd(-remaining, { cents: false })} over`}
+                        {annual ? " this year" : isCurrentMonth(month) ? " so far" : ""}
+                      </span>
                       {recur > 0 && (
                         <Tooltip
                           label={
@@ -528,8 +537,10 @@ function Group({
                           }
                           onlyIfTruncated={false}
                         >
+                          {/* One unit, so a narrow row wraps "· $6,683 recurring" whole
+                              instead of orphaning "recurring". */}
                           <span
-                            className={`font-normal ${
+                            className={`whitespace-nowrap font-normal ${
                               recur > budget ? "text-[var(--warn)]" : "text-[var(--muted)]"
                             }`}
                           >
@@ -696,6 +707,9 @@ function BudgetInput({
 }) {
   const [period, setPeriod] = useState<"monthly" | "annual">(initialPeriod);
   const unit = period === "annual" ? "/yr" : "/mo";
+  // What the input shows right now, so its box is exactly as wide as its digits
+  // (an <input> can't size to its content; a hidden twin of the text can).
+  const [draft, setDraft] = useState(budget === null ? "" : budget.toLocaleString("en-US"));
   const sug = period === "annual" ? suggestedAnnual : suggested;
 
   function commit(raw: string) {
@@ -725,25 +739,33 @@ function BudgetInput({
   // chip lives in a fixed-width slot that's reserved even when there's no
   // suggestion, so the "—"/amount columns line up across all unbudgeted rows.
   return (
-    <span className="inline-flex items-baseline gap-1 whitespace-nowrap text-[var(--muted)]">
+    <span className="inline-flex items-baseline whitespace-nowrap text-[var(--muted)]">
       of&nbsp;$
       <Tooltip
         label={period === "annual" ? "Annual budget" : "Monthly budget"}
         onlyIfTruncated={false}
         className="inline-flex"
       >
-        {/* Sized to its content (the `size` attr) instead of a fixed w-14 right-
-            aligned box, which stranded short values away from "of $" (e.g.
-            "of $   259"). Now "of $259/mo" reads as one tight phrase. */}
-        <CommitInput
-          defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
-          size={budget === null ? 2 : Math.max(2, budget.toLocaleString("en-US").length)}
-          onCommit={commit}
-          placeholder="—"
-          inputMode="decimal"
-          aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
-          className="tap-native rounded-lg bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
-        />
+        {/* Sized to its digits so "of $259/mo" reads as one tight phrase: an
+            invisible twin of the text sets the width and the input sits over
+            it. The `size` attribute over-measured and left a gap after the
+            dollar sign ("of $ 10,375"). */}
+        {/* Blur re-reads the input: Escape reverts its value without a change
+            event, and the box must follow the text back. */}
+        <span className="inline-grid" onBlur={(e) => setDraft((e.target as HTMLInputElement).value)}>
+          <span aria-hidden className="invisible col-start-1 row-start-1 whitespace-pre font-medium tabular-nums">
+            {draft || "—"}
+          </span>
+          <CommitInput
+            defaultValue={budget === null ? "" : budget.toLocaleString("en-US")}
+            onChange={(e) => setDraft(e.target.value)}
+            onCommit={commit}
+            placeholder="—"
+            inputMode="decimal"
+            aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
+            className="tap-native col-start-1 row-start-1 w-0 min-w-full rounded-lg bg-transparent px-0 font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+          />
+        </span>
       </Tooltip>
       <Tooltip
         label={period === "annual" ? "Annual budget — click for monthly" : "Monthly budget — click for annual"}
@@ -757,7 +779,7 @@ function BudgetInput({
         </button>
       </Tooltip>
       {budget === null && (
-        <span className="flex w-20 shrink-0 justify-end">
+        <span className="ml-1 flex w-20 shrink-0 justify-end">
           {sug > 0 && (
             <Tooltip
               label={
