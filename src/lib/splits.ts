@@ -14,11 +14,57 @@ export function createSplitRule(
     .run(pattern.toLowerCase(), amount, JSON.stringify(parts));
 }
 
+// Split drift: a rule matches its amount to the cent, so when the vendor changes
+// the price (an insurance renewal) the rule silently stops applying — the charge
+// posts whole, and the parts' plans read as overdue with nothing saying why. A
+// charge from a rule's vendor within 10% of the rule's amount, that no rule
+// matches exactly, is reported with the rule's parts scaled to the new total.
+// Accepting it records a NEW rule at the new amount (the old one stays, so the
+// charges it split can still be undone); the parts keep their labels, so they
+// continue the same part-vendors and plans as a price change.
+export type SplitDrift = { ruleAmount: number; parts: SplitPart[] };
+const DRIFT = 0.1;
+
+// Parts in the same proportions, in cents, summing exactly to `total`: each is
+// rounded, and the rounding remainder goes to the largest part.
+export function scaleParts(parts: SplitPart[], total: number): SplitPart[] {
+  const from = parts.reduce((a, p) => a + p.amount, 0);
+  const cents = parts.map((p) => Math.round((p.amount / from) * total * 100));
+  const off = Math.round(total * 100) - cents.reduce((a, c) => a + c, 0);
+  cents[cents.indexOf(Math.max(...cents))] += off;
+  return parts.map((p, i) => ({ ...p, amount: cents[i] / 100 }));
+}
+
+type Rule = { pattern: string; amount: number; parts: SplitPart[] };
+export function splitRules(): Rule[] {
+  return (getDb().prepare("SELECT pattern, amount, parts FROM split_rules").all() as { pattern: string; amount: number; parts: string }[]).map(
+    (r) => ({ pattern: r.pattern, amount: r.amount, parts: JSON.parse(r.parts) as SplitPart[] })
+  );
+}
+
+export function splitDriftFor(
+  tx: { merchant: string; amount: number; pending: number | boolean; excluded: number | boolean; hash: string },
+  rules: Rule[] = splitRules()
+): SplitDrift | null {
+  // Only a charge that could be split: a posted expense that counts, and is not
+  // itself a part. (A split parent is excluded.)
+  if (tx.amount >= 0 || tx.pending || tx.excluded || tx.hash.includes(":s")) return null;
+  const magnitude = Math.abs(tx.amount);
+  const mine = rules.filter((r) => tx.merchant.toLowerCase().includes(r.pattern));
+  if (mine.some((r) => Math.abs(r.amount - magnitude) < 0.01)) return null; // a rule fits; the next sync applies it
+  const near = mine
+    .filter((r) => Math.abs(r.amount - magnitude) <= DRIFT * r.amount)
+    .sort((a, b) => Math.abs(a.amount - magnitude) - Math.abs(b.amount - magnitude))[0];
+  return near ? { ruleAmount: near.amount, parts: scaleParts(near.parts, magnitude) } : null;
+}
+
 // Apply all split rules to matching, not-yet-split transactions. Idempotent:
 // a parent is "already split" once child rows (hash `<parent>:s*`) exist, and a
 // split parent is marked excluded so it never double-counts or re-matches.
 // Pending charges are never split: a sync replaces a pending row (remove + add),
 // which would bring the parent back un-excluded while its children survive.
+// Expenses only: the parts are inserted as debits, so matching on magnitude
+// alone turned a refund of exactly the rule's amount into that much spending.
 export function applySplitRules(): number {
   const db = getDb();
   const rules = db
@@ -29,7 +75,7 @@ export function applySplitRules(): number {
   const findMatches = db.prepare(
     `SELECT id, date, merchant, amount, account, source, hash
      FROM transactions
-     WHERE LOWER(merchant) LIKE ? AND ABS(ABS(amount) - ?) < 0.01 AND excluded = 0 AND pending = 0`
+     WHERE LOWER(merchant) LIKE ? AND amount < 0 AND ABS(ABS(amount) - ?) < 0.01 AND excluded = 0 AND pending = 0`
   );
   const hasChildren = db.prepare(
     "SELECT 1 FROM transactions WHERE hash LIKE ? LIMIT 1"

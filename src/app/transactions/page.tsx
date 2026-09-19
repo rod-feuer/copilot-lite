@@ -942,6 +942,10 @@ const TxRow = memo(function TxRow({
                           <span className="pill shrink-0 bg-[var(--background)] text-[11px] text-[var(--muted)]">
                             excluded
                           </span>
+                        ) : t.splitMissed ? (
+                          <span data-split-drift-tag className="pill shrink-0 bg-[var(--warn)]/15 text-[11px] text-[var(--warn)]">
+                            not split
+                          </span>
                         ) : null}
                       </div>
                       {/* Mobile: the category chip belongs in the subtitle here too —
@@ -985,6 +989,10 @@ const TxRow = memo(function TxRow({
                     ) : t.excluded ? (
                       <span className="pill shrink-0 bg-[var(--background)] text-[11px] text-[var(--muted)]">
                         excluded
+                      </span>
+                    ) : t.splitMissed ? (
+                      <span data-split-drift-tag className="pill shrink-0 bg-[var(--warn)]/15 text-[11px] text-[var(--warn)]">
+                        not split
                       </span>
                     ) : null}
                   </div>
