@@ -421,6 +421,7 @@ export default function TransactionsPage() {
     const topCat = [...catCount].sort((a, b) => b[1] - a[1])[0]?.[0];
     const topAcct = [...acctCount].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
     const rep = txs.find((t) => String(t.categoryId ?? "none") === topCat) ?? txs[0];
+    const counted = txs.filter((t) => !(t.excluded || t.categoryExcluded));
     return {
       displayName: txs[0].displayName,
       categoryId: rep.categoryId,
@@ -428,8 +429,12 @@ export default function TransactionsPage() {
       categoryColor: rep.categoryColor,
       categoryIcon: rep.categoryIcon,
       account: topAcct,
-      count: txs.length,
-      total: txs.reduce((a, t) => a + t.amount, 0),
+      // Only what counts: the same rule as the page's net and the day totals.
+      // Summing every row put an excluded duplicate into the header, so one
+      // screen read "net −$1,200.00" above "−$1,300.00 total".
+      count: counted.length,
+      notCounted: txs.length - counted.length,
+      total: counted.reduce((a, t) => a + t.amount, 0),
     };
   }, [vendor, txs]);
 
@@ -683,13 +688,14 @@ export default function TransactionsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[15px] font-semibold">{modal.displayName}</div>
                   <div className="truncate text-xs text-[var(--muted)]">
-                    {modal.count} transaction{modal.count === 1 ? "" : "s"} ·{" "}
+                    {modal.count} transaction{modal.count === 1 ? "" : "s"}
+                    {modal.notCounted > 0 ? ` · ${modal.notCounted} not counted` : ""} ·{" "}
                     {modal.categoryName ?? "Uncategorized"}
                     {modal.account ? ` · ${modal.account}` : ""}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-[13px] font-semibold tabular-nums">
+                  <div data-vendor-total className="text-[13px] font-semibold tabular-nums">
                     {usd(modal.total, { sign: true })}
                   </div>
                   <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">

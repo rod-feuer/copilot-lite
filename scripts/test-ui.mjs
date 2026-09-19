@@ -427,6 +427,34 @@ async function partialMonthQualifiers(browser) {
   });
 }
 
+// A vendor view's header counts and totals only the charges that count — the
+// same rule as the page's net above it. Summing every row put an excluded
+// duplicate into the total, so one screen read "net −$1,200.00" over
+// "−$1,300.00 total".
+async function vendorHeaderCounts(browser) {
+  await withPage(browser, async (page) => {
+    const url = BASE + "/transactions?vendor=Chipotle";
+    await page.goto(url, { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-vendor-total]");
+    const read = () => page.evaluate(() => {
+      const money = (s) => Number(s.replace(/[^0-9.]/g, ""));
+      const head = document.querySelector("[data-vendor-total]").closest("div.flex").innerText;
+      const sub = [...document.querySelectorAll("p, div, span")].map((e) => e.textContent).find((x) => /^\d+ shown · net/.test(x || "")) || "";
+      return { total: money(document.querySelector("[data-vendor-total]").textContent), net: money(sub.split("net")[1] || ""), count: Number((head.match(/(\d+) transactions?/) || [])[1]), notCounted: Number((head.match(/(\d+) not counted/) || [0, 0])[1]), rows: document.querySelectorAll("[data-drawer-row]").length };
+    });
+    const before = await read();
+    const id = await page.evaluate(async () => { const d = await (await fetch("/api/transactions?vendor=Chipotle&limit=50")).json(); return (d.rows ?? d.transactions ?? d)[0].id; });
+    const amount = await page.evaluate(async (id) => { const d = await (await fetch(`/api/transactions/${id}`)).json(); await fetch(`/api/transactions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ excluded: true }) }); return Math.abs(d.amount); }, id);
+    await page.goto(url, { waitUntil: "networkidle2" }); await page.waitForSelector("[data-vendor-total]");
+    const after = await read();
+    await page.evaluate(async (id) => { await fetch(`/api/transactions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ excluded: false }) }); }, id);
+    const cents = (n) => Math.round(n * 100);
+    record("vendor header", "an excluded charge leaves the header's total and count, and is named as not counted",
+      before.notCounted === 0 && cents(before.total) === cents(before.net) && after.rows === before.rows && after.count === before.count - 1 && after.notCounted === 1 && cents(after.total) === cents(before.total - amount) && cents(after.total) === cents(after.net),
+      `before ${before.count} tx $${before.total} (net $${before.net}); after ${after.count} tx + ${after.notCounted} not counted $${after.total} (net $${after.net}), ${after.rows} rows still listed`);
+  });
+}
+
 async function statementMode(browser) {
   for (const [mode, url] of [["statement", "/transactions?vendor=Chipotle"], ["normal", "/transactions"]]) {
     await withPage(browser, async (page, errs) => {
@@ -949,7 +977,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
