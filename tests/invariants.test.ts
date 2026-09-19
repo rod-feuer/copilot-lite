@@ -7,7 +7,8 @@ import {
   undoRenormalizeMerchants,
   cleanupUndoAvailable,
 } from "../src/lib/db";
-import { dashboard, detectRecurrings, categorizeByHistory } from "../src/lib/core";
+import { dashboard, detectRecurrings, categorizeByHistory, categorizeByRules, learnRule } from "../src/lib/core";
+import { importCsv } from "../src/lib/import";
 import {
   listTransactions,
   merchantSummary,
@@ -39,6 +40,8 @@ import {
   getRecurringSettings,
   merchantVariants,
   upcomingRecurringExpenses,
+  transactionById,
+  setTransactionEffectiveDate,
 } from "../src/lib/queries";
 import {
   stripLocationSuffix,
@@ -52,7 +55,7 @@ import {
   dismissMerge,
 } from "../src/lib/merges";
 import { createSplitRule, applySplitRules, undoSplit } from "../src/lib/splits";
-import { importPlaidTransactions } from "../src/lib/plaid";
+import { importPlaidTransactions, plaidSyncStartDate } from "../src/lib/plaid";
 
 let CAT: number, CAT_INC: number, CAT_EXC: number, CAT_X: number;
 
@@ -1826,4 +1829,141 @@ test("three two-month gaps after erratic visits do not read as a plan that chang
     tx(v, { amount: -19, date: d, categoryId: CAT });
   for (const d of ["2025-09-10", "2025-11-10", "2026-01-10", "2026-03-10"]) tx(v, { amount: -19, date: d, categoryId: CAT });
   assert.equal(detectRecurrings().filter((r) => r.merchant === v).length, 0, "no plan");
+});
+
+// ---- test-intent audit: exports that carried money or detector logic with no test ----
+
+// WHY: a rule the user wrote is a decision; a rule the model wrote is a guess.
+// In table order the model's early, short "benjamin franklin" -> Gifts outranked
+// the user's later "benjamin franklin pl" -> Carmel Home, so every new plumbing
+// charge was filed as a gift. The user's rule wins whatever order they arrived
+// in, and of the user's rules the most specific one wins.
+test("categorizeByRules: the user's rule beats the model's, and the more specific of the user's wins", () => {
+  const gifts = addCat("Gifts"), home = addCat("Carmel Home"), loan = addCat("Loan");
+  learnRule("benjamin franklin", gifts, "claude"); // first in the table
+  learnRule("Benjamin Franklin Pl", home, "user"); // stored lowercased
+  assert.equal(categorizeByRules("Benjamin Franklin Plindianapolis In"), home);
+  assert.equal(categorizeByRules("Benjamin Franklin Mint"), gifts, "the model's rule still covers what the user's doesn't");
+  learnRule("sofi", home, "user");
+  learnRule("sofi home loan", loan, "user");
+  assert.equal(categorizeByRules("Sofi Home Loan Co Entry"), loan);
+  assert.equal(categorizeByRules("Sofi Bank"), home);
+  // teaching the same pattern again corrects it in place rather than adding a rival
+  learnRule("SOFI", loan, "user");
+  assert.equal(categorizeByRules("Sofi Bank"), loan);
+  assert.equal((getDb().prepare("SELECT COUNT(*) n FROM rules WHERE pattern = 'sofi'").get() as { n: number }).n, 1);
+  assert.equal(categorizeByRules("Nobody Known"), null);
+});
+
+// WHY: a CSV is bank data, so every row is a charge. Two identical charges on
+// one day (two coffees, two tolls) are two charges — the dedupe key alone made
+// the second a "duplicate" and dropped it — while importing the same file
+// twice must add nothing. Amounts arrive as "$1,234.50"; a row that can't be
+// read is counted, never guessed.
+test("importCsv keeps identical same-day charges, stays idempotent, and counts what it can't read", () => {
+  const csv = [
+    "Date,Description,Amount,Account",
+    "2026-03-01,Coffee Bar,-4.50,Visa",
+    "2026-03-01,Coffee Bar,-4.50,Visa",
+    '2026-03-02,Employer,"$1,234.50",Checking',
+    "not a date,Broken,-1,Visa",
+    "2026-03-03,No Amount,abc,Visa",
+  ].join("\n");
+  assert.deepEqual(importCsv(csv), { inserted: 3, duplicates: 0, errors: 2 });
+  assert.deepEqual(importCsv(csv), { inserted: 0, duplicates: 3, errors: 2 }, "the same file again adds nothing");
+  const rows = getDb().prepare("SELECT merchant, amount FROM transactions ORDER BY date, id").all();
+  assert.deepEqual(rows, [
+    { merchant: "Coffee Bar", amount: -4.5 },
+    { merchant: "Coffee Bar", amount: -4.5 },
+    { merchant: "Employer", amount: 1234.5 },
+  ]);
+  assert.throws(() => importCsv("When,Who\n1,2"), /Date, Name/, "a file without the columns is refused, not half-read");
+});
+
+// WHY: "3/1/2026" names a calendar day. Parsed as local midnight and written
+// back through toISOString() it became Feb 28 anywhere east of UTC — the charge
+// landed in the wrong month.
+test("importCsv reads a slash date as the day it names, in any time zone", () => {
+  const tz = process.env.TZ;
+  try {
+    for (const zone of ["Europe/Berlin", "America/Indiana/Indianapolis", "Pacific/Auckland"]) {
+      process.env.TZ = zone;
+      getDb().exec("DELETE FROM transactions");
+      importCsv("Date,Name,Amount\n3/1/2026,Rent,-1000");
+      const row = getDb().prepare("SELECT date FROM transactions").get() as { date: string };
+      assert.equal(row.date, "2026-03-01", zone);
+    }
+  } finally {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  }
+});
+
+// WHY: the charge shelf's verbs depend on this read. `planKey` must name the
+// vendor's plan even for a charge that ISN'T in it — that is what lets the pill
+// offer "put it in the plan". `recent` is the evidence for "is this amount the
+// usual one": it spans the vendor's linked descriptors, orders by the effective
+// date, and leaves out split parents (their parts are the charges).
+test("transactionById: the vendor's plan, and recent charges across descriptors without split parents", () => {
+  for (const d of ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15"]) tx("Gym Co", { amount: -40, date: d, categoryId: CAT });
+  tx("Gym Co", { amount: -12, date: "2026-04-20", categoryId: CAT, hash: "stray" }); // a day-pass, not the plan
+  tx("Gym Company Llc", { amount: -40, date: "2026-05-15", categoryId: CAT, hash: "relabel" });
+  linkMerchant("Gym Company Llc", "Gym Co");
+  tx("Gym Co", { amount: -100, date: "2026-05-20", categoryId: CAT, excluded: 1, hash: "parent" });
+  tx("Gym Co", { amount: -60, date: "2026-05-20", categoryId: CAT, hash: "parent:s0" });
+  tx("Gym Co", { amount: -40, date: "2026-05-20", categoryId: CAT, hash: "parent:s1" });
+  const plan = detectRecurrings().find((r) => r.merchant === "Gym Co");
+  assert.ok(plan, "fixture: the vendor has a plan");
+  const id = (hash: string) => (getDb().prepare("SELECT id FROM transactions WHERE hash = ?").get(hash) as { id: number }).id;
+
+  const stray = transactionById(id("stray"))!;
+  if (stray.recurringId == null) assert.equal(stray.planKey, "Gym Co", "a charge outside the plan still knows the vendor's plan");
+  else assert.equal(stray.planKey, "Gym Co");
+  assert.equal(stray.recent.length, 5);
+  assert.ok(!stray.recent.some((r) => r.id === id("parent")), "the split parent is not a charge");
+  assert.ok(stray.recent.some((r) => r.id === id("relabel")), "the linked descriptor's charge is this vendor's");
+  assert.equal(stray.vendorCount, 8, "4 monthly + day-pass + relabel + 2 parts; not the parent");
+
+  // the effective date, not the posted one, orders the evidence
+  setTransactionEffectiveDate(id("stray"), "2026-06-01");
+  assert.equal(transactionById(id("stray"))!.recent[0].id, id("stray"));
+  assert.equal(transactionById(999999), null);
+});
+
+// WHY: Plaid must begin the day after the imported back-history ends, or it
+// re-delivers charges the import already holds under a different key (double
+// counting). Plaid's own rows — and the parts of a split Plaid charge, which
+// keep their parent's source — must never move that line forward, or a sync
+// would stop seeing the window it still needs.
+test("plaidSyncStartDate is the day after the last imported charge, whatever Plaid has added since", () => {
+  getDb().prepare("INSERT INTO transactions (date, merchant, amount, account, source, hash) VALUES ('2026-05-31','Old','-5','Visa','copilot','c1')").run();
+  assert.equal(plaidSyncStartDate(), "2026-06-01");
+  getDb().prepare("INSERT INTO transactions (date, merchant, amount, account, source, hash) VALUES ('2026-09-18','New','-5','Visa','plaid','p1')").run();
+  getDb().prepare("INSERT INTO transactions (date, merchant, amount, account, source, hash) VALUES ('2026-09-18','New','-2','Visa','plaid','p1:s0')").run();
+  assert.equal(plaidSyncStartDate(), "2026-06-01");
+  getDb().exec("DELETE FROM transactions WHERE source = 'copilot'");
+  const twoYearsBack = new Date();
+  twoYearsBack.setUTCFullYear(twoYearsBack.getUTCFullYear() - 2);
+  assert.equal(plaidSyncStartDate(), twoYearsBack.toISOString().slice(0, 10), "no history at all: a two-year backfill");
+});
+
+// WHY: the effective date is how a mortgage that posts on the 30th counts in
+// the month it pays for. It is the user's overlay on bank data, so the next
+// Plaid sync — which rewrites date, amount and pending — must leave it alone,
+// and the month totals must follow it.
+test("an effective date moves a charge's month and survives the next Plaid sync", () => {
+  const pull = {
+    accounts: [{ account_id: "a1", name: "Checking" }],
+    transactions: [{ transaction_id: "mort", account_id: "a1", date: "2026-04-30", name: "Home Mortgage", merchant_name: "Home Mortgage", amount: 2000, pending: false }],
+  };
+  importPlaidTransactions([pull]);
+  const id = (getDb().prepare("SELECT id FROM transactions WHERE hash = 'mort'").get() as { id: number }).id;
+  getDb().prepare("UPDATE transactions SET categoryId = ? WHERE id = ?").run(CAT, id);
+  assert.equal(dashboard("2026-04").expenses, 2000);
+  setTransactionEffectiveDate(id, "2026-05-01");
+  importPlaidTransactions([pull]);
+  assert.equal(dashboard("2026-04").expenses, 0, "April no longer carries it");
+  assert.equal(dashboard("2026-05").expenses, 2000, "May does, after a re-sync");
+  setTransactionEffectiveDate(id, null);
+  assert.equal(dashboard("2026-04").expenses, 2000, "clearing it returns the charge to its posted month");
 });

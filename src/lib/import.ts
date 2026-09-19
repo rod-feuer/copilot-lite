@@ -37,6 +37,18 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
+// The calendar date a CSV cell names. An ISO date is already one. Anything else
+// ("3/1/2026") parses as LOCAL midnight, so it is read back in local parts:
+// toISOString() moved it to the previous day anywhere east of UTC.
+function calendarDate(raw: string): string | null {
+  const iso = raw.match(/^\d{4}-\d{2}-\d{2}/);
+  if (iso) return iso[0];
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 const pick = (headers: string[], names: string[]): number =>
   headers.findIndex((h) => names.includes(h.trim().toLowerCase()));
 
@@ -68,6 +80,11 @@ export function importCsv(text: string, source = "csv"): ImportResult {
   let inserted = 0,
     duplicates = 0,
     errors = 0;
+  // Two identical charges on one day (two coffees, two tolls) are two charges.
+  // The dedupe key alone made the second a "duplicate" and dropped it — 149
+  // such pairs exist in real data. The nth identical row in a file gets the
+  // nth key, so re-importing the same file is still idempotent.
+  const seenInFile = new Map<string, number>();
 
   const run = db.transaction(() => {
     for (let i = 1; i < rows.length; i++) {
@@ -81,12 +98,15 @@ export function importCsv(text: string, source = "csv"): ImportResult {
           errors++;
           continue;
         }
-        const date = new Date(rawDate).toISOString().slice(0, 10);
-        if (date === "Invalid Date" || Number.isNaN(Date.parse(rawDate))) {
+        const date = calendarDate(rawDate);
+        if (!date) {
           errors++;
           continue;
         }
-        const hash = txHash(date, merchant, amount, account);
+        const base = txHash(date, merchant, amount, account);
+        const nth = (seenInFile.get(base) ?? 0) + 1;
+        seenInFile.set(base, nth);
+        const hash = nth === 1 ? base : `${base}#${nth}`;
         const info = insert.run({
           date,
           merchant,

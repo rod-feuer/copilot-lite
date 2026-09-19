@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeMerchant } from "../src/lib/merchant";
+import { normalizeMerchant, merchantKey } from "../src/lib/merchant";
 import { classifyCadence, addCadence, txHash } from "../src/lib/core";
-import { medianGap } from "../src/lib/cadence";
+import { medianGap, monthlyFactor, CADENCE_DAYS, PER_YEAR, CADENCE_LABEL } from "../src/lib/cadence";
+import { seriesKey, seriesVendor, isSeriesKey } from "../src/lib/series";
+import { parseCsv } from "../src/lib/import";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
 import { createLatestGuard } from "../src/lib/latestGuard";
@@ -148,4 +150,58 @@ test("parseProposals keeps every complete proposal in a cut-off reply", async ()
   const cut = '[{"merchant":"Cvs","categoryId":3},{"merchant":"Target","categoryId":5},{"merchant":"Wal';
   assert.deepEqual(parseProposals(cut), [{ merchant: "Cvs", categoryId: 3 }, { merchant: "Target", categoryId: 5 }]);
   assert.deepEqual(parseProposals("no json here"), []);
+});
+
+// WHY: the vendor key decides which bank descriptors are one vendor — the
+// shelf's roll-up, the vendor filter, and (since the detector plans by vendor)
+// whether a renamed subscription's new charges continue its plan. Too loose
+// and distinct payees merge ("Not recurring" on one Zelle payee once muted all
+// 38); too tight and a relabel orphans its charges (Liquid IV's 2026 charges).
+test("merchantKey: a relabel shares a key; payees behind a payment rail do not", () => {
+  // processor and wallet prefixes are not the vendor
+  assert.equal(merchantKey("Sp Liquid I.v"), merchantKey("Liquid I.v"));
+  assert.equal(merchantKey("Aplpay Culvers Of Frfranklin In"), merchantKey("Culvers Of Franklin"));
+  assert.equal(merchantKey("Sq *Blue Bottle"), merchantKey("Blue Bottle Coffee #1204"));
+  // the payee comes AFTER a rail or fee prefix
+  assert.notEqual(merchantKey("Zelle Payment To Indy K-9"), merchantKey("Zelle Payment To Rosy Cleaning"));
+  assert.equal(merchantKey("Plan Fee - Ticketmaster"), merchantKey("Ticketmaster"));
+  // store numbers are not identity; the first two words are
+  assert.equal(merchantKey("Target 00012345"), "target");
+  assert.notEqual(merchantKey("Chase Mortgage"), merchantKey("Chase Card"));
+});
+
+// WHY: every cadence the detector can emit needs a period, a per-year count and
+// a label. A cadence missing from one table silently falls back (quarterly
+// bills were once counted at 12x their monthly cost), and the tables must
+// agree with each other: period x charges-per-year is a year.
+test("cadence tables cover every cadence and agree with each other", () => {
+  const cadences = Object.keys(CADENCE_DAYS);
+  assert.deepEqual(Object.keys(PER_YEAR).sort(), [...cadences].sort());
+  assert.deepEqual(Object.keys(CADENCE_LABEL).sort(), [...cadences].sort());
+  for (const c of cadences as (keyof typeof CADENCE_DAYS)[]) {
+    const year = CADENCE_DAYS[c] * PER_YEAR[c];
+    assert.ok(Math.abs(year - 365) <= 6, `${c}: ${CADENCE_DAYS[c]} days x ${PER_YEAR[c]} = ${year}`);
+  }
+  assert.equal(monthlyFactor("bimonthly"), 0.5, "a two-month bill is half a charge a month");
+  assert.equal(monthlyFactor("yearly"), 1 / 12);
+  assert.equal(monthlyFactor("not-a-cadence"), 1, "unknown reads as monthly, never as zero");
+});
+
+// WHY: settings, overrides and aliases hang off a plan's key; the shelf, links
+// and merge suggestions need the vendor behind it. The two must round-trip.
+test("a plan's key resolves back to its vendor", () => {
+  const key = seriesKey("Netflix", "23rd");
+  assert.equal(isSeriesKey(key), true);
+  assert.equal(seriesVendor(key), "Netflix");
+  assert.equal(isSeriesKey("Netflix"), false);
+  assert.equal(seriesVendor("Netflix"), "Netflix", "a bare vendor is its own vendor");
+});
+
+test("parseCsv keeps quoted commas and quotes, and ignores blank lines and CRLF", () => {
+  const rows = parseCsv('Date,Name,Amount\r\n2026-03-01,"Smith, Jones ""LLC""",-12.50\r\n\r\n2026-03-02,Plain,4\n');
+  assert.deepEqual(rows, [
+    ["Date", "Name", "Amount"],
+    ["2026-03-01", 'Smith, Jones "LLC"', "-12.50"],
+    ["2026-03-02", "Plain", "4"],
+  ]);
 });
