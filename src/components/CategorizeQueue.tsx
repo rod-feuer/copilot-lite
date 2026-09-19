@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useToast } from "@/components/Toast";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "@/components/useMutation";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
@@ -30,13 +29,17 @@ export function CategorizeQueue({
   const [items, setItems] = useState<Proposal[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [needsModel, setNeedsModel] = useState(0);
-  // After an ask: how many vendors the model left alone (unsure, or no answer).
-  // They still need a category, but asking again would only repeat the answer.
-  const [asked, setAsked] = useState(false);
+  // Vendors the model was asked about and would only be guessing at. They still
+  // need a category; asking again would only repeat the answer.
+  const [unsure, setUnsure] = useState(0);
+  // The model is asked without a press: a suggestion you have to click to see
+  // is a suggestion you mostly don't see. "asking" while it runs; "failed" if
+  // it could not be reached, said in place (not a toast on every page load).
+  const [ask, setAsk] = useState<"idle" | "asking" | "failed">("idle");
+  const askedFor = useRef<string>("");
   const [dismissedCount, setDismissedCount] = useState(0);
   const [modelEnabled, setModelEnabled] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const toast = useToast();
 
   const load = useCallback(async () => {
     const [d, cs] = await Promise.all([
@@ -46,9 +49,29 @@ export function CategorizeQueue({
     setItems(d.suggestions);
     setCats(cs);
     setNeedsModel(d.needsModelCount);
+    setUnsure(d.unsureCount ?? 0);
     setDismissedCount(d.dismissedCount ?? 0);
     setModelEnabled(d.modelEnabled);
+    return d as { needsModelCount: number; modelEnabled: boolean };
   }, []);
+  // Ask about the vendors nobody has asked about yet, then read again: the
+  // answers are remembered server-side, so the second read carries them. Once
+  // per distinct count, so a failure or an unanswerable vendor can't loop.
+  const askModel = useCallback(
+    async (count: number) => {
+      askedFor.current = String(count);
+      setAsk("asking");
+      try {
+        const res = await fetch("/api/category-suggestions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "suggestAI" }) });
+        if (!res.ok) throw new Error(String(res.status));
+        await load();
+        setAsk("idle");
+      } catch {
+        setAsk("failed");
+      }
+    },
+    [load]
+  );
   // Redirect a proposal: the row keeps the vendor, takes the chosen category,
   // and Apply (or Apply all) commits that choice. Uncategorized is not a
   // choice here — that is Dismiss.
@@ -63,6 +86,10 @@ export function CategorizeQueue({
     load();
   }, [load, version]); // `version`: re-read when the page behind this queue changes
   useSyncedRefresh(load);
+  // Whenever a read leaves vendors nobody has asked about, ask.
+  useEffect(() => {
+    if (modelEnabled && needsModel > 0 && ask === "idle" && askedFor.current !== String(needsModel)) void askModel(needsModel);
+  }, [modelEnabled, needsModel, ask, askModel]);
 
   async function apply(s: CategorySuggestion) {
     setBusy(s.merchant);
@@ -116,30 +143,7 @@ export function CategorizeQueue({
     setBusy(null);
   }
 
-  async function suggestAI() {
-    setBusy("__ai");
-    await mutate(
-      async () => {
-        const d = (await postJson("/api/category-suggestions", { action: "suggestAI" })) as {
-          suggestions: CategorySuggestion[];
-          unsure: number;
-        };
-        setNeedsModel(d.unsure ?? 0);
-        setAsked(true);
-        setItems((a) => {
-          const have = new Set(a.map((x) => x.merchant));
-          return [...a, ...d.suggestions.filter((x) => !have.has(x.merchant))];
-        });
-        // An empty result is "info", not a success toast — it stays in the write.
-        if (d.suggestions.length === 0) toast("The model had no suggestions for these vendors", "info");
-      },
-      { error: "Couldn't reach the model — please try again" },
-      { refresh: "never" } // nothing to restore: the list only ever gained rows
-    );
-    setBusy(null);
-  }
-
-  if (items.length === 0 && needsModel === 0 && dismissedCount === 0) return null;
+  if (items.length === 0 && needsModel === 0 && unsure === 0 && dismissedCount === 0) return null;
 
   return (
     <div className="card mb-4 p-4">
@@ -219,44 +223,54 @@ export function CategorizeQueue({
         </ul>
       )}
 
-      {needsModel > 0 && (
-        <div className={`flex items-center gap-2 text-xs text-[var(--muted)] ${items.length > 0 ? "mt-3" : ""}`}>
-          {modelEnabled ? (
+      {(needsModel > 0 || unsure > 0 || dismissedCount > 0) && (
+        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted)] ${items.length > 0 ? "mt-3" : ""}`}>
+          {/* One line says where the rest stand. The model is asked without a
+              press, so there is no "Suggest" button: only what it is doing, what
+              it could not say, and the way to the hand-work. */}
+          {needsModel > 0 && !modelEnabled && (
+            <span data-needs-model>
+              {needsModel} vendor{needsModel === 1 ? " needs" : "s need"} the model — set TYPESAFE_API_KEY or ANTHROPIC_API_KEY to get AI suggestions.
+            </span>
+          )}
+          {needsModel > 0 && modelEnabled && ask === "asking" && (
+            <span data-needs-model data-asking>
+              Asking the model about {needsModel} vendor{needsModel === 1 ? "" : "s"}…
+            </span>
+          )}
+          {needsModel > 0 && modelEnabled && ask === "failed" && (
             <>
               <span data-needs-model>
-                {asked
-                  ? `The model wasn't sure about ${needsModel} vendor${needsModel === 1 ? "" : "s"}.`
-                  : `${needsModel} vendor${needsModel === 1 ? "" : "s"} need a closer look.`}
+                Couldn&rsquo;t reach the model about {needsModel} vendor{needsModel === 1 ? "" : "s"}.
               </span>
-              {!asked && (
-                <button onClick={suggestAI} disabled={busy != null} className="btn-ghost py-1 text-xs">
-                  {busy === "__ai" ? "Asking AI…" : "Suggest with AI"}
-                </button>
-              )}
-              {/* The hand-work path: when the model has nothing to offer, the
-                  list itself, filtered to what needs a category. */}
-              {onShowUncategorized && (
-                <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
-                  Show all uncategorized →
-                </button>
-              )}
-              {dismissedCount > 0 && (
-                <span data-dismissed>
-                  · {dismissedCount} dismissed{" "}
-                  <button onClick={undismissAll} className="btn-link">
-                    Bring them back →
-                  </button>
-                </span>
-              )}
+              <button onClick={() => askModel(needsModel)} className="btn-ghost py-1 text-xs">
+                Try again
+              </button>
             </>
-          ) : (
-            <span>
-              {needsModel} vendor{needsModel === 1 ? "" : "s"} need the model — set TYPESAFE_API_KEY or ANTHROPIC_API_KEY to get AI suggestions.{" "}
-              {onShowUncategorized && (
-                <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
-                  Show all uncategorized →
-                </button>
-              )}
+          )}
+          {needsModel > 0 && modelEnabled && ask === "idle" && (
+            <span data-needs-model>
+              {needsModel} vendor{needsModel === 1 ? " needs" : "s need"} a closer look.
+            </span>
+          )}
+          {unsure > 0 && (
+            <span data-unsure>
+              The model wasn&rsquo;t sure about {unsure} vendor{unsure === 1 ? "" : "s"}.
+            </span>
+          )}
+          {/* The hand-work path: the list itself, filtered to what needs a category. */}
+          {(needsModel > 0 || unsure > 0) && onShowUncategorized && (
+            <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
+              Show all uncategorized →
+            </button>
+          )}
+          {dismissedCount > 0 && (
+            <span data-dismissed>
+              {needsModel > 0 || unsure > 0 ? "· " : ""}
+              {dismissedCount} dismissed{" "}
+              <button onClick={undismissAll} className="btn-link">
+                Bring them back →
+              </button>
             </span>
           )}
         </div>
