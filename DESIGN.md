@@ -203,7 +203,9 @@ plan membership; then the note and its verbs (exclude from totals, split).
 "Open vendor" drills up, with Back. A transaction row opens the charge.
 
 **Buttons** — three tiers, named: primary (accent fill, at most one per page),
-secondary (bordered), tertiary (text with an arrow, navigation only).
+secondary (bordered), tertiary (text with an arrow, navigation only). A review
+queue repeats one decision per row, so its accept is secondary and its
+Dismiss quiet text — never a primary per row.
 Destructive: secondary with `--bad` text, and only in a shelf.
 
 **Pills and tags** — one pill: 11/500, full radius, 8px horizontal padding.

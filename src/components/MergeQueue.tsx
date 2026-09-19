@@ -123,18 +123,25 @@ export function MergeQueue({ onChange, version = 0 }: { onChange?: () => void; v
                   {open === g.key ? "▾ Hide transactions" : "▸ Inspect transactions"}
                 </div>
               </div>
-              <div className="flex shrink-0 gap-2">
+              {/* A queue is a list of the same decision many times, so its accept
+                  can't be the page's primary (DESIGN.md: at most one per page) —
+                  four cards put four filled buttons on the Transactions page.
+                  Accept is secondary; Dismiss is quiet text, so the pair still
+                  ranks. The three queues share this. */}
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   disabled={busy === g.key}
                   onClick={() => resolve(g, "approve")}
-                  className="btn-primary text-xs disabled:opacity-50"
+                  data-queue-accept
+                  className="btn-ghost text-xs disabled:opacity-50"
                 >
                   Combine
                 </button>
                 <button
                   disabled={busy === g.key}
                   onClick={() => resolve(g, "dismiss")}
-                  className="btn-ghost text-xs disabled:opacity-50"
+                  data-queue-dismiss
+                  className="tap rounded-lg px-2 text-xs text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-50"
                 >
                   Dismiss
                 </button>
