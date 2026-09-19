@@ -548,7 +548,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               <CategoryBody
                 data={cData}
                 onOpenMerchant={drillToMerchant}
-                onTxToggleRecurring={txToggleRecurring}
                 onSetExcluded={(exclude) => categorySetExcluded(cData.id, exclude)}
                 onDelete={() => categoryDelete(cData)}
                 confirmingDelete={confirmingDelete === cData.id}
@@ -1549,14 +1548,12 @@ function MerchantBody({
 function CategoryBody({
   data,
   onOpenMerchant,
-  onTxToggleRecurring,
   onSetExcluded,
   onDelete,
   confirmingDelete,
 }: {
   data: CatSummary;
   onOpenMerchant: (merchant: string) => void;
-  onTxToggleRecurring: (merchant: string, makeIt: boolean) => void;
   onSetExcluded: (exclude: boolean) => void;
   onDelete: () => void;
   confirmingDelete: boolean;
@@ -1667,7 +1664,6 @@ function CategoryBody({
                 excluded={isExcluded}
                 recurring={recurringState(t)}
                 onClick={() => onOpenMerchant(t.merchant)}
-                membership={{ kind: "vendor", onToggle: () => onTxToggleRecurring(t.merchant, t.recurringId == null) }}
               />
             ))}
           </ul>

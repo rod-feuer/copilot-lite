@@ -348,7 +348,7 @@ async function restingActions(browser) {
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
     await measure("shelf · exclude from totals", `${shelfSel} button::-p-text(xclude from totals)`);
     await measure("shelf · delete category", `${shelfSel} button[aria-label^='Delete ']`);
-    // No row menu on the category shelf either: its rows carry a pill and an amount.
+    // No row menu on the category shelf either: its rows carry a glyph and an amount.
     const shelfMenus = await page.$$eval(`${shelfSel} button[aria-label='Edit transaction']`, (bs) => bs.length);
     record("resting actions", "shelf · no row menu on the category shelf", shelfMenus === 0, `${shelfMenus} menus`);
     // One shelf anatomy (DESIGN.md §2): at most two property cards, and the
