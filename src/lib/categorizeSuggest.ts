@@ -23,6 +23,28 @@ function ensureDismissals(db: ReturnType<typeof getDb>) {
   db.exec("CREATE TABLE IF NOT EXISTS category_suggestion_dismissals (merchant TEXT PRIMARY KEY)");
 }
 
+// What the model said about a vendor, remembered. The queue asks on its own when
+// the page loads (no button to press to see a suggestion), so without this every
+// reload would ask again about the same vendors — including the ones the model
+// was not sure of, which it would be not sure of again. An answer holds for the
+// category list it was given (`catsKey`): rename or add a category and the
+// vendor is asked afresh. categoryId is never applied from here; it is only a
+// proposal until the user presses Apply.
+type ModelAnswer = { merchant: string; categoryId: number; confidence: number | null; alternatives: string; provider: string; catsKey: string };
+function ensureModelAnswers(db: ReturnType<typeof getDb>) {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS category_model_answers (
+       merchant TEXT PRIMARY KEY, categoryId INTEGER NOT NULL, confidence REAL, alternatives TEXT NOT NULL DEFAULT '[]',
+       provider TEXT NOT NULL, catsKey TEXT NOT NULL, askedAt TEXT NOT NULL)`
+  );
+}
+const catsKeyOf = (cats: Category[]) => [...cats].sort((a, b) => a.id - b.id).map((c) => `${c.id}:${c.name}:${c.kind}`).join("|");
+function modelAnswers(db: ReturnType<typeof getDb>, cats: Category[]): Map<string, ModelAnswer> {
+  ensureModelAnswers(db);
+  const rows = db.prepare("SELECT merchant, categoryId, confidence, alternatives, provider, catsKey FROM category_model_answers WHERE catsKey = ?").all(catsKeyOf(cats)) as ModelAnswer[];
+  return new Map(rows.map((r) => [r.merchant, r]));
+}
+
 function context(db: ReturnType<typeof getDb>) {
   ensureDismissals(db);
   const dismissed = new Set(
@@ -38,19 +60,24 @@ function context(db: ReturnType<typeof getDb>) {
   return { dismissed, cats, byId, uncats };
 }
 
-// Free, deterministic proposals (rules + the vendor's own history) for every
-// uncategorized vendor, plus how many remain that only the model can guess. No
-// model call — cheap enough to load with the page.
+// Proposals for every uncategorized vendor: rules and the vendor's own history
+// (free, deterministic), then what the model has already said about the rest.
+// No model call — cheap enough to load with the page. `needsModelCount` is the
+// vendors nobody has been asked about yet; `unsureCount` those the model was
+// asked about and would only be guessing at.
 export function categorizeSuggestions(): {
   suggestions: CategorySuggestion[];
   needsModelCount: number;
+  unsureCount: number;
   dismissedCount: number; // vendors still uncategorized that a Dismiss keeps out of the queue
   modelEnabled: boolean;
 } {
   const db = getDb();
-  const { dismissed, byId, uncats } = context(db);
+  const { dismissed, cats, byId, uncats } = context(db);
+  const answers = modelAnswers(db, cats);
   const suggestions: CategorySuggestion[] = [];
   let needsModelCount = 0;
+  let unsureCount = 0;
   let dismissedCount = 0;
 
   for (const u of uncats) {
@@ -64,9 +91,22 @@ export function categorizeSuggestions(): {
       categoryId = categorizeByHistory(u.merchant);
       source = "history";
     }
+    let possible: true | undefined;
+    let alternatives: number[] | undefined;
     if (categoryId == null) {
-      needsModelCount++;
-      continue;
+      const a = answers.get(u.merchant);
+      if (!a) {
+        needsModelCount++;
+        continue;
+      }
+      if (a.confidence != null && a.confidence < CONFIDENCE.show) {
+        unsureCount++; // a guess: counted, not shown
+        continue;
+      }
+      categoryId = a.categoryId;
+      source = "ai";
+      possible = a.confidence != null && a.confidence < CONFIDENCE.sure ? true : undefined;
+      alternatives = (JSON.parse(a.alternatives) as number[]).filter((id) => byId.has(id));
     }
     const cat = byId.get(categoryId);
     if (!cat) continue;
@@ -77,10 +117,13 @@ export function categorizeSuggestions(): {
       categoryIcon: cat.icon,
       count: u.count,
       source,
+      possible,
+      alternatives: alternatives?.length ? alternatives : undefined,
     });
   }
-  suggestions.sort((a, b) => b.count - a.count || a.merchant.localeCompare(b.merchant));
-  return { suggestions, needsModelCount, dismissedCount, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
+  // Sure ones first, then possible matches; busiest vendor first within each.
+  suggestions.sort((a, b) => Number(!!a.possible) - Number(!!b.possible) || b.count - a.count || a.merchant.localeCompare(b.merchant));
+  return { suggestions, needsModelCount, unsureCount, dismissedCount, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
 }
 
 // Up to three merchants the user has already filed under each category (its
@@ -103,43 +146,32 @@ function categoryExamples(db: ReturnType<typeof getDb>, asking: Set<string>): Ma
   return out;
 }
 
-// Model proposals for the vendors rules/history can't resolve — on demand,
-// returned for review WITHOUT applying or learning a rule. `unsure` counts the
-// vendors the model answered below the "show" bar or not at all: they stay
-// under "need a closer look" rather than appear as a guess.
-export async function categorizeSuggestionsAI(): Promise<{ suggestions: CategorySuggestion[]; unsure: number; provider: string | null }> {
+// Ask the model about the vendors nobody has asked about yet, and remember what
+// it said — nothing is applied and no rule is learned. The page calls this on
+// its own when it loads. A vendor the provider could not answer (rate limited,
+// or an answer naming no real category) is not remembered, so it is asked again
+// next time; a low-confidence answer IS remembered, as "not sure".
+export async function categorizeSuggestionsAI(): Promise<{ asked: number; answered: number; provider: string | null }> {
   const db = getDb();
-  const { dismissed, cats, byId, uncats } = context(db);
-  const needsModel = uncats.filter(
-    (u) =>
-      !dismissed.has(u.merchant) &&
-      categorizeByRules(u.merchant) == null &&
-      categorizeByHistory(u.merchant) == null
-  );
-  if (needsModel.length === 0) return { suggestions: [], unsure: 0, provider: null };
-  const countByMerchant = new Map(needsModel.map((u) => [u.merchant, u.count]));
-  const asking = needsModel.map((u) => u.merchant);
+  const { dismissed, cats, uncats } = context(db);
+  const answers = modelAnswers(db, cats);
+  const asking = uncats
+    .filter((u) => !dismissed.has(u.merchant) && !answers.has(u.merchant) && categorizeByRules(u.merchant) == null && categorizeByHistory(u.merchant) == null)
+    .map((u) => u.merchant);
+  if (asking.length === 0) return { asked: 0, answered: 0, provider: null };
   const { provider, proposals } = await proposeCategories(asking, cats, categoryExamples(db, new Set(asking)));
-  const out: CategorySuggestion[] = [];
-  for (const p of proposals) {
-    const count = countByMerchant.get(p.merchant);
-    const cat = byId.get(p.categoryId);
-    if (count == null || !cat) continue;
-    if (p.confidence != null && p.confidence < CONFIDENCE.show) continue; // a guess: not shown
-    out.push({
-      merchant: p.merchant,
-      categoryId: p.categoryId,
-      categoryName: cat.name,
-      categoryIcon: cat.icon,
-      count,
-      source: "ai",
-      possible: p.confidence != null && p.confidence < CONFIDENCE.sure ? true : undefined,
-      alternatives: p.alternatives,
-    });
-  }
-  // Sure ones first, then possible matches; busiest vendor first within each.
-  out.sort((a, b) => Number(!!a.possible) - Number(!!b.possible) || b.count - a.count || a.merchant.localeCompare(b.merchant));
-  return { suggestions: out, unsure: needsModel.length - out.length, provider };
+  const key = catsKeyOf(cats);
+  const save = db.prepare(
+    `INSERT INTO category_model_answers (merchant, categoryId, confidence, alternatives, provider, catsKey, askedAt) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(merchant) DO UPDATE SET categoryId = excluded.categoryId, confidence = excluded.confidence, alternatives = excluded.alternatives,
+       provider = excluded.provider, catsKey = excluded.catsKey, askedAt = excluded.askedAt`
+  );
+  const wanted = new Set(asking);
+  db.transaction(() => {
+    for (const p of proposals)
+      if (wanted.has(p.merchant)) save.run(p.merchant, p.categoryId, p.confidence ?? null, JSON.stringify(p.alternatives ?? []), provider ?? "", key, new Date().toISOString());
+  })();
+  return { asked: asking.length, answered: proposals.filter((p) => wanted.has(p.merchant)).length, provider };
 }
 
 // Apply an approved suggestion: learn it as a user rule (so it's never asked

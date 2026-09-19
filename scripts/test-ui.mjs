@@ -36,10 +36,10 @@ const server = spawn(NEXT, ["dev", "-p", String(PORT)], {
     COPILOT_DB_PATH: DB,
     APP_PASSWORD: "", // no login gate (an already-set var wins over .env.local)
     PLAID_CLI_PATH: "/nonexistent/plaid", // launch sync fails fast and stays quiet
-    // The suite never calls a model. A placeholder key makes the queue offer
-    // "Suggest with AI"; the one test that presses it answers the request in
-    // the browser. Both real keys are blanked so nothing can reach either API.
-    TYPESAFE_API_KEY: "test-key-not-real",
+    // The suite never calls a model: both keys are blanked, so the queue (which
+    // asks on its own when a key is set) stays quiet. The one test about model
+    // suggestions answers the queue's requests in the browser.
+    TYPESAFE_API_KEY: "",
     ANTHROPIC_API_KEY: "",
     NODE_OPTIONS: "--max-old-space-size=4096",
   },
@@ -576,38 +576,52 @@ async function queueButtons(browser) {
   });
 }
 
-// Model suggestions come with a confidence, and the queue shows it: sure ones as
-// suggestions, middling ones tagged "possible match" and left out of Apply all,
-// and what the model wasn't sure about counted rather than guessed at. The
-// model's likeliest categories lead the picker. The model's answer is supplied
-// here, in the browser; no API is called.
+// Model suggestions: the queue asks on its own when the page loads (a suggestion
+// you must press a button to see is one you mostly don't see), and shows the
+// answer by confidence — sure ones as suggestions, middling ones tagged
+// "possible match" and left out of Apply all, the rest counted as "not sure"
+// rather than guessed at. The model's likeliest categories lead the picker.
+// Every request is answered here, in the browser; no API is called.
 async function modelSuggestionTiers(browser) {
   await withPage(browser, async (page) => {
     const cats = await (await fetch(BASE + "/api/categories")).json();
     const pick = (i) => cats.filter((c) => c.kind === "expense")[i];
     const sug = (merchant, c, possible) => ({ merchant, categoryId: c.id, categoryName: c.name, categoryIcon: c.icon, count: 1, source: "ai", possible: possible || undefined, alternatives: [c.id, pick(3).id, pick(4).id] });
+    const state = { mode: "waiting", asks: 0 };
+    const reads = {
+      waiting: { suggestions: [], needsModelCount: 3, unsureCount: 0, dismissedCount: 0, modelEnabled: true },
+      answered: { suggestions: [sug("Zylo Widget Works", pick(0), false), sug("Quorra Bakehouse", pick(1), true)], needsModelCount: 0, unsureCount: 1, dismissedCount: 0, modelEnabled: true },
+      one: { suggestions: [], needsModelCount: 1, unsureCount: 0, dismissedCount: 0, modelEnabled: false },
+      two: { suggestions: [], needsModelCount: 2, unsureCount: 0, dismissedCount: 0, modelEnabled: false },
+    };
     await page.setRequestInterception(true);
     page.on("request", (req) => {
-      if (req.url().endsWith("/api/category-suggestions") && req.method() === "POST" && (req.postData() ?? "").includes("suggestAI"))
-        return req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ provider: "typesafe", unsure: 1, suggestions: [sug("Zylo Widget Works", pick(0), false), sug("Quorra Bakehouse", pick(1), true)] }) });
+      if (!req.url().endsWith("/api/category-suggestions")) return req.continue();
+      if (req.method() === "POST" && (req.postData() ?? "").includes("suggestAI")) { state.asks++; state.mode = "answered"; return req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ asked: 3, answered: 3, provider: "typesafe" }) }); }
+      if (req.method() === "GET") return req.respond({ status: 200, contentType: "application/json", body: JSON.stringify(reads[state.mode]) });
       req.continue();
     });
     await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
-    const ask = await page.waitForFunction(() => [...document.querySelectorAll("button")].find((b) => /Suggest with AI/.test(b.textContent)), { timeout: 8000 }).catch(() => null);
-    if (!ask) { record("model suggestions", "the queue offers Suggest with AI", false, "no button"); return; }
-    await ask.asElement().click();
-    await page.waitForSelector("[data-possible]", { timeout: 8000 });
+    const shown = await page.waitForSelector("[data-possible]", { timeout: 8000 }).then(() => true).catch(() => false);
+    record("model suggestions", "the queue asks the model on its own: suggestions appear with no press, and there is no Suggest button", shown && state.asks === 1 && !(await page.evaluate(() => [...document.querySelectorAll("button")].some((b) => /Suggest with AI/.test(b.textContent)))), `asks=${state.asks}, shown=${shown}`);
+    if (!shown) return;
     const r = await page.evaluate((likely) => {
       const rows = [...document.querySelectorAll("[data-suggestion]")].map((li) => ({ name: li.querySelector(".truncate").textContent, possible: !!li.querySelector("[data-possible]") }));
       const row = [...document.querySelectorAll("[data-suggestion]")].find((li) => li.querySelector("[data-possible]"));
       const groups = [...row.querySelectorAll("select optgroup")].map((g) => ({ label: g.label, first: [...g.children].slice(0, 3).map((o) => Number(o.value)) }));
-      return { rows, applyAll: document.querySelector("[data-apply-all]")?.textContent.trim(), footer: document.querySelector("[data-needs-model]")?.textContent.trim(), askAgain: [...document.querySelectorAll("button")].some((b) => /Suggest with AI/.test(b.textContent)), groups, likely };
+      return { rows, applyAll: document.querySelector("[data-apply-all]")?.textContent.trim(), unsure: document.querySelector("[data-unsure]")?.textContent.trim(), groups, likely };
     }, [pick(1).id, pick(3).id, pick(4).id]);
     const zylo = r.rows.find((x) => x.name === "Zylo Widget Works"), quorra = r.rows.find((x) => x.name === "Quorra Bakehouse");
-    record("model suggestions", "a sure guess is a suggestion, a middling one is a tagged possible match, and both sort sure-first", !!zylo && !zylo.possible && !!quorra && quorra.possible && r.rows.indexOf(zylo) < r.rows.indexOf(quorra), JSON.stringify(r.rows.filter((x) => x === zylo || x === quorra)));
-    record("model suggestions", "Apply all leaves possible matches out, and says so", /^Apply the \d+ sure$/.test(r.applyAll ?? ""), r.applyAll ?? "no button");
-    record("model suggestions", "what the model wasn't sure about is counted, and it isn't asked again", /wasn.t sure about 1 vendor/.test(r.footer ?? "") && !r.askAgain, `${r.footer}; ask-again button=${r.askAgain}`);
+    record("model suggestions", "a sure guess is a suggestion, a middling one is a tagged possible match, and both sort sure-first", !!zylo && !zylo.possible && !!quorra && quorra.possible && r.rows.indexOf(zylo) < r.rows.indexOf(quorra), JSON.stringify(r.rows));
+    record("model suggestions", "Apply all leaves possible matches out, and says so", r.applyAll === "Apply the 1 sure", r.applyAll ?? "no button");
+    record("model suggestions", "what the model wasn't sure about is counted, not guessed at", /wasn.t sure about 1 vendor\./.test(r.unsure ?? ""), r.unsure ?? "no line");
     record("model suggestions", "the picker leads with the model's likeliest categories", r.groups[0]?.label === "Most likely" && JSON.stringify(r.groups[0].first) === JSON.stringify(r.likely) && r.groups[1]?.label === "All categories", JSON.stringify(r.groups.map((g) => g.label)));
+    await sleep(600);
+    record("model suggestions", "having asked, it does not ask again", state.asks === 1, `asks=${state.asks}`);
+    // The count line is a sentence, and agrees with its count ("1 vendor need" was the bug).
+    const lines = [];
+    for (const mode of ["one", "two"]) { state.mode = mode; await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" }); await page.waitForSelector("[data-needs-model]"); lines.push(await page.$eval("[data-needs-model]", (n) => n.textContent.trim())); }
+    record("model suggestions", "the count line agrees with its count", /^1 vendor needs the model/.test(lines[0]) && /^2 vendors need the model/.test(lines[1]), lines.map((l) => l.slice(0, 28)).join(" | "));
   });
 }
 

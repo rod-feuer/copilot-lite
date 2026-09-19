@@ -2243,7 +2243,7 @@ test("a vendor's shelf lists its split rules, and removing one restores what it 
 
 // ---- category suggestions from a model: TypeSafe first, Haiku as the fallback ----
 import { proposeCategoriesWithTypeSafe, proposeCategories, CONFIDENCE } from "../src/lib/categorize";
-import { categorizeSuggestionsAI } from "../src/lib/categorizeSuggest";
+import { categorizeSuggestionsAI, categorizeSuggestions, applyCategorization } from "../src/lib/categorizeSuggest";
 
 // Answer the two APIs from a script, record what was sent, restore everything after.
 // What a request to either API carried, as far as these tests read it.
@@ -2335,11 +2335,13 @@ test("model suggestions are tiered by confidence, and nothing but names leaves t
     { typesafe: true },
     (merchant) => ({ choice: "Dining out (tiers)", confidence: conf[merchant], probabilities: { "Dining out (tiers)": conf[merchant], Groceries: 1 - conf[merchant] } }),
     async (sent) => {
-      const r = await categorizeSuggestionsAI();
-      assert.equal(r.provider, "typesafe");
-      assert.deepEqual(r.suggestions.map((s) => [s.merchant, s.categoryId, s.possible ?? false, s.count]), [["Sure Bistro", dining, false, 1], ["Maybe Cafe", dining, true, 2]]);
+      assert.deepEqual([categorizeSuggestions().needsModelCount, categorizeSuggestions().suggestions.length], [3, 0], "before the ask: three vendors nobody has asked about");
+      const asked = await categorizeSuggestionsAI();
+      assert.deepEqual(asked, { asked: 3, answered: 3, provider: "typesafe" });
+      const r = categorizeSuggestions(); // the page's read now carries the answers
+      assert.deepEqual(r.suggestions.map((s) => [s.merchant, s.categoryId, s.possible ?? false, s.count, s.source]), [["Sure Bistro", dining, false, 1, "ai"], ["Maybe Cafe", dining, true, 2, "ai"]]);
       assert.deepEqual(r.suggestions[0].alternatives, [dining, CAT]);
-      assert.equal(r.unsure, 1, "the guess is counted, not shown");
+      assert.deepEqual([r.needsModelCount, r.unsureCount], [0, 1], "the guess is counted, not shown — and nobody is left to ask");
       assert.ok(CONFIDENCE.show <= 0.62 && 0.62 < CONFIDENCE.sure && 0.31 < CONFIDENCE.show);
       const wire = JSON.stringify(sent.map((s) => s.body));
       assert.ok(wire.includes("Olive Garden"), "a filed merchant is the category's example");
@@ -2347,6 +2349,37 @@ test("model suggestions are tiered by confidence, and nothing but names leaves t
       for (const secret of ["4321.09", "84.31", "61.07", "Visa 4417", "2026-09-10", "2026-08-02"]) assert.ok(!wire.includes(secret), `${secret} stayed home`);
     }
   );
+});
+
+// WHY: the queue asks the model on its own when the page loads — a suggestion
+// you have to press a button to see is one you mostly don't see. So the answer
+// has to be remembered, or every reload would send the same names out again and
+// get the same "not sure" back. It holds for the category list it was given:
+// add a category and the vendor deserves a fresh look. A vendor the provider
+// could not answer is NOT remembered, so a rate limit doesn't become "unsure".
+test("a model answer is remembered per vendor, re-asked only when the categories change", async () => {
+  const dining = addCat("Dining out (memory)");
+  tx("Corner Bistro", { amount: -20, date: "2026-09-10", categoryId: null });
+  tx("Cryptic Llc 0042", { amount: -9.99, date: "2026-09-10", categoryId: null });
+  tx("Flaky Vendor", { amount: -5, date: "2026-09-10", categoryId: null });
+  const reply = (merchant: string) =>
+    merchant === "Flaky Vendor" ? { choice: "No Such Category", confidence: 0.9, probabilities: {} as Record<string, number> }
+    : { choice: "Dining out (memory)", confidence: merchant === "Corner Bistro" ? 0.93 : 0.2, probabilities: { "Dining out (memory)": 0.9 } };
+  await withModelApis({ typesafe: true }, reply, async (sent) => {
+    assert.deepEqual(await categorizeSuggestionsAI(), { asked: 3, answered: 2, provider: "typesafe" });
+    assert.equal(sent.length, 3);
+    // a second page load: only the unanswered vendor goes out again
+    assert.deepEqual(await categorizeSuggestionsAI(), { asked: 1, answered: 0, provider: "typesafe" });
+    assert.deepEqual(sent.slice(3).map((s) => s.body.state.merchant), ["Flaky Vendor"]);
+    const r = categorizeSuggestions();
+    assert.deepEqual([r.suggestions.map((s) => s.merchant), r.unsureCount, r.needsModelCount], [["Corner Bistro"], 1, 1]);
+    // the user applies it: the vendor leaves the queue for good
+    applyCategorization("Corner Bistro", dining);
+    assert.deepEqual(categorizeSuggestions().suggestions, []);
+    // a new category changes what could be said: everyone still waiting is asked afresh
+    addCat("Pet care (memory)");
+    assert.equal((await categorizeSuggestionsAI()).asked, 2, "the unsure vendor and the unanswered one");
+  });
 });
 
 // WHY: a provider being down must not take suggestions away when the other key
