@@ -34,7 +34,7 @@ export function InlineEdit({
             e.stopPropagation();
             setEditing(true);
           }}
-          className="flex min-w-0 max-w-full items-center gap-1 text-left"
+          className="tap flex min-w-0 max-w-full items-center gap-1 text-left"
         >
           <span className={`truncate ${textClassName}`}>{value}</span>
           {/* Persistent (faint) edit cue so the text reads as click-to-edit even

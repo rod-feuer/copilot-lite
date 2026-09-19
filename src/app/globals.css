@@ -111,6 +111,30 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
+/* Touch targets (DESIGN.md §2 "Touch is in scope"). Small controls keep
+   their size at rest; on a coarse pointer the hit area grows 10px on every
+   side without moving the type, so nothing you tap is under 32px. `.tap` is
+   for a button or link: its pseudo-element takes the tap on its behalf.
+   `.tap-native` is for an <input> or <select>, which can't carry a
+   pseudo-element: its padding grows and a negative margin gives the room
+   back, so the layout doesn't move. */
+@utility tap {
+  @media (pointer: coarse) {
+    position: relative;
+    &::after {
+      content: "";
+      position: absolute;
+      inset: -10px;
+    }
+  }
+}
+@utility tap-native {
+  @media (pointer: coarse) {
+    padding-block: 10px;
+    margin-block: -10px;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
