@@ -586,13 +586,13 @@ async function modelSuggestionTiers(browser) {
   await withPage(browser, async (page) => {
     const cats = await (await fetch(BASE + "/api/categories")).json();
     const pick = (i) => cats.filter((c) => c.kind === "expense")[i];
-    const sug = (merchant, c, possible) => ({ merchant, categoryId: c.id, categoryName: c.name, categoryIcon: c.icon, count: 1, source: "ai", possible: possible || undefined, alternatives: [c.id, pick(3).id, pick(4).id] });
+    const sug = (merchant, c, tier) => ({ merchant, categoryId: c.id, categoryName: c.name, categoryIcon: c.icon, count: 1, source: "ai", possible: tier === "possible" || undefined, guess: tier === "guess" || undefined, alternatives: [c.id, pick(3).id, pick(4).id] });
     const state = { mode: "waiting", asks: 0 };
     const reads = {
-      waiting: { suggestions: [], needsModelCount: 3, unsureCount: 0, dismissedCount: 0, modelEnabled: true },
-      answered: { suggestions: [sug("Zylo Widget Works", pick(0), false), sug("Quorra Bakehouse", pick(1), true)], needsModelCount: 0, unsureCount: 1, dismissedCount: 0, modelEnabled: true },
-      one: { suggestions: [], needsModelCount: 1, unsureCount: 0, dismissedCount: 0, modelEnabled: false },
-      two: { suggestions: [], needsModelCount: 2, unsureCount: 0, dismissedCount: 0, modelEnabled: false },
+      waiting: { suggestions: [], needsModelCount: 3, dismissedCount: 0, modelEnabled: true },
+      answered: { suggestions: [sug("Zylo Widget Works", pick(0), "sure"), sug("Quorra Bakehouse", pick(1), "possible"), sug("Cryptic Llc 0042", pick(2), "guess")], needsModelCount: 0, dismissedCount: 0, modelEnabled: true },
+      one: { suggestions: [], needsModelCount: 1, dismissedCount: 0, modelEnabled: false },
+      two: { suggestions: [], needsModelCount: 2, dismissedCount: 0, modelEnabled: false },
     };
     await page.setRequestInterception(true);
     page.on("request", (req) => {
@@ -606,15 +606,14 @@ async function modelSuggestionTiers(browser) {
     record("model suggestions", "the queue asks the model on its own: suggestions appear with no press, and there is no Suggest button", shown && state.asks === 1 && !(await page.evaluate(() => [...document.querySelectorAll("button")].some((b) => /Suggest with AI/.test(b.textContent)))), `asks=${state.asks}, shown=${shown}`);
     if (!shown) return;
     const r = await page.evaluate((likely) => {
-      const rows = [...document.querySelectorAll("[data-suggestion]")].map((li) => ({ name: li.querySelector(".truncate").textContent, possible: !!li.querySelector("[data-possible]") }));
-      const row = [...document.querySelectorAll("[data-suggestion]")].find((li) => li.querySelector("[data-possible]"));
+      const rows = [...document.querySelectorAll("[data-suggestion]")].map((li) => ({ name: li.querySelector(".truncate").textContent, tier: li.querySelector("[data-possible]")?.getAttribute("data-possible") ?? "sure", tag: li.querySelector("[data-possible]")?.textContent.trim() ?? "", category: li.querySelector("[data-category-property] .truncate")?.textContent.trim() ?? "" }));
+      const row = [...document.querySelectorAll("[data-suggestion]")].find((li) => li.querySelector("[data-possible='possible']"));
       const groups = [...row.querySelectorAll("select optgroup")].map((g) => ({ label: g.label, first: [...g.children].slice(0, 3).map((o) => Number(o.value)) }));
-      return { rows, applyAll: document.querySelector("[data-apply-all]")?.textContent.trim(), unsure: document.querySelector("[data-unsure]")?.textContent.trim(), groups, likely };
+      return { rows, applyAll: document.querySelector("[data-apply-all]")?.textContent.trim(), groups, likely };
     }, [pick(1).id, pick(3).id, pick(4).id]);
-    const zylo = r.rows.find((x) => x.name === "Zylo Widget Works"), quorra = r.rows.find((x) => x.name === "Quorra Bakehouse");
-    record("model suggestions", "a sure guess is a suggestion, a middling one is a tagged possible match, and both sort sure-first", !!zylo && !zylo.possible && !!quorra && quorra.possible && r.rows.indexOf(zylo) < r.rows.indexOf(quorra), JSON.stringify(r.rows));
-    record("model suggestions", "Apply all leaves possible matches out, and says so", r.applyAll === "Apply the 1 sure", r.applyAll ?? "no button");
-    record("model suggestions", "what the model wasn't sure about is counted, not guessed at", /wasn.t sure about 1 vendor\./.test(r.unsure ?? ""), r.unsure ?? "no line");
+    const mine = r.rows.filter((x) => ["Zylo Widget Works", "Quorra Bakehouse", "Cryptic Llc 0042"].includes(x.name));
+    record("model suggestions", "every answer is shown with its category, in order of trust: sure, possible match, a guess", JSON.stringify(mine.map((x) => [x.name, x.tier, x.tag])) === JSON.stringify([["Zylo Widget Works", "sure", ""], ["Quorra Bakehouse", "possible", "possible match"], ["Cryptic Llc 0042", "guess", "a guess"]]) && mine.every((x) => x.category.length > 0), JSON.stringify(mine));
+    record("model suggestions", "Apply all takes only the sure ones, and says so", r.applyAll === "Apply the 1 sure", r.applyAll ?? "no button");
     record("model suggestions", "the picker leads with the model's likeliest categories", r.groups[0]?.label === "Most likely" && JSON.stringify(r.groups[0].first) === JSON.stringify(r.likely) && r.groups[1]?.label === "All categories", JSON.stringify(r.groups.map((g) => g.label)));
     await sleep(600);
     record("model suggestions", "having asked, it does not ask again", state.asks === 1, `asks=${state.asks}`);

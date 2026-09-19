@@ -2320,10 +2320,12 @@ test("TypeSafe ask: only names go out; the answer maps to the user's categories,
 
 // WHY: Haiku answers every merchant with equal assurance, which is how a wrong
 // guess used to look as good as a right one. TypeSafe's confidence sorts them:
-// sure ones are suggestions, middling ones are "possible matches" (last, and
-// left out of Apply all), and below the bar the model is guessing — 38% right
-// in the 200-merchant test — so the vendor stays under "need a closer look"
-// instead of appearing as a suggestion. Thresholds are CONFIDENCE, from that test.
+// sure ones are suggestions, middling ones are "possible matches", and below the
+// bar the model is guessing — 38% right in the 200-merchant test. A guess is
+// still SHOWN: hiding it left the owner looking at "the model wasn't sure about
+// 1 vendor" with no vendor and no answer in sight. It is labelled a guess,
+// sorted last, and (like a possible match) never swept up by Apply all.
+// Thresholds are CONFIDENCE, from that test.
 test("model suggestions are tiered by confidence, and nothing but names leaves the machine", async () => {
   const dining = addCat("Dining out (tiers)");
   tx("Olive Garden", { amount: -84.31, date: "2026-08-02", categoryId: dining, account: "Visa 4417" });
@@ -2339,9 +2341,13 @@ test("model suggestions are tiered by confidence, and nothing but names leaves t
       const asked = await categorizeSuggestionsAI();
       assert.deepEqual(asked, { asked: 3, answered: 3, provider: "typesafe" });
       const r = categorizeSuggestions(); // the page's read now carries the answers
-      assert.deepEqual(r.suggestions.map((s) => [s.merchant, s.categoryId, s.possible ?? false, s.count, s.source]), [["Sure Bistro", dining, false, 1, "ai"], ["Maybe Cafe", dining, true, 2, "ai"]]);
+      assert.deepEqual(
+        r.suggestions.map((s) => [s.merchant, s.categoryId, s.possible ? "possible" : s.guess ? "guess" : "sure", s.count, s.source]),
+        [["Sure Bistro", dining, "sure", 1, "ai"], ["Maybe Cafe", dining, "possible", 2, "ai"], ["Cryptic Llc 0042", dining, "guess", 1, "ai"]],
+        "all three are shown, in order of how far to trust them"
+      );
       assert.deepEqual(r.suggestions[0].alternatives, [dining, CAT]);
-      assert.deepEqual([r.needsModelCount, r.unsureCount], [0, 1], "the guess is counted, not shown — and nobody is left to ask");
+      assert.equal(r.needsModelCount, 0, "nobody is left to ask");
       assert.ok(CONFIDENCE.show <= 0.62 && 0.62 < CONFIDENCE.sure && 0.31 < CONFIDENCE.show);
       const wire = JSON.stringify(sent.map((s) => s.body));
       assert.ok(wire.includes("Olive Garden"), "a filed merchant is the category's example");
@@ -2372,13 +2378,13 @@ test("a model answer is remembered per vendor, re-asked only when the categories
     assert.deepEqual(await categorizeSuggestionsAI(), { asked: 1, answered: 0, provider: "typesafe" });
     assert.deepEqual(sent.slice(3).map((s) => s.body.state.merchant), ["Flaky Vendor"]);
     const r = categorizeSuggestions();
-    assert.deepEqual([r.suggestions.map((s) => s.merchant), r.unsureCount, r.needsModelCount], [["Corner Bistro"], 1, 1]);
+    assert.deepEqual([r.suggestions.map((s) => [s.merchant, !!s.guess]), r.needsModelCount], [[["Corner Bistro", false], ["Cryptic Llc 0042", true]], 1]);
     // the user applies it: the vendor leaves the queue for good
     applyCategorization("Corner Bistro", dining);
-    assert.deepEqual(categorizeSuggestions().suggestions, []);
+    assert.deepEqual(categorizeSuggestions().suggestions.map((s) => s.merchant), ["Cryptic Llc 0042"]);
     // a new category changes what could be said: everyone still waiting is asked afresh
     addCat("Pet care (memory)");
-    assert.equal((await categorizeSuggestionsAI()).asked, 2, "the unsure vendor and the unanswered one");
+    assert.equal((await categorizeSuggestionsAI()).asked, 2, "the guessed-at vendor and the unanswered one");
   });
 });
 
