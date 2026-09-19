@@ -506,7 +506,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             </div>
             <button
               onClick={close}
-              className="shrink-0 rounded-lg px-2 py-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
+              className="tap shrink-0 rounded-lg px-2 py-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
               aria-label="Close"
             >
               ✕
@@ -709,7 +709,7 @@ function MerchantHeader({
                 >
                   <button
                     onClick={() => onUnlink(n.name)}
-                    className="rounded-lg px-1 text-[var(--muted)] hover:text-[var(--bad)]"
+                    className="tap rounded-lg px-1 text-[var(--muted)] hover:text-[var(--bad)]"
                   >
                     ✕
                   </button>
@@ -1060,7 +1060,7 @@ function SplitDialog({
                 className="w-24 rounded-lg border border-[var(--border)] bg-card px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               />
               {parts.length > 2 ? (
-                <button onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove part" className="rounded-lg px-1 text-[var(--muted)] hover:text-[var(--foreground)]">
+                <button onClick={() => setParts((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove part" className="tap rounded-lg px-1 text-[var(--muted)] hover:text-[var(--foreground)]">
                   ✕
                 </button>
               ) : (

@@ -750,7 +750,7 @@ export default function TransactionsPage() {
               <button
                 onClick={loadMore}
                 disabled={loadingMore}
-                className="text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] hover:underline disabled:opacity-50"
+                className="tap text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] hover:underline disabled:opacity-50"
               >
                 {loadingMore
                   ? "Loading…"

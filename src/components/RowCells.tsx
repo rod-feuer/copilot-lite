@@ -80,7 +80,7 @@ export function CategoryProperty({
           onChange(e.target.value ? Number(e.target.value) : null);
         }}
         aria-label={ariaLabel}
-        className="absolute inset-0 w-full cursor-pointer opacity-0"
+        className="tap-native absolute inset-0 w-full cursor-pointer opacity-0"
       >
         {active ? (
           <>

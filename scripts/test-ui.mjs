@@ -157,6 +157,38 @@ async function withPage(browser, fn, { width = 1280, height = 900 } = {}) {
 }
 
 // ---------- cases ----------
+// DESIGN.md §2 "Touch is in scope": on a phone (a coarse pointer) every small
+// control's hit area is at least 32px tall, grown around the type by `tap` /
+// `tap-native`. Measured by probing where a touch lands, since a pseudo-element
+// widens what a control receives without changing its box.
+async function tapTargets(browser) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  try {
+    for (const path of ["/transactions", "/recurrings", "/categories"]) {
+      await page.goto(BASE + path, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      const r = await page.evaluate(() => {
+        const coarse = matchMedia("(pointer: coarse)").matches;
+        const hits = (el, x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)); };
+        const short = [];
+        let n = 0;
+        for (const el of document.querySelectorAll(".tap, .tap-native")) {
+          const b = el.getBoundingClientRect();
+          if (b.width === 0 || b.top < 120 || b.bottom > innerHeight - 90) continue; // in view, clear of the header and the nav
+          n++;
+          const cx = b.left + b.width / 2;
+          let top = b.top, bottom = b.bottom;
+          for (let y = b.top - 1; y >= b.top - 16; y--) { if (hits(el, cx, y)) top = y; else break; }
+          for (let y = b.bottom + 1; y <= b.bottom + 16; y++) { if (hits(el, cx, y)) bottom = y; else break; }
+          if (Math.round(bottom - top) < 32) short.push(`${el.tagName.toLowerCase()} "${(el.getAttribute("aria-label") || el.textContent.trim()).slice(0, 24)}" ${Math.round(bottom - top)}px`);
+        }
+        return { coarse, n, short };
+      });
+      record("tap targets", `${path}: every small control is at least 32px tall to a touch`, r.coarse && r.n > 0 && r.short.length === 0, r.coarse ? `${r.n} checked${r.short.length ? "; short: " + r.short.slice(0, 4).join(", ") : ""}` : "pointer: coarse not emulated");
+    }
+  } finally { await page.close(); }
+}
 async function honestLoadStates(browser) {
   const cases = [
     { route: "/", fail: /\/api\/dashboard/, empty: "nothing here yet", what: "the dashboard" },
@@ -882,7 +914,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

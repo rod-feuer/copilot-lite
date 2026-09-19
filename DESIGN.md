@@ -130,7 +130,10 @@ and §3 carry over unchanged.
   drill chevron is the reference). `opacity-0 group-hover` gating is a defect,
   not a scope decision. List rows that open the shelf are keyboard rows
   (`rowButtonProps` — role, tabIndex, Enter/Space) since they hold nested
-  controls and can't be `<button>`s. *(Reach)*
+  controls and can't be `<button>`s. Small controls carry `tap` (`tap-native`
+  for an input or select): on a coarse pointer the hit area grows 10px on
+  every side without moving the type, so nothing you tap is under 32px.
+  *(Reach)*
 - **Transactions are source-of-truth bank data** — no manual create, no delete, and
   the merchant/amount/posted-date aren't editable by design. Corrections happen at
   the *vendor* level (rename/combine/recategorize) or as overlays on the charge

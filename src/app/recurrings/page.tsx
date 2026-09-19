@@ -432,7 +432,7 @@ export default function RecurringsPage() {
                             e.stopPropagation();
                             addSuggestion(s);
                           }}
-                          className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium hover:bg-[var(--hover)]"
+                          className="tap shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium hover:bg-[var(--hover)]"
                         >
                           Add
                         </button>
@@ -442,7 +442,7 @@ export default function RecurringsPage() {
                               e.stopPropagation();
                               dismissSuggestion(s);
                             }}
-                            className="rounded-lg px-2 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
+                            className="tap rounded-lg px-2 py-1 text-xs text-[var(--muted)] hover:text-[var(--bad)]"
                           >
                             ✕
                           </button>
@@ -503,7 +503,7 @@ function SectionLink({
           .querySelector(`[data-bill-anchor="${section}"], [data-bill-status="${section}"]`)
           ?.scrollIntoView({ behavior: "smooth", block: "start" })
       }
-      className={`hover:underline ${className}`}
+      className={`tap hover:underline ${className}`}
     >
       {children}
     </button>

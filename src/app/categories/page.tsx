@@ -313,7 +313,7 @@ function BudgetSummary({
             <Tooltip label="Show the categories over budget" onlyIfTruncated={false}>
               <button
                 onClick={() => onFilter("over")}
-                className={`font-medium text-[var(--bad)] hover:underline ${filter === "over" ? "underline" : ""}`}
+                className={`tap font-medium text-[var(--bad)] hover:underline ${filter === "over" ? "underline" : ""}`}
               >
                 {overLabel}
               </button>
@@ -327,7 +327,7 @@ function BudgetSummary({
               <Tooltip label="Show the categories with no budget, to set one" onlyIfTruncated={false}>
                 <button
                   onClick={() => onFilter("unbudgeted")}
-                  className={`text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
+                  className={`tap text-[var(--muted)] hover:text-[var(--foreground)] hover:underline ${
                     filter === "unbudgeted" ? "text-[var(--foreground)] underline" : ""
                   }`}
                 >
@@ -742,7 +742,7 @@ function BudgetInput({
           placeholder="—"
           inputMode="decimal"
           aria-label={period === "annual" ? "Annual budget" : "Monthly budget"}
-          className="rounded-lg bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
+          className="tap-native rounded-lg bg-transparent font-medium tabular-nums text-[var(--foreground)] hover:bg-[var(--hover)] focus:bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/40"
         />
       </Tooltip>
       <Tooltip
@@ -751,7 +751,7 @@ function BudgetInput({
       >
         <button
           onClick={togglePeriod}
-          className="rounded-lg px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
+          className="tap rounded-lg px-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
         >
           {unit}
         </button>
@@ -772,7 +772,7 @@ function BudgetInput({
                   e.stopPropagation();
                   onSave(sug, period);
                 }}
-                className="whitespace-nowrap rounded-lg bg-[var(--accent)]/10 px-2 py-1 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                className="tap whitespace-nowrap rounded-lg bg-[var(--accent)]/10 px-2 py-1 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
               >
                 Use {usd(sug, { cents: false })}
               </button>
