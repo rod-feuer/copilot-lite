@@ -284,6 +284,14 @@ export function nameEqualityMergeSuggestions(exclude: Set<string>): MergeSuggest
 // - the old vendor carries ONE plan: a descriptor that held two policies has
 //   no single successor (Chubb's old name billed the car and the house; its
 //   successors are two vendors), and folding it into one drags the other along.
+// A successor that carries several plans is read plan by plan. The bank folded
+// the mortgage ("Sofi Lending Loan Paymt") and a personal loan into one new
+// name, "Sofi": as a vendor its amounts are mixed and its first charge was the
+// loan, so it matched nothing, and the mortgage read as lapsed beside its own
+// continuation, "Sofi · 1st". Each of its plans stands as a successor on its
+// own charges; the card still combines the two vendors, and says which plan.
+// The names must share a word at this level — a catch-all descriptor (Apple's
+// billing) has a plan at nearly every price.
 // A pair whose names share no word is surfaced as a "possible match", and is
 // dropped when either side also has a candidate whose name does (two $15
 // newsletters that both changed descriptor in one month pair up four ways; the
@@ -316,7 +324,12 @@ export function handoffSuggestions(exclude: Set<string>): MergeSuggestion[] {
     Math.sign(a) === Math.sign(b) && Math.abs(Math.abs(a) - Math.abs(b)) <= 0.03 * Math.max(Math.abs(a), Math.abs(b));
   const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z ]+/g, " ").split(/\s+/).filter((w) => w.length >= 4));
   const muted = (vendor: string) => (byVendor.get(vendor) ?? []).some((t) => overrides[t.merchant] === "mute") || overrides[vendor] === "mute";
-  const hasSettings = (vendor: string) => Object.keys(settings).some((k) => canonicalMerchant(seriesVendor(k), links) === vendor);
+  // A settings row that holds something: a row left behind with every field
+  // empty is not the user's name for the vendor ("Sofi" had one, and would
+  // have outranked "Sofi Mortgage (Carmel)").
+  const hasName = (vendor: string) => Object.entries(settings).some(([k, s]) => canonicalMerchant(seriesVendor(k), links) === vendor && !!s.alias);
+  const hasSettings = (vendor: string) =>
+    Object.entries(settings).some(([k, s]) => canonicalMerchant(seriesVendor(k), links) === vendor && Object.values(s).some((v) => v != null && v !== ""));
 
   const plans = db.prepare("SELECT id, merchant, cadence FROM recurrings").all() as { id: number; merchant: string; cadence: Cadence }[];
   const linkedBy = new Map<number, Tx[]>();
@@ -327,8 +340,21 @@ export function handoffSuggestions(exclude: Set<string>): MergeSuggestion[] {
     plansOf.set(v, (plansOf.get(v) ?? 0) + 1);
   }
   // Successors in date order of their first charge, so each plan scans only
-  // the vendors that began inside its window.
-  const starts = [...byVendor.entries()].map(([vendor, t]) => ({ vendor, t, first: t[0], at: Date.parse(t[0].date) })).sort((a, b) => a.at - b.at);
+  // the ones that began inside its window. A vendor with one plan or none is a
+  // successor as a whole; a vendor with several is one successor per plan.
+  const planKeysOf = new Map<string, { id: number; key: string }[]>();
+  for (const p of plans) {
+    const v = canonicalMerchant(seriesVendor(p.merchant), links);
+    (planKeysOf.get(v) ?? planKeysOf.set(v, []).get(v)!).push({ id: p.id, key: p.merchant });
+  }
+  const starts = [...byVendor.entries()]
+    .flatMap(([vendor, t]): { vendor: string; planKey: string | null; t: Tx[] }[] => {
+      const theirPlans = planKeysOf.get(vendor) ?? [];
+      if (theirPlans.length < 2) return [{ vendor, planKey: null, t }];
+      return theirPlans.map((p) => ({ vendor, planKey: p.key, t: linkedBy.get(p.id) ?? [] })).filter((s) => s.t.length > 0);
+    })
+    .map((s) => ({ ...s, first: s.t[0], at: Date.parse(s.t[0].date) }))
+    .sort((a, b) => a.at - b.at);
   type Pair = { old: string; next: string; shared: boolean; note: string; categoryId: number | null };
   const pairs: Pair[] = [];
   for (const plan of plans) {
@@ -342,7 +368,7 @@ export function handoffSuggestions(exclude: Set<string>): MergeSuggestion[] {
     const vendorLast = mine[mine.length - 1].date;
     const account = mode(linked.map((t) => t.account));
     const category = mode(linked.map((t) => t.categoryId)) ?? null;
-    for (const { vendor: next, t: theirs, first, at } of starts) {
+    for (const { vendor: next, planKey, t: theirs, first, at } of starts) {
       const gap = (at - lastAt) / DAY;
       if (gap < 0.5 * period) continue;
       if (gap > 1.6 * period) break;
@@ -355,12 +381,17 @@ export function handoffSuggestions(exclude: Set<string>): MergeSuggestion[] {
       if (theirCategory != null && theirCategory !== category) continue;
       if (muted(next) || dismissed.has(`handoff:${old}>${next}`)) continue;
       const shared = [...words(old)].some((w) => words(next).has(w));
+      // Folding a vendor into one that carries several plans is a bigger act
+      // than joining two names, so the names must agree. Without this, YouTube
+      // TV ($72.98, billed by Google) was offered into "Apple.com-bill", a
+      // 365-charge catch-all whose $74.89 plan began a month later.
+      if (planKey && !shared) continue;
       pairs.push({
         old,
         next,
         shared,
         categoryId: category,
-        note: `Picks up where “${old}” left off: $${Math.abs(last.amount).toFixed(2)} ${plan.cadence}, ${Math.round(gap)} days after its last charge, same account${theirCategory != null ? " and category" : ""}`,
+        note: `${planKey ? `Its plan “${planKey}” picks` : "Picks"} up where “${old}” left off: $${Math.abs(last.amount).toFixed(2)} ${plan.cadence}, ${Math.round(gap)} days after its last charge, same account${theirCategory != null ? " and category" : ""}`,
       });
     }
   }
@@ -373,7 +404,11 @@ export function handoffSuggestions(exclude: Set<string>): MergeSuggestion[] {
   for (const p of kept) {
     if (seen.has(p.old) || seen.has(p.next)) continue; // one card per vendor
     seen.add(p.old).add(p.next);
-    const canonical = hasSettings(p.old) && !hasSettings(p.next) ? p.old : p.next;
+    // The user's NAME for a vendor outranks any other setting: "Sofi" held a
+    // cadence override and nothing else, and would have displaced "Sofi
+    // Mortgage (Carmel)".
+    const keepOld = hasName(p.old) !== hasName(p.next) ? hasName(p.old) : hasSettings(p.old) && !hasSettings(p.next);
+    const canonical = keepOld ? p.old : p.next;
     const variants = [p.old, p.next].map((m) => ({ merchant: m, count: byVendor.get(m)!.length }));
     out.push({
       canonical,
