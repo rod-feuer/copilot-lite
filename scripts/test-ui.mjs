@@ -819,7 +819,18 @@ async function recurringsRow(browser) {
       const n = await page.evaluate(() => { const row = document.querySelector("[data-drawer-row]"); const kids = [...row.children]; const name = kids[1].getBoundingClientRect(); const amount = kids[kids.length - 1].getBoundingClientRect(); const rb = row.getBoundingClientRect(); return { name: Math.round(name.width), amountInside: amount.right <= rb.right + 1, overflow: row.scrollWidth - row.clientWidth }; });
       record("recurrings row", `at ${w}px the name has room and the amount stays inside the card`, n.name >= 60 && n.amountInside && n.overflow <= 0, `name ${n.name}px, amount inside=${n.amountInside}, overflow ${n.overflow}px`);
     }
+    // On a phone the name has the row: the cell is at least 150px wide, and a
+    // cadence tag that doesn't fit beside the name sits below it.
+    {
+      await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+      await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      const p = await page.evaluate(() => { const rows = [...document.querySelectorAll("[data-drawer-row]")]; const cell = rows[0].children[1].getBoundingClientRect(); const tagged = rows.find((r) => r.querySelector("[data-cadence]")); let below = null; if (tagged) { const n = tagged.querySelector(".truncate").getBoundingClientRect(); const t = tagged.querySelector("[data-cadence]").getBoundingClientRect(); below = t.right <= n.right + 8 + t.width + 1 && (t.top >= n.bottom - 2 || t.right <= cell.right + 1); } return { cellW: Math.round(cell.width), below }; });
+      record("recurrings row", "at 390px the name cell is at least 150px wide and a cadence tag never overflows it", p.cellW >= 150 && p.below !== false, `cell ${p.cellW}px${p.below === null ? ", no tagged row in the fixture" : ""}`);
+    }
     await page.setViewport({ width: 1280, height: 860 });
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" }); // back from the phone emulation
+    await page.waitForSelector("[data-drawer-row]");
     // A hovered row takes the hover token — a wash of the card surface, not the
     // page grey behind it. Hover media is not available in headless Linux CI.
     {

@@ -598,7 +598,11 @@ function BillList({
               >
                 {dim ? shortDate(r.lastDate) : shortDate(r.dueDate)}
               </div>
-              <div className="flex min-w-0 flex-1 items-center gap-2">
+              {/* The name has the row: a tag that doesn't fit beside it wraps to
+                  a meta line below rather than truncating the name (a phone
+                  gives the name ~130px; "Chase Mortgage (L…" told you less
+                  than "Quarterly" did). */}
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
                 {onSaveSettings ? (
                   <InlineEdit
                     value={rowName}
@@ -669,7 +673,7 @@ function BillList({
                     unsigned
                     state={state}
                     delta={delta}
-                    className="w-32 shrink-0"
+                    className="w-24 shrink-0 sm:w-32"
                   />
                 );
               })()}
