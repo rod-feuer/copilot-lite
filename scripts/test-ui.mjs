@@ -157,6 +157,29 @@ async function withPage(browser, fn, { width = 1280, height = 900 } = {}) {
 }
 
 // ---------- cases ----------
+// Only the latest shelf read may land. A slow read for vendor A that answered
+// after the shelf had moved to vendor B used to put A's name, amounts and plan
+// id under B's target, where an edit would mix the two. Hold A's read, open B,
+// let A's late answer arrive: the shelf must still be B.
+async function staleShelfRead(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const names = await page.$$eval("[data-drawer-row]", (rows) => rows.slice(0, 2).map((r) => r.children[1].textContent.replace("✎", "").trim()));
+    await page.setRequestInterception(true);
+    let held = false;
+    page.on("request", (req) => {
+      if (!held && req.url().includes("/api/merchant?")) { held = true; setTimeout(() => req.continue(), 2000); }
+      else req.continue();
+    });
+    const rows = await page.$$("[data-drawer-row]");
+    await rows[0].click(); await sleep(250); // A: its read is held
+    await rows[1].click();                   // B: answers at once
+    await sleep(3000);                       // A's late answer has landed
+    const head = await page.$eval("[data-shelf] header", (h) => h.innerText.split("\n")[0].replace("✎", "").trim());
+    record("stale shelf read", "a late answer for the previous vendor never replaces the open one", held && names.length === 2 && head.startsWith(names[1].slice(0, 6)) && !head.startsWith(names[0].slice(0, 6)), `opened ${names[0]} then ${names[1]}; shelf shows ${head}`);
+  });
+}
 // DESIGN.md §2 "Touch is in scope": on a phone (a coarse pointer) every small
 // control's hit area is at least 32px tall, grown around the type by `tap` /
 // `tap-native`. Measured by probing where a touch lands, since a pseudo-element
@@ -862,7 +885,7 @@ async function recurringsRow(browser) {
     const strayDot = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row] span[aria-label='Has custom settings']")].length);
     record("recurrings row", "no settings dot anywhere in the row", strayDot === 0 && r.marked === 0, `on ⋯: ${r.marked}, after name: ${strayDot}`);
     // the verbs live in the shelf, in §2 vocabulary, reached from the row
-    await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]");
+    await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]"); await shelfSettled(page); // the verbs arrive with the data, not the skeleton
     const shelfText = await page.evaluate(() => document.querySelector("[data-shelf]").innerText);
     record("recurrings row", "the row opens the shelf, which holds Not recurring + Mark as ended", shelfText.includes("Not recurring") && shelfText.includes("Mark as ended"), "both present");
     await page.keyboard.press("Escape");
@@ -927,7 +950,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

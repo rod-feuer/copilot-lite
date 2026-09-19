@@ -104,27 +104,39 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [loadError, setLoadError] = useState(false);
   // `keep`: a re-read after a write keeps the current panel on screen until
   // the new data lands — no skeleton, no scroll reset, no jump.
-  const fetchMerchant = useCallback((m: string, series?: string, keep = false) => {
-    if (!keep) setMData(null);
+  // Only the latest read may land. The shelf shows one thing at a time, so one
+  // counter covers all three loaders: an answer (or a failure) that arrives
+  // after a newer read began is dropped. Without it, a slow read for vendor A
+  // that landed after the shelf had moved to vendor B put A's name, amounts
+  // and plan id under B's target — and a recategorize then sent B's vendor
+  // with A's plan.
+  const readSeq = useRef(0);
+  const read = useCallback(<T,>(url: string, set: (d: T | null) => void, keep: boolean) => {
+    const seq = ++readSeq.current;
+    if (!keep) set(null);
     setLoadError(false);
-    getJson<Summary>(`/api/merchant?name=${encodeURIComponent(m)}${series ? `&series=${encodeURIComponent(series)}` : ""}`)
-      .then(setMData)
-      .catch(() => setLoadError(true));
+    getJson<T>(url)
+      .then((d) => {
+        if (seq === readSeq.current) set(d);
+      })
+      .catch(() => {
+        if (seq === readSeq.current) setLoadError(true);
+      });
   }, []);
-  const fetchCategory = useCallback((id: number, month: string, keep = false) => {
-    if (!keep) setCData(null);
-    setLoadError(false);
-    getJson<CatSummary>(`/api/category?id=${id}&month=${encodeURIComponent(month)}`)
-      .then(setCData)
-      .catch(() => setLoadError(true));
-  }, []);
-  const fetchCharge = useCallback((id: number, keep = false) => {
-    if (!keep) setXData(null);
-    setLoadError(false);
-    getJson<ChargeDetail>(`/api/transactions/${id}`)
-      .then(setXData)
-      .catch(() => setLoadError(true));
-  }, []);
+  const fetchMerchant = useCallback(
+    (m: string, series?: string, keep = false) =>
+      read<Summary>(`/api/merchant?name=${encodeURIComponent(m)}${series ? `&series=${encodeURIComponent(series)}` : ""}`, setMData, keep),
+    [read]
+  );
+  const fetchCategory = useCallback(
+    (id: number, month: string, keep = false) =>
+      read<CatSummary>(`/api/category?id=${id}&month=${encodeURIComponent(month)}`, setCData, keep),
+    [read]
+  );
+  const fetchCharge = useCallback(
+    (id: number, keep = false) => read<ChargeDetail>(`/api/transactions/${id}`, setXData, keep),
+    [read]
+  );
 
   const close = useCallback(() => {
     setTarget(null);
