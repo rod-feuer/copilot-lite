@@ -1,3 +1,4 @@
+import { variableStillToCome, LARGE_CHARGE, EXTRAORDINARY, HISTORY_MONTHS } from "./forecast";
 import { seriesKey, seriesVendor, isSeriesKey, dayLabel, amountLabel } from "./series";
 import { merchantKey } from "./merchant";
 import crypto from "node:crypto";
@@ -1020,9 +1021,9 @@ export function dashboard(month?: string): DashboardData {
     { id: number | null; color: string; icon: string; total: number }
   >();
   const spendById = new Map<number, number>();
-  // Variable (non-recurring) spend per category, used to run-rate the budget
-  // projection without amplifying lumpy recurring bills.
-  const variableById = new Map<number, number>();
+  // Variable (non-recurring) charges, overall and per category: what the
+  // forecasts read (see forecast.ts) — never the lumpy recurring bills.
+  const variableCharges: { mag: number; cid: number | null }[] = [];
   for (const r of rows) {
     if (r.amount >= 0) income += r.amount;
     else expenses += -r.amount;
@@ -1037,10 +1038,9 @@ export function dashboard(month?: string): DashboardData {
       catMap.set(r.cname, e);
       if (r.cid != null) {
         spendById.set(r.cid, (spendById.get(r.cid) ?? 0) - r.amount);
-        if (r.recurringId == null)
-          variableById.set(r.cid, (variableById.get(r.cid) ?? 0) - r.amount);
       }
     }
+    if (r.amount < 0 && r.recurringId == null) variableCharges.push({ mag: -r.amount, cid: r.cid });
   }
 
   // Spending pace: cumulative EXPENSES per day (climbs from $0), plus a
@@ -1050,11 +1050,9 @@ export function dashboard(month?: string): DashboardData {
   // recurring from variable avoids double-counting (a flat run-rate would both
   // bake in past recurring charges *and* re-add the scheduled future ones).
   const expenseByDate = new Map<string, number>();
-  let variableMTD = 0;
   for (const r of rows) {
     if (r.amount >= 0) continue;
     expenseByDate.set(r.date, (expenseByDate.get(r.date) ?? 0) - r.amount);
-    if (r.recurringId == null) variableMTD += -r.amount;
   }
   let spendCum = 0;
   const series: {
@@ -1097,10 +1095,37 @@ export function dashboard(month?: string): DashboardData {
       ? upcomingRecurringExpenses(pad(lastDataDay + 1), pad(daysInMonth))
       : [];
 
+  // Large purchases in the recent finished months, for the forecast (forecast.ts):
+  // the same rows the dashboard counts, outside any plan, over the large line.
+  // A month with data and no large purchase counts as a zero, not as missing.
+  const largeHistory = (categoryIds?: Set<number>): { large: number; days: number }[] => {
+    if (remainingDays <= 0) return [];
+    const prior: string[] = [];
+    for (let i = 1; i <= HISTORY_MONTHS; i++) prior.push(new Date(Date.UTC(yy, mm - 1 - i, 1)).toISOString().slice(0, 7));
+    const withData = new Set(
+      (db.prepare(`SELECT DISTINCT substr(COALESCE(effectiveDate, date),1,7) AS ym FROM transactions WHERE substr(COALESCE(effectiveDate, date),1,7) IN (${prior.map(() => "?").join(",")})`).all(...prior) as { ym: string }[]).map((r) => r.ym)
+    );
+    const big = db
+      .prepare(
+        `SELECT substr(COALESCE(t.effectiveDate, t.date),1,7) AS ym, t.categoryId AS cid, -t.amount AS mag
+         FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
+         WHERE t.excluded = 0 AND COALESCE(c.excludeFromTotals, 0) = 0 AND t.recurringId IS NULL
+           AND -t.amount > ? AND -t.amount <= ? AND substr(COALESCE(t.effectiveDate, t.date),1,7) IN (${prior.map(() => "?").join(",")})`
+      )
+      .all(LARGE_CHARGE, EXTRAORDINARY, ...prior) as { ym: string; cid: number | null; mag: number }[];
+    return prior
+      .filter((ym) => withData.has(ym))
+      .map((ym) => ({
+        large: big.filter((b) => b.ym === ym && (!categoryIds || (b.cid != null && categoryIds.has(b.cid)))).reduce((a, b) => a + b.mag, 0),
+        days: new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).getUTCDate(),
+      }));
+  };
+
   let projectedMonthEnd: number | null = null;
   if (remainingDays > 0 && lastDataDay >= MIN_ELAPSED_DAYS) {
     const scheduled = scheduledRemaining.reduce((a, r) => a + Math.abs(r.avgAmount), 0);
-    const projectedExtra = (variableMTD / lastDataDay) * remainingDays + scheduled;
+    const projectedExtra =
+      variableStillToCome({ seen: variableCharges.map((v) => v.mag), daysElapsed: lastDataDay, daysRemaining: remainingDays, history: largeHistory() }) + scheduled;
     projectedMonthEnd = Number((expenses + projectedExtra).toFixed(2));
     // Linear ramp for the dashed segment; anchor it to the last actual point.
     if (series.length) series[series.length - 1].projected = series[series.length - 1].actual;
@@ -1135,16 +1160,14 @@ export function dashboard(month?: string): DashboardData {
     const budgetedSet = new Set(budgetIds.map(Number));
     let total = 0;
     let spent = 0;
-    let variableBudgetedMTD = 0;
     for (const idStr of budgetIds) {
       const id = Number(idStr);
       total += budgets[id];
       spent += spendById.get(id) ?? 0;
-      variableBudgetedMTD += variableById.get(id) ?? 0;
     }
-    // Projection mirrors the pace forecast (run-rate the variable spend, add
-    // scheduled recurring) restricted to budgeted categories — so a lumpy early
-    // bill isn't multiplied out to an alarmist figure. Held back as null until
+    // Projection mirrors the pace forecast (the same variable-spend forecast,
+    // plus scheduled recurring) restricted to budgeted categories — so a lumpy
+    // early bill isn't multiplied out to an alarmist figure. Held back as null until
     // enough of an in-progress month has elapsed for a run-rate to mean anything;
     // a complete month simply reports its actuals.
     let projected: number | null;
@@ -1155,7 +1178,14 @@ export function dashboard(month?: string): DashboardData {
         .filter((r) => r.categoryId != null && budgetedSet.has(r.categoryId))
         .reduce((a, r) => a + Math.abs(r.avgAmount), 0);
       projected =
-        spent + (variableBudgetedMTD / lastDataDay) * remainingDays + scheduledBudgeted;
+        spent +
+        variableStillToCome({
+          seen: variableCharges.filter((v) => v.cid != null && budgetedSet.has(v.cid)).map((v) => v.mag),
+          daysElapsed: lastDataDay,
+          daysRemaining: remainingDays,
+          history: largeHistory(budgetedSet),
+        }) +
+        scheduledBudgeted;
     } else {
       projected = null;
     }

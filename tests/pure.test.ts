@@ -6,6 +6,7 @@ import { medianGap, monthlyFactor, CADENCE_DAYS, PER_YEAR, CADENCE_LABEL } from 
 import { seriesKey, seriesVendor, isSeriesKey } from "../src/lib/series";
 import { parseCsv } from "../src/lib/import";
 import { budgetOutlook, BUDGET_TOLERANCE } from "../src/lib/budgetOutlook";
+import { variableStillToCome, LARGE_CHARGE } from "../src/lib/forecast";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
 import { createLatestGuard } from "../src/lib/latestGuard";
@@ -221,4 +222,32 @@ test("budgetOutlook: a forecast within 1% of the budget is on budget; a finished
   assert.equal(budgetOutlook(42530, 41000, true).kind, "under");
   assert.equal(budgetOutlook(42530, 42618, false).kind, "over", "once the month is done, $88 over is over");
   assert.equal(budgetOutlook(42530, 42530.4, false).kind, "on", "to the dollar");
+});
+
+// WHY: the month-end forecast drives the dashboard's headline. One daily pace for
+// everything treated a $975 purchase as $51 a day for the rest of the month; but
+// large purchases are not rare here either (about three a month, more than half
+// of variable spend), so ignoring them under-forecasts. Everyday spending is
+// paced from this month; large purchases are a monthly amount that arrives in
+// lumps — expect the recent months' pace for the days left, but never more than
+// what is left of a typical month once this month's own are counted. Backtested
+// on 32 real months this halved the median miss (see forecast.ts).
+test("variableStillToCome: everyday spending is paced; large purchases are a monthly amount that gets used up", () => {
+  const history = Array.from({ length: 6 }, () => ({ large: 9000, days: 30 })); // $300 a day of large purchases, typically
+  const everyday = Array.from({ length: 20 }, () => 100); // $100 a day so far
+  const base = { daysElapsed: 20, daysRemaining: 10, history };
+  assert.equal(LARGE_CHARGE, 1000);
+  // A quiet month so far: $1,000 of everyday still to come, plus ten days of the usual large-purchase pace.
+  assert.equal(variableStillToCome({ ...base, seen: everyday }), 1000 + 3000);
+  // One large purchase is NOT spread over the days left — it only uses up part of the month's usual amount…
+  assert.equal(variableStillToCome({ ...base, seen: [...everyday, 975 + 26] }), 1000 + 3000, "and at this size the pace is still the smaller bound");
+  // …and a month that has already had most of its share expects only the rest.
+  assert.equal(variableStillToCome({ ...base, seen: [...everyday, 4000, 3500] }), 1000 + 1500);
+  assert.equal(variableStillToCome({ ...base, seen: [...everyday, 6000, 5000] }), 1000, "more than its share: no more expected, and never negative");
+  // The old rule would have said (2000 + 11000) / 20 * 10 = 6,500 for that month.
+  // A down payment is neither extrapolated nor counted against the month's usual large purchases.
+  assert.equal(variableStillToCome({ ...base, seen: [...everyday, 50000] }), 1000 + 3000);
+  // With no history to lean on, the old rule stands in — for a new database.
+  assert.equal(variableStillToCome({ ...base, history: [], seen: [...everyday, 4000] }), 1000 + 2000);
+  assert.equal(variableStillToCome({ ...base, daysRemaining: 0, seen: everyday }), 0, "a finished month has nothing still to come");
 });
