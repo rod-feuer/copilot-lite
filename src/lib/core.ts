@@ -37,11 +37,19 @@ export function txHash(
 // Deterministic: a merchant matches a rule if the rule's pattern is a substring
 // of the (lowercased) merchant name. This handles every *known* merchant for
 // free. Only genuinely-unseen merchants fall through to the model. (Rule 5)
+// When several rules match, the user's beat the model's, and of the user's the
+// most specific (longest) wins. In table order, the model's early guess
+// "benjamin franklin" → Gifts outranked the user's later "benjamin franklin
+// pl" → Carmel Home, and every new plumbing charge was filed as a gift.
+// Model rules keep their order among themselves: two guesses have no ranking.
 export function categorizeByRules(merchant: string): number | null {
   const db = getDb();
   const m = merchant.toLowerCase();
   const rules = db
-    .prepare("SELECT pattern, categoryId FROM rules")
+    .prepare(
+      `SELECT pattern, categoryId FROM rules
+       ORDER BY (origin = 'user') DESC, CASE WHEN origin = 'user' THEN length(pattern) ELSE 0 END DESC, id`
+    )
     .all() as { pattern: string; categoryId: number }[];
   for (const r of rules) {
     if (m.includes(r.pattern)) return r.categoryId;
