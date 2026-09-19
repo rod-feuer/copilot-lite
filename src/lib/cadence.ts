@@ -28,6 +28,20 @@ export const PER_YEAR: Record<Cadence, number> = {
   yearly: 1,
 };
 
+// What a cadence is called, everywhere it is shown. There were two copies (the
+// recurrings row's tag and the shelf's picker); adding "Every 2 months" meant
+// editing both, and missing one would have shown the raw key.
+export const CADENCE_LABEL: Record<Cadence, string> = {
+  weekly: "Weekly",
+  biweekly: "Biweekly",
+  monthly: "Monthly",
+  bimonthly: "Every 2 months",
+  quarterly: "Quarterly",
+  semiannual: "Every 6 months",
+  yearly: "Yearly",
+};
+export const cadenceLabel = (cadence: string): string => CADENCE_LABEL[cadence as Cadence] ?? cadence;
+
 // Share of one charge that lands in a typical month. Unknown cadence → monthly.
 export function monthlyFactor(cadence: string): number {
   return (PER_YEAR[cadence as Cadence] ?? 12) / 12;

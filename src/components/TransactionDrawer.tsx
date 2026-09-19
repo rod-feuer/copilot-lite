@@ -14,7 +14,7 @@ import { usePathname } from "next/navigation";
 import { useMutation } from "@/components/useMutation";
 import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { RecurringGlyph, RECURRING_LABEL, recurringState, type RecurringState } from "@/components/RecurringGlyph";
-import { AmountCell } from "@/components/RowCells";
+import { AmountCell, CategoryOptions, categoryChange } from "@/components/RowCells";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { Tooltip } from "@/components/Tooltip";
 import { getJson, postJson, patchJson, deleteJson } from "@/lib/http";
@@ -25,7 +25,8 @@ import { InfoHint } from "@/components/InfoHint";
 import { usd, shortDate, shortDatePad, monthDayYear, isCurrentMonth } from "@/lib/format";
 import type { MerchantSummary, CategorySummary, MatchRule , ChargeDetail } from "@/lib/queries";
 import type { Category } from "@/lib/types";
-import { NEW_CATEGORY, NewCategoryOption, useNewCategory } from "@/components/NewCategoryOption";
+import { useNewCategory } from "@/components/NewCategoryOption";
+import { CADENCE_LABEL, cadenceLabel } from "@/lib/cadence";
 
 // Shapes come from the library that produces them; the aliases keep the file's
 // existing names.
@@ -749,24 +750,14 @@ function ChargeBody({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-2">
         <PropertyCard label="date" edited={dateEdited}>
-          <span className="relative flex items-center justify-between">
-            <span className="text-[15px] font-semibold tabular-nums">{shortDate(data.effectiveDate ?? data.date)}</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
-              <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
-            </svg>
-            <input
-              type="date"
-              aria-label="Effective date"
-              value={data.effectiveDate ?? data.date}
-              onClick={(e) => (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()}
-              onChange={(e) => {
-                const v = e.target.value;
-                const eff = !v || v === data.date ? null : v;
-                if (eff !== (data.effectiveDate ?? null)) onSetDate(eff);
-              }}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            />
-          </span>
+          <DateField
+            label="Effective date"
+            value={data.effectiveDate ?? data.date}
+            onPick={(v) => {
+              const eff = !v || v === data.date ? null : v;
+              if (eff !== (data.effectiveDate ?? null)) onSetDate(eff);
+            }}
+          />
         </PropertyCard>
         <PropertyCard label="amount">
           <AmountCell value={data.amount} excluded={excluded || !!data.categoryExcluded} className="text-[15px]" />
@@ -774,26 +765,7 @@ function ChargeBody({
       </div>
       <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
         {dateEdited && <span className="whitespace-nowrap">posted {shortDate(data.date)}</span>}
-        <CaptionSelect
-          label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
-          value={data.categoryId ?? ""}
-          aria-label="Category"
-          onChange={(e) => {
-            if (e.target.value === NEW_CATEGORY) {
-              newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
-              return;
-            }
-            onSetCategory(e.target.value ? Number(e.target.value) : null);
-          }}
-        >
-          <option value="">Uncategorized</option>
-          {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.icon} {c.name}
-            </option>
-          ))}
-          <NewCategoryOption />
-        </CaptionSelect>
+        <CategoryCaption data={data} cats={cats} onChange={onSetCategory} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
         {newCat.popover}
         {/* Plan membership, when the vendor has a plan to be in. A charge
             excluded from totals can't join one. */}
@@ -1095,27 +1067,14 @@ function MerchantBody({
           {/* Date on the left, amount on the right — the rows' order. */}
           <div className="grid grid-cols-2 gap-2">
             <PropertyCard label="Next due" edited={data.nextDate != null}>
-              {/* The app writes dates as "Sep 18"; the native picker (its own
-                  locale format) is laid transparently over that and opens on
-                  click. */}
-              <span className="relative flex items-center justify-between">
-                <span className="text-[15px] font-semibold tabular-nums">{shortDate(data.nextDate ?? d.nextDate)}</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
-                  <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
-                </svg>
-                <input
-                  type="date"
-                  aria-label="Next due"
-                  value={data.nextDate ?? d.nextDate ?? ""}
-                  onClick={(e) => (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null });
-                    else if (v !== data.nextDate) onSaveSettings({ nextDate: v });
-                  }}
-                  className="absolute inset-0 w-full cursor-pointer opacity-0"
-                />
-              </span>
+              <DateField
+                label="Next due"
+                value={data.nextDate ?? d.nextDate}
+                onPick={(v) => {
+                  if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null });
+                  else if (v !== data.nextDate) onSaveSettings({ nextDate: v });
+                }}
+              />
             </PropertyCard>
             <PropertyCard label="Per charge" edited={data.expectedAmount != null}>
               <div className="flex items-center">
@@ -1145,39 +1104,20 @@ function MerchantBody({
               value first, its auto/edited state beside it, like the cards), and
               the per-year figure the cadence drives. */}
           <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
-            <CaptionSelect
-              label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
-              value={data.categoryId ?? ""}
-              aria-label="Category"
-              onChange={(e) => {
-                if (e.target.value === NEW_CATEGORY) {
-                  newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
-                  return;
-                }
-                onRecategorize(e.target.value ? Number(e.target.value) : null);
-              }}
-            >
-              <option value="">Uncategorized</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon} {c.name}
-                </option>
-              ))}
-              <NewCategoryOption />
-            </CaptionSelect>
+            <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
             {newCat.popover}
             {/* Items are separated by space, not dots: a wrap can then never
                 strand a separator at either end of a line. */}
             <span className="inline-flex items-center whitespace-nowrap">
               <CaptionSelect
-                label={(data.cadence ?? data.detectedCadence) ? CADENCE_LABELS[data.cadence ?? data.detectedCadence ?? ""] ?? (data.cadence ?? data.detectedCadence ?? "") : "Auto"}
+                label={(data.cadence ?? data.detectedCadence) ? cadenceLabel(data.cadence ?? data.detectedCadence ?? "") : "Auto"}
                 tag={<StateTag edited={data.cadence != null} />}
                 aria-label="Cadence"
                 value={data.cadence ?? "__auto"}
                 onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value })}
               >
-                <option value="__auto">{data.detectedCadence ? `${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence} (auto)` : "Auto"}</option>
-                {Object.entries(CADENCE_LABELS).map(([v, label]) => (
+                <option value="__auto">{data.detectedCadence ? `${cadenceLabel(data.detectedCadence)} (auto)` : "Auto"}</option>
+                {Object.entries(CADENCE_LABEL).map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
                   </option>
@@ -1226,26 +1166,7 @@ function MerchantBody({
           </PropertyCard>
           </div>
           <div className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
-            <CaptionSelect
-              label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
-              value={data.categoryId ?? ""}
-              aria-label="Category"
-              onChange={(e) => {
-                if (e.target.value === NEW_CATEGORY) {
-                  newCat.open(e.currentTarget, null, `New category for ${data.displayName}`);
-                  return;
-                }
-                onRecategorize(e.target.value ? Number(e.target.value) : null);
-              }}
-            >
-              <option value="">Uncategorized</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon} {c.name}
-                </option>
-              ))}
-              <NewCategoryOption />
-            </CaptionSelect>
+            <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
             <span className="whitespace-nowrap">
               {usd(data.trailing12 / monthsActive, { cents: false })} per active month · {data.count12} charge{data.count12 === 1 ? "" : "s"} in 12 months
             </span>
@@ -1931,16 +1852,6 @@ function StateTag({ edited }: { edited?: boolean }) {
   );
 }
 
-const CADENCE_LABELS: Record<string, string> = {
-  weekly: "Weekly",
-  biweekly: "Biweekly",
-  monthly: "Monthly",
-  bimonthly: "Every 2 months",
-  quarterly: "Quarterly",
-  semiannual: "Every 6 months",
-  yearly: "Yearly",
-};
-
 
 // Match correction: how a charge is recognised as this bill. Auto = exact
 // vendor, or the vendor's category + amount. "contains" widens it to any
@@ -2023,6 +1934,53 @@ function CaptionSelect({ label, tag, className = "", children, ...select }: { la
       <select {...select} className="absolute inset-0 w-full cursor-pointer opacity-0">
         {children}
       </select>
+    </span>
+  );
+}
+
+// The category on a shelf's caption line: the quiet picker with "+ New
+// category…". The vendor (twice: with a plan, without) and the charge use it.
+function CategoryCaption({
+  data,
+  cats,
+  onChange,
+  onNew,
+}: {
+  data: { categoryId: number | null; categoryName: string | null; categoryIcon: string | null };
+  cats: Cat[];
+  onChange: (categoryId: number | null) => void;
+  onNew: (anchor: HTMLSelectElement) => void;
+}) {
+  return (
+    <CaptionSelect
+      label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
+      value={data.categoryId ?? ""}
+      aria-label="Category"
+      onChange={categoryChange(onChange, onNew)}
+    >
+      <CategoryOptions cats={cats} withNew />
+    </CaptionSelect>
+  );
+}
+
+// A date inside a property card. The app writes dates as "Sep 18"; the native
+// picker (its own locale format) is laid transparently over that and opens on
+// click. The plan's next-due and the charge's effective date use it.
+function DateField({ label, value, onPick }: { label: string; value: string; onPick: (iso: string) => void }) {
+  return (
+    <span className="relative flex items-center justify-between">
+      <span className="text-[15px] font-semibold tabular-nums">{shortDate(value)}</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--muted)]" aria-hidden>
+        <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+      </svg>
+      <input
+        type="date"
+        aria-label={label}
+        value={value}
+        onClick={(e) => (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()}
+        onChange={(e) => onPick(e.target.value)}
+        className="absolute inset-0 w-full cursor-pointer opacity-0"
+      />
     </span>
   );
 }

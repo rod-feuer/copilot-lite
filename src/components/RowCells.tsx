@@ -1,5 +1,6 @@
 "use client";
 
+import type { ChangeEvent } from "react";
 import { usd } from "@/lib/format";
 import { Money } from "@/components/Money";
 import { NEW_CATEGORY, NewCategoryOption } from "@/components/NewCategoryOption";
@@ -10,6 +11,30 @@ import type { Category } from "@/lib/types";
 // they differ in what leads (a glyph where the vendor is the subject, a date
 // where time is) and in their editors, so the anatomy is shared as cells,
 // not as one wrapper that would have to know every editor.
+
+// A category picker's options and its change handler, shared by every native
+// category <select> that offers "+ New category…": the row's property below
+// and the shelf's caption picker. Four copies had the same three lines of
+// "is it the new-category sentinel, else a number or null".
+export function CategoryOptions({ cats, withNew = false }: { cats: Category[]; withNew?: boolean }) {
+  return (
+    <>
+      <option value="">Uncategorized</option>
+      {cats.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.icon} {c.name}
+        </option>
+      ))}
+      {withNew && <NewCategoryOption />}
+    </>
+  );
+}
+export const categoryChange =
+  (onChange: (categoryId: number | null) => void, onNewCategory?: (anchor: HTMLSelectElement) => void) =>
+  (e: ChangeEvent<HTMLSelectElement>) => {
+    if (e.target.value === NEW_CATEGORY) onNewCategory?.(e.currentTarget);
+    else onChange(e.target.value ? Number(e.target.value) : null);
+  };
 
 // The category as a quiet property: icon + name in the muted text colour, a
 // chevron beside it (a visible affordance), and the real native <select> laid
@@ -72,26 +97,12 @@ export function CategoryProperty({
         onMouseDown={onActivate}
         onFocus={onActivate}
         onBlur={onDeactivate}
-        onChange={(e) => {
-          if (e.target.value === NEW_CATEGORY) {
-            onNewCategory?.(e.currentTarget);
-            return;
-          }
-          onChange(e.target.value ? Number(e.target.value) : null);
-        }}
+        onChange={categoryChange(onChange, onNewCategory)}
         aria-label={ariaLabel}
         className="tap-native absolute inset-0 w-full cursor-pointer opacity-0"
       >
         {active ? (
-          <>
-            <option value="">Uncategorized</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.icon} {c.name}
-              </option>
-            ))}
-            {onNewCategory && <NewCategoryOption />}
-          </>
+          <CategoryOptions cats={cats} withNew={!!onNewCategory} />
         ) : set ? (
           <option value={categoryId as number}>{label}</option>
         ) : (
