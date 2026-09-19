@@ -181,7 +181,9 @@ async function tapTargets(browser) {
           let top = b.top, bottom = b.bottom;
           for (let y = b.top - 1; y >= b.top - 16; y--) { if (hits(el, cx, y)) top = y; else break; }
           for (let y = b.bottom + 1; y <= b.bottom + 16; y++) { if (hits(el, cx, y)) bottom = y; else break; }
-          if (Math.round(bottom - top) < 32) short.push(`${el.tagName.toLowerCase()} "${(el.getAttribute("aria-label") || el.textContent.trim()).slice(0, 24)}" ${Math.round(bottom - top)}px`);
+          // Name what took the touch instead, so a short target says why.
+          const blocker = (y) => { const h = document.elementFromPoint(cx, y); return h ? `${h.tagName.toLowerCase()}.${[...h.classList].slice(0, 2).join(".")}` : "nothing"; };
+          if (Math.round(bottom - top) < 32) short.push(`${el.tagName.toLowerCase()} "${(el.getAttribute("aria-label") || el.textContent.trim()).slice(0, 24)}" ${Math.round(bottom - top)}px (above: ${blocker(top - 1)}, below: ${blocker(bottom + 1)})`);
         }
         return { coarse, n, short };
       });

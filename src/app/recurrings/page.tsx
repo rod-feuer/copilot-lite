@@ -332,7 +332,7 @@ export default function RecurringsPage() {
           )}
 
           <Toolbar>
-          <SearchBox value={q} onChange={setQ} placeholder="Search…" className="w-full sm:w-48" />
+          <SearchBox value={q} onChange={setQ} placeholder="Search…" className="min-w-0 flex-1 sm:w-48 sm:flex-none" />
           <select
             value={catFilter}
             onChange={(e) => setCatFilter(e.target.value)}
