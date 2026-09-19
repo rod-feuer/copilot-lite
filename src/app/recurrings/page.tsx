@@ -17,7 +17,7 @@ import { InfoHint } from "@/components/InfoHint";
 import { Tooltip } from "@/components/Tooltip";
 import { SearchBox } from "@/components/SearchBox";
 import { getJson, postJson } from "@/lib/http";
-import { CADENCE_DAYS } from "@/lib/cadence";
+import { CADENCE_DAYS, CADENCE_LABEL } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
 import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
@@ -31,16 +31,6 @@ type SettingsPatch = Partial<Settings>;
 type Rec = RecurringForMonth;
 type Cat = Category;
 type Suggestion = RecurringSuggestion;
-
-const CADENCE_LABEL: Record<Rec["cadence"], string> = {
-  weekly: "Weekly",
-  biweekly: "Biweekly",
-  monthly: "Monthly",
-  bimonthly: "Every 2 months",
-  quarterly: "Quarterly",
-  semiannual: "Every 6 months",
-  yearly: "Yearly",
-};
 
 // Active = charged within ~1.5 cycles (plus grace); else treated as stopped. A
 // user-ended (canceled) subscription is inactive immediately, regardless of how
