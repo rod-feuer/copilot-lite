@@ -57,7 +57,7 @@ import {
   handoffSuggestions,
   allMergeSuggestions,
 } from "../src/lib/merges";
-import { createSplitRule, applySplitRules, undoSplit } from "../src/lib/splits";
+import { createSplitRule, applySplitRules, undoSplit, splitRulesFor, removeSplitRule } from "../src/lib/splits";
 import { importPlaidTransactions, plaidSyncStartDate } from "../src/lib/plaid";
 
 let CAT: number, CAT_INC: number, CAT_EXC: number, CAT_X: number;
@@ -2207,4 +2207,36 @@ test("split drift: a price change that made a split rule miss is reported with p
   const refund = getDb().prepare("SELECT excluded, (SELECT COUNT(*) FROM transactions s WHERE s.hash LIKE 'refund:s%') parts FROM transactions WHERE hash = 'refund'").get();
   assert.deepEqual(refund, { excluded: 0, parts: 0 }, "a refund of exactly the rule's amount is not split into spending");
   assert.equal(undoSplit(id("old-price")), 1, "the old rule is still there to undo what it split");
+});
+
+// WHY: a split rule is an object the user made, so it must be readable and
+// removable where the vendor is edited — it was invisible unless you found a
+// charge it had split, and a price change leaves a vendor with two. The
+// part-vendors a split creates ("Chubb — Cars") contain the rule's pattern in
+// their names and must not list it as theirs. Removing means what "Undo split"
+// means: the rule goes with everything it did, and the money counts whole again.
+test("a vendor's shelf lists its split rules, and removing one restores what it split", () => {
+  const home = addCat("Home (rules)"), cars = addCat("Cars (rules)");
+  const parts = [{ categoryId: home, amount: 847.75, label: "Carmel Home" }, { categoryId: cars, amount: 267.8, label: "Cars" }];
+  for (const d of ["2026-07-01", "2026-08-01", "2026-09-01"]) tx("Chubb", { amount: -1115.55, date: d, categoryId: CAT });
+  tx("Chubb", { amount: -544.94, date: "2026-09-17", categoryId: CAT });
+  createSplitRule("chubb", 1115.55, parts);
+  createSplitRule("chubb", 1180.2, parts.map((p) => ({ ...p, amount: p.label === "Cars" ? 283.32 : 896.88 }))); // next year's price, not charged yet
+  assert.equal(applySplitRules(), 3);
+  const counted = () => (getDb().prepare("SELECT ROUND(SUM(amount), 2) s, COUNT(*) n FROM transactions WHERE excluded = 0").get() as { s: number; n: number });
+  const before = counted();
+
+  const rules = merchantSummary("Chubb").splitRules;
+  assert.deepEqual(rules.map((r) => [r.amount, r.applied, r.parts.map((p) => p.label).join("+")]), [[1115.55, 3, "Carmel Home+Cars"], [1180.2, 0, "Carmel Home+Cars"]]);
+  assert.deepEqual(merchantSummary("Chubb — Cars").splitRules, [], "a part-vendor is not the rule's vendor");
+  assert.deepEqual(splitRulesFor(["Netflix"]), []);
+
+  assert.equal(removeSplitRule(rules[0].id), 3, "three charges restored");
+  assert.deepEqual(merchantSummary("Chubb").splitRules.map((r) => r.amount), [1180.2], "the other rule is untouched");
+  const after = counted();
+  assert.equal(after.s, before.s, "the same money counts, whole instead of in parts");
+  assert.equal(after.n, before.n - 3, "six parts gone, three charges back");
+  assert.equal((getDb().prepare("SELECT COUNT(*) n FROM transactions WHERE hash LIKE '%:s%'").get() as { n: number }).n, 0);
+  assert.equal(removeSplitRule(rules[1].id), 0, "a rule that never applied restores nothing, and goes");
+  assert.equal(removeSplitRule(999999), null);
 });

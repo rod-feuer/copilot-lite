@@ -460,6 +460,12 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 amountHint={amountHint}
                 vendors={vendors}
                 onCombine={combineMerchant}
+                onRemoveSplit={(id, applied) =>
+                  write(() => deleteJson(`/api/split-rules/${id}`), {
+                    success: applied ? `Split removed · ${applied} charge${applied === 1 ? "" : "s"} restored` : "Split removed",
+                    error: "Couldn't remove the split — please try again",
+                  })
+                }
               />
             ) : target.kind === "category" && cData ? (
               <CategoryBody
@@ -1041,6 +1047,7 @@ function MerchantBody({
   amountHint,
   vendors,
   onCombine,
+  onRemoveSplit,
 }: {
   data: Summary;
   cats: Cat[];
@@ -1052,6 +1059,7 @@ function MerchantBody({
   amountHint?: number | null;
   vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
+  onRemoveSplit: (id: number, applied: number) => void;
 }) {
   // "+ New category…" in the Category field: create it here and apply it.
   const newCat = useNewCategory<null>((cat) => {
@@ -1345,6 +1353,7 @@ function MerchantBody({
             Ended{data.endedDate ? ` ${shortDate(data.endedDate)}` : ""}
           </Tooltip>
         )}
+        {data.splitRules.length > 0 && <SplitRules rules={data.splitRules} onRemove={onRemoveSplit} />}
         {/* One actions row, one style: the §2 verbs. Combine is a disclosure —
             its panel drops below the row only while in use. */}
         <div className="flex gap-2">
@@ -1878,6 +1887,52 @@ function StateTag({ edited }: { edited?: boolean }) {
   );
 }
 
+
+// The vendor's split rules. A rule was invisible unless you found a charge it
+// had split; here it can be read and removed. Remove means what "Undo split"
+// means on a charge — the rule and everything it did — so it is a two-step
+// button, like deleting a category: the first press arms it for three seconds.
+function SplitRules({ rules, onRemove }: { rules: Summary["splitRules"]; onRemove: (id: number, applied: number) => void }) {
+  const [armed, setArmed] = useState<number | null>(null);
+  return (
+    <div data-split-rules>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="stat-label">Splits</span>
+        <InfoHint text="Every charge from this vendor of exactly this amount is divided into these parts, each with its own category. Removing a split restores the charges it divided." />
+      </div>
+      <ul className="flex flex-col gap-2">
+        {rules.map((r) => (
+          <li key={r.id} className="flex items-start justify-between gap-3 text-xs">
+            <span className="min-w-0">
+              <span className="font-medium tabular-nums">{usd(r.amount)}</span>
+              <span className="text-[var(--muted)]"> into </span>
+              {r.parts.map((p) => `${p.label} ${usd(p.amount)}`).join("  ·  ")}
+              <span className="block text-[11px] text-[var(--muted)]">
+                {r.applied === 0 ? "not applied yet" : `applied to ${r.applied} charge${r.applied === 1 ? "" : "s"}`}
+              </span>
+            </span>
+            <button
+              type="button"
+              aria-label={`Remove the ${usd(r.amount)} split`}
+              onClick={() => {
+                if (armed !== r.id) {
+                  setArmed(r.id);
+                  setTimeout(() => setArmed((cur) => (cur === r.id ? null : cur)), 3000);
+                  return;
+                }
+                setArmed(null);
+                onRemove(r.id, r.applied);
+              }}
+              className={`tap shrink-0 text-xs ${armed === r.id ? "font-semibold text-[var(--bad)]" : "text-[var(--muted)] hover:text-[var(--bad)]"}`}
+            >
+              {armed === r.id ? (r.applied ? `Restore ${r.applied} and remove?` : "Confirm remove?") : "Remove"}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 // Match correction: how a charge is recognised as this bill. Auto = exact
 // vendor, or the vendor's category + amount. "contains" widens it to any

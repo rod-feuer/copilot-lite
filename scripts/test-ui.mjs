@@ -499,6 +499,46 @@ async function splitDrift(browser) {
   });
 }
 
+// A split rule is listed in its vendor's shelf and can be removed there: two
+// presses (the first arms it), and the charge it split counts whole again.
+async function splitRulesInShelf(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions?vendor=Chipotle", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const setup = await page.evaluate(async () => {
+      const d = await (await fetch("/api/transactions?vendor=Chipotle&limit=50")).json();
+      const t = (d.rows ?? d.transactions ?? d).find((r) => r.amount < 0 && !r.excluded && !r.pending);
+      const cats = (await (await fetch("/api/categories")).json()).filter((c) => c.kind === "expense").slice(0, 2);
+      const A = Math.abs(t.amount), half = Math.round(A * 50) / 100;
+      const res = await fetch(`/api/transactions/${t.id}/split`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parts: [{ categoryId: cats[0].id, amount: half, label: "Mine" }, { categoryId: cats[1].id, amount: Number((A - half).toFixed(2)), label: "Theirs" }] }) });
+      return { id: t.id, ok: res.ok };
+    });
+    if (!setup.ok) { record("split rules", "fixture", false, "could not create the split"); return; }
+    try {
+      await page.goto(BASE + "/transactions?vendor=Chipotle", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      await page.evaluate(() => { const r = [...document.querySelectorAll("[data-drawer-row]")].find((x) => !/split ·|excluded/.test(x.innerText)); r.click(); });
+      await shelfIs(page, true); await shelfSettled(page);
+      await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button, ${sel} a`)].find((b) => /charges →|Open vendor/.test(b.textContent))?.click(), shelfSel);
+      const listed = await page.waitForSelector(`${shelfSel} [data-split-rules]`, { timeout: 8000 }).then(() => true).catch(() => false);
+      const text = listed ? await page.$eval(`${shelfSel} [data-split-rules]`, (n) => n.innerText.replace(/\s+/g, " ")) : "";
+      record("split rules", "the vendor's shelf lists its split, with its parts and how many charges it split", listed && /into Mine .* Theirs .*applied to 1 charge/.test(text), text || "no Splits section");
+      if (listed) {
+        const btn = `${shelfSel} [data-split-rules] button[aria-label^='Remove']`;
+        await page.click(btn); await sleep(200);
+        const armed = await page.$eval(btn, (b) => b.textContent.trim());
+        const stillThere = await page.evaluate(async (id) => (await (await fetch(`/api/transactions/${id}`)).json()).excluded === 1, setup.id);
+        await page.click(btn);
+        const gone = await page.waitForFunction((sel) => !document.querySelector(`${sel} [data-split-rules]`), { timeout: 10000 }, shelfSel).then(() => true).catch(() => false);
+        const restored = await page.evaluate(async (id) => { const t = await (await fetch(`/api/transactions/${id}`)).json(); return t.excluded === 0 && t.splitParts === 0; }, setup.id);
+        record("split rules", "Remove takes two presses, then the split is gone and its charge counts whole again", /Restore 1 and remove\?/.test(armed) && stillThere && gone && restored, `armed: "${armed}"; after one press still split=${stillThere}; section gone=${gone}; charge restored=${restored}`);
+      }
+    } finally {
+      await page.evaluate(async (id) => { await fetch(`/api/transactions/${id}/split`, { method: "DELETE" }); }, setup.id);
+    }
+  });
+}
+
 async function statementMode(browser) {
   for (const [mode, url] of [["statement", "/transactions?vendor=Chipotle"], ["normal", "/transactions"]]) {
     await withPage(browser, async (page, errs) => {
@@ -1021,7 +1061,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
