@@ -481,6 +481,13 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onSetMembership={(put) => txSetMembership(xData.id, put, xData.planKey)}
                 onSplit={() => setSplitting(true)}
                 onUndoSplit={() => chargeUndoSplit(xData.id)}
+                onSplitAsBefore={() =>
+                  xData.splitDrift &&
+                  write(() => postJson(`/api/transactions/${xData.id}/split`, { parts: xData.splitDrift!.parts }), {
+                    success: "Split applied",
+                    error: "Couldn't split — please try again",
+                  })
+                }
                 onOpenVendor={() => drillToMerchant(xData.merchant)}
                 onMakeRecurring={() => setRecurring(xData.merchant, true)}
                 onOpenCharge={(id) => {
@@ -720,6 +727,7 @@ function ChargeBody({
   onSetMembership,
   onSplit,
   onUndoSplit,
+  onSplitAsBefore,
   onOpenVendor,
   onMakeRecurring,
   onOpenCharge,
@@ -734,6 +742,7 @@ function ChargeBody({
   onSetMembership: (put: "in" | "out") => void;
   onSplit: () => void;
   onUndoSplit: () => void;
+  onSplitAsBefore: () => void; // the vendor's split rule missed this charge by a price change
   onOpenVendor: () => void;
   onOpenCharge: (id: number) => void; // step to another of the vendor's charges
   onMakeRecurring: () => void; // the vendor has no plan: make it one (a vendor verb, reachable here)
@@ -804,6 +813,23 @@ function ChargeBody({
           className="w-full rounded-lg border border-[var(--border)] bg-card px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
         />
       </div>
+
+      {/* A split rule matches its amount to the cent, so a price change makes
+          it miss without a word. Say so on the charge it missed, with the
+          same parts scaled to the new total one tap away. */}
+      {data.splitDrift && (
+        <div data-split-drift className="flex flex-col gap-2 rounded-lg bg-[var(--warn)]/10 px-3 py-2 text-xs text-[var(--warn)]">
+          <span>
+            {`Your split for this vendor is set for ${usd(data.splitDrift.ruleAmount)}, so this ${usd(Math.abs(data.amount))} charge wasn’t split.`}
+          </span>
+          <span className="text-[var(--foreground)]">
+            {data.splitDrift.parts.map((p) => `${p.label} ${usd(p.amount)}`).join("  ·  ")}
+          </span>
+          <button onClick={onSplitAsBefore} className="btn-ghost self-start text-xs">
+            Split it the same way
+          </button>
+        </div>
+      )}
 
       {/* The charge's verbs. A split parent is excluded because its parts
           count instead, so its totals toggle is hidden. */}

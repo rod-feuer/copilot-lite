@@ -455,6 +455,50 @@ async function vendorHeaderCounts(browser) {
   });
 }
 
+// Split drift: a split rule matches to the cent, so a price change makes it miss
+// silently. The charge it missed is tagged in the list, its shelf says why and
+// offers the same parts scaled to the new total, and one tap splits it.
+async function splitDrift(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions?vendor=Chipotle", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const setup = await page.evaluate(async () => {
+      const d = await (await fetch("/api/transactions?vendor=Chipotle&limit=50")).json();
+      const rows = (d.rows ?? d.transactions ?? d).filter((r) => r.amount < 0 && !r.excluded && !r.pending);
+      const mags = rows.map((r) => Math.abs(r.amount));
+      let pair = null;
+      for (const a of rows) for (const b of rows) {
+        const A = Math.abs(a.amount), B = Math.abs(b.amount);
+        if (a.id !== b.id && Math.abs(A - B) > 0.01 && Math.abs(A - B) <= 0.1 * A && mags.filter((m) => Math.abs(m - B) < 0.005).length === 1 && mags.filter((m) => Math.abs(m - A) < 0.005).length === 1) { pair = [a, b]; break; }
+      }
+      if (!pair) return { error: "no two fixture charges within 10% of each other: " + mags.join(", ") };
+      const cats = await (await fetch("/api/categories")).json();
+      const [c1, c2] = cats.filter((c) => c.kind === "expense").slice(0, 2);
+      const A = Math.abs(pair[0].amount), half = Math.round(A * 50) / 100;
+      const res = await fetch(`/api/transactions/${pair[0].id}/split`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parts: [{ categoryId: c1.id, amount: half, label: "Mine" }, { categoryId: c2.id, amount: Number((A - half).toFixed(2)), label: "Theirs" }] }) });
+      return { ruleCharge: pair[0].id, missed: pair[1].id, missedAmount: Math.abs(pair[1].amount), ok: res.ok };
+    });
+    if (setup.error || !setup.ok) { record("split drift", "fixture", false, setup.error ?? "could not create the split rule"); return; }
+    try {
+      await page.goto(BASE + "/transactions?vendor=Chipotle", { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-drawer-row]");
+      const tagged = await page.$$eval("[data-drawer-row]", (rows) => rows.filter((r) => r.querySelector("[data-split-drift-tag]")).map((r) => r.innerText.replace(/\s+/g, " ")));
+      const money = "$" + setup.missedAmount.toFixed(2);
+      record("split drift", "the list tags the charge the rule missed, and only it", tagged.length === 1 && tagged[0].includes(money), `${tagged.length} tagged: ${tagged[0] ?? ""}`);
+      await page.evaluate(() => { const r = [...document.querySelectorAll("[data-drawer-row]")].find((x) => x.querySelector("[data-split-drift-tag]")); r.scrollIntoView({ block: "center" }); r.click(); });
+      await shelfIs(page, true); await shelfSettled(page);
+      const notice = await page.$eval(`${shelfSel} [data-split-drift]`, (n) => n.innerText.replace(/\s+/g, " ")).catch(() => null);
+      const sums = notice ? [...notice.matchAll(/(?:Mine|Theirs) \$([0-9.,]+)/g)].reduce((a, m) => a + Number(m[1].replace(/,/g, "")), 0) : 0;
+      record("split drift", "the shelf says the rule missed and offers the same parts, summing to this charge", !!notice && /wasn.t split/.test(notice) && Math.round(sums * 100) === Math.round(setup.missedAmount * 100), notice ?? "no notice");
+      await page.click(`${shelfSel} [data-split-drift] button`);
+      const split = await page.waitForFunction((sel) => /Undo split \(2 parts\)/.test(document.querySelector(sel)?.innerText ?? "") && !document.querySelector(sel + " [data-split-drift]"), { timeout: 10000 }, shelfSel).then(() => true).catch(() => false);
+      record("split drift", "one tap splits it the same way, and the notice is gone", split, split ? "Undo split (2 parts)" : "still unsplit");
+    } finally {
+      await page.evaluate(async (s) => { for (const id of [s.missed, s.ruleCharge]) await fetch(`/api/transactions/${id}/split`, { method: "DELETE" }); }, setup);
+    }
+  });
+}
+
 async function statementMode(browser) {
   for (const [mode, url] of [["statement", "/transactions?vendor=Chipotle"], ["normal", "/transactions"]]) {
     await withPage(browser, async (page, errs) => {
@@ -977,7 +1021,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

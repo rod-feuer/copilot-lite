@@ -2169,3 +2169,42 @@ test("merge queue suggests a handoff into one plan of a vendor that carries seve
   detectRecurrings();
   assert.equal(handoffSuggestions(new Set()).length, 0);
 });
+
+// WHY: a split rule matches its amount to the cent, so an insurance renewal
+// makes it stop applying without a word — the charge posts whole, the parts'
+// plans read as overdue, and nothing says why. A charge from the rule's vendor
+// within 10% of its amount is reported, with the same parts scaled to the new
+// total so one tap repeats the split. The scaled parts must sum to the charge
+// exactly, or the split route refuses them.
+test("split drift: a price change that made a split rule miss is reported with parts to match", () => {
+  const home = addCat("Home (split)"), cars = addCat("Cars (split)");
+  createSplitRule("chubb", 1115.55, [
+    { categoryId: home, amount: 847.75, label: "Carmel Home" },
+    { categoryId: cars, amount: 267.8, label: "Cars" },
+  ]);
+  tx("Chubb", { amount: -1115.55, date: "2026-09-01", categoryId: CAT, hash: "old-price" });
+  tx("Chubb", { amount: -1180.2, date: "2026-10-01", categoryId: CAT, hash: "new-price" });
+  tx("Chubb", { amount: -544.94, date: "2026-10-17", categoryId: CAT, hash: "other-policy" });
+  tx("Chubb", { amount: 1180.2, date: "2026-10-02", categoryId: CAT, hash: "refund" });
+  assert.equal(applySplitRules(), 1, "the rule still splits the old price");
+  const id = (hash: string) => (getDb().prepare("SELECT id FROM transactions WHERE hash = ?").get(hash) as { id: number }).id;
+
+  const drift = transactionById(id("new-price"))!.splitDrift!;
+  assert.equal(drift.ruleAmount, 1115.55);
+  assert.deepEqual(drift.parts.map((p) => [p.label, p.amount, p.categoryId]), [["Carmel Home", 896.88, home], ["Cars", 283.32, cars]]);
+  assert.equal(Number(drift.parts.reduce((a, p) => a + p.amount, 0).toFixed(2)), 1180.2, "to the cent");
+  assert.equal(transactionById(id("other-policy"))!.splitDrift, null, "another policy from the same vendor is not a near miss");
+  assert.equal(transactionById(id("refund"))!.splitDrift, null, "a credit is never split");
+  assert.equal(transactionById(id("old-price"))!.splitDrift, null, "the split parent itself");
+  assert.deepEqual(listTransactions({ month: "2026-10" }).filter((r) => r.splitMissed).map((r) => r.amount), [-1180.2], "the list tags exactly that row");
+
+  // accepting it: a new rule at the new amount splits it, and the drift is gone
+  createSplitRule("chubb", 1180.2, drift.parts);
+  assert.equal(applySplitRules(), 1);
+  const parts = getDb().prepare("SELECT merchant, amount FROM transactions WHERE hash LIKE 'new-price:s%' ORDER BY hash").all();
+  assert.deepEqual(parts, [{ merchant: "Chubb — Carmel Home", amount: -896.88 }, { merchant: "Chubb — Cars", amount: -283.32 }], "the parts continue the same part-vendors");
+  assert.equal(transactionById(id("new-price"))!.splitDrift, null);
+  const refund = getDb().prepare("SELECT excluded, (SELECT COUNT(*) FROM transactions s WHERE s.hash LIKE 'refund:s%') parts FROM transactions WHERE hash = 'refund'").get();
+  assert.deepEqual(refund, { excluded: 0, parts: 0 }, "a refund of exactly the rule's amount is not split into spending");
+  assert.equal(undoSplit(id("old-price")), 1, "the old rule is still there to undo what it split");
+});

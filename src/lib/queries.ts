@@ -1,3 +1,4 @@
+import { splitDriftFor, splitRules, type SplitDrift } from "./splits";
 import { isSeriesKey, seriesVendor } from "./series";
 import { displayMerchant, merchantKey } from "./merchant";
 import {
@@ -350,6 +351,7 @@ function buildTxFilter(opts: TxFilter): { whereSql: string; params: Record<strin
 // per-charge flags computed in the SELECT. The pages alias this rather than
 // re-declaring it, so a field added here reaches them at compile time.
 export type TransactionRow = TransactionWithCategory & {
+  splitMissed: boolean; // a split rule for this vendor missed this charge by a price change
   recurringExcluded: 0 | 1; // this charge was excluded from its vendor's series
   splitParts: number; // >0 when this charge is a split parent (its parts are child rows)
 };
@@ -396,7 +398,12 @@ export function listTransactions(
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
   const plans = planNames(settings);
-  return rows.map((r) => ({ ...r, displayName: chargeDisplayName(r, settings, links, plans) }));
+  const rules = splitRules();
+  return rows.map((r) => ({
+    ...r,
+    displayName: chargeDisplayName(r, settings, links, plans),
+    splitMissed: rules.length > 0 && splitDriftFor(r, rules) != null,
+  }));
 }
 
 // One charge, for its shelf: the list row's fields plus its plan — the plan it
@@ -410,6 +417,9 @@ export type ChargeDetail = TransactionRow & {
   // out): the evidence for the charge's verbs — is this amount the usual one?
   recent: { id: number; date: string; amount: number; excluded: 0 | 1; recurringId: number | null }[];
   vendorCount: number;
+  // A split rule for this vendor that missed this charge by a price change,
+  // with its parts scaled to this amount (see splits.ts).
+  splitDrift: SplitDrift | null;
 };
 export function transactionById(id: number): ChargeDetail | null {
   const db = getDb();
@@ -459,6 +469,8 @@ export function transactionById(id: number): ChargeDetail | null {
     planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
     recent,
     vendorCount,
+    splitDrift: splitDriftFor(row),
+    splitMissed: splitDriftFor(row) != null,
   };
 }
 
