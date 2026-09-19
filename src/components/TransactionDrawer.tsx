@@ -34,6 +34,18 @@ type Vendor = { merchant: string; displayName: string }; // the Combine picker's
 type Summary = MerchantSummary;
 type CatSummary = CategorySummary;
 
+// A plan's overrides, as the settings route takes them. null clears one.
+type SettingsPatch = {
+  alias?: string | null;
+  expectedAmount?: number | null;
+  cadence?: string | null;
+  endedDate?: string | null;
+  nextDate?: string | null;
+  matchMode?: "exact" | "contains" | null;
+  matchText?: string | null;
+  amountTolerance?: number | null;
+  clear?: boolean; // reset every override (not endedDate)
+};
 type OpenOpts = { onChange?: () => void; amountHint?: number | null; series?: string }; // series: one plan of a multi-plan vendor
 type Target =
   | { kind: "merchant"; merchant: string; series?: string }
@@ -258,213 +270,105 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     setTarget(null);
   }, [pathname]);
 
-  async function recategorize(categoryId: number | null) {
-    if (target?.kind !== "merchant") return;
-    const merchant = target.merchant;
-    const series = target.series;
-    if (
-      await mutate(
-        // One plan of several recategorizes only its own charges.
-        () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId: mData?.seriesId ?? undefined }),
-        { error: "Couldn't recategorize — please try again" },
-        { refresh: "never" }
-      )
-    ) {
-      fetchMerchant(merchant, series, true);
-      onChange.current?.();
-    }
-  }
-
-  // Save a per-merchant override (name and/or go-forward amount) edited right in
-  // the shelf, where the recent charges that justify the value are on screen.
-  async function saveMerchantSettings(
-    patch: {
-      alias?: string | null;
-      expectedAmount?: number | null;
-      cadence?: string | null;
-      endedDate?: string | null;
-      nextDate?: string | null;
-      matchMode?: "exact" | "contains" | null;
-      matchText?: string | null;
-      amountTolerance?: number | null;
-      clear?: boolean; // reset every override (not endedDate)
-    },
-    message: string
-  ) {
-    if (target?.kind !== "merchant") return;
-    const merchant = target.merchant;
-    const series = target.series;
-    if (
-      await mutate(
-        // Overrides live under the plan's key when the shelf is on one plan.
-        () => postJson("/api/recurrings/settings", { merchant: mData?.settingsKey ?? merchant, ...patch }),
-        // The property you edited shows its new value; only "Overrides
-        // reset", whose effect spans every field, gets a line.
-        { success: message === "Overrides reset" ? message : undefined, error: "Couldn't save — please try again" },
-        { refresh: "never" }
-      )
-    ) {
-      fetchMerchant(merchant, series, true);
-      onChange.current?.();
-    }
-  }
-
-  // Merge two vendors into one. `loser` folds into `primary` (the survivor, which
-  // becomes canonical); an optional `alias` sets the merged vendor's display name
-  // (used when the user picks a custom name). The component resolves which is the
-  // survivor from the name they chose, so "canonical" is never surfaced. Close the
-  // shelf afterward — its target may now be the folded-away descriptor.
-  async function combineMerchant(
-    loser: string,
-    primary: string,
-    alias?: string,
-    categoryId?: number | null
-  ) {
-    if (
-      await mutate(
-        async () => {
-          await postJson("/api/recurrings/link", { alias: loser, primary });
-          if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
-          // Unify the category when the user chose to, so a combined vendor isn't
-          // left split across categories. Recategorize covers all linked descriptors.
-          if (categoryId != null)
-            await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId });
-        },
-        { success: "Vendors combined", error: "Couldn't combine — please try again" },
-        { refresh: "never" }
-      )
-    ) {
-      onChange.current?.();
-      close();
-    }
-  }
-
-  async function unlinkName(alias: string) {
-    if (target?.kind !== "merchant") return;
-    const merchant = target.merchant;
-    if (
-      await mutate(
-        () => postJson("/api/recurrings/link", { alias, unlink: true }),
-        { success: `Separated “${alias}”`, error: "Couldn't separate — please try again" },
-        { refresh: "never" }
-      )
-    ) {
-      fetchMerchant(merchant, target.series, true);
-      onChange.current?.();
-    }
-  }
-
-  async function toggleRecurring() {
-    if (target?.kind !== "merchant" || !mData) return;
-    const merchant = target.merchant;
-    const series = target.series;
-    const makeIt = !mData.recurring;
-    if (
-      await mutate(
-        // "Not recurring" on one plan mutes that plan, not the vendor.
-        () => postJson("/api/recurrings/override", { merchant: mData.settingsKey ?? merchant, status: makeIt ? "force" : "mute" }),
-        {
-          error: "Couldn't update — please try again",
-        },
-        { refresh: "never" }
-      )
-    ) {
-      fetchMerchant(merchant, series, true);
-      onChange.current?.();
-    }
-  }
-
-  // Per-transaction edits from inside the category shelf. Refresh the shelf so
-  // totals/lists update (e.g. recategorizing a row out of the category).
-  // Re-read whichever detail is open after a per-charge write.
+  // Re-read whichever detail is open.
   const refreshTarget = () => {
     if (target?.kind === "category") fetchCategory(target.categoryId, target.month, true);
     else if (target?.kind === "merchant") fetchMerchant(target.merchant, target.series, true);
     else if (target?.kind === "charge") fetchCharge(target.id, true);
   };
-  // The charge's own overlays. Each is one PATCH on the charge; the shelf
-  // re-reads itself and the page behind it refreshes. No success toast: the
-  // card, caption or button you touched shows the result.
-  async function chargePatch(id: number, body: Record<string, unknown>, error: string) {
-    if (await mutate(() => patchJson(`/api/transactions/${id}`, body), { error }, { refresh: "never" })) {
-      refreshTarget();
-      onChange.current?.();
-    }
+  // Every shelf write has one shape: do it, and on success re-read what the
+  // shelf is showing and tell the page behind it. `after` replaces the re-read
+  // where the target itself is gone (a combine, a category delete) and the
+  // shelf closes instead. A success message only where the result can't be
+  // seen on the object (DESIGN.md §2, "A toast is for what you can't see").
+  async function write(fn: () => Promise<unknown>, messages: { success?: string; error: string }, after: () => void = refreshTarget) {
+    if (!(await mutate(fn, messages, { refresh: "never" }))) return;
+    after();
+    onChange.current?.();
   }
+  const UPDATE_ERROR = "Couldn't update — please try again";
+
+  function recategorize(categoryId: number | null) {
+    if (target?.kind !== "merchant") return;
+    const merchant = target.merchant;
+    // One plan of several recategorizes only its own charges.
+    return write(
+      () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId: mData?.seriesId ?? undefined }),
+      { error: "Couldn't recategorize — please try again" }
+    );
+  }
+  // Save a per-merchant override (name and/or go-forward amount) edited right in
+  // the shelf, where the recent charges that justify the value are on screen.
+  // Overrides live under the plan's key when the shelf is on one plan.
+  function saveMerchantSettings(patch: SettingsPatch, success?: string) {
+    if (target?.kind !== "merchant") return;
+    const merchant = mData?.settingsKey ?? target.merchant;
+    return write(() => postJson("/api/recurrings/settings", { merchant, ...patch }), { success, error: "Couldn't save — please try again" });
+  }
+  // Merge two vendors into one. `loser` folds into `primary` (the survivor, which
+  // becomes canonical); an optional `alias` sets the merged vendor's display name
+  // (used when the user picks a custom name). The component resolves which is the
+  // survivor from the name they chose, so "canonical" is never surfaced. Close the
+  // shelf afterward — its target may now be the folded-away descriptor.
+  function combineMerchant(loser: string, primary: string, alias?: string, categoryId?: number | null) {
+    return write(
+      async () => {
+        await postJson("/api/recurrings/link", { alias: loser, primary });
+        if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
+        // Unify the category when the user chose to, so a combined vendor isn't
+        // left split across categories. Recategorize covers all linked descriptors.
+        if (categoryId != null) await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId });
+      },
+      { success: "Vendors combined", error: "Couldn't combine — please try again" },
+      close
+    );
+  }
+  function unlinkName(alias: string) {
+    if (target?.kind !== "merchant") return;
+    return write(
+      () => postJson("/api/recurrings/link", { alias, unlink: true }),
+      { success: `Separated “${alias}”`, error: "Couldn't separate — please try again" }
+    );
+  }
+  // A vendor's (or one plan's) recurring status. "Not recurring" on one plan
+  // mutes that plan, not the vendor: the shelf passes the plan's key.
+  const setRecurring = (merchant: string, makeIt: boolean) =>
+    write(() => postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" }), { error: UPDATE_ERROR });
+  function toggleRecurring() {
+    if (target?.kind !== "merchant" || !mData) return;
+    return setRecurring(mData.settingsKey ?? target.merchant, !mData.recurring);
+  }
+
+  // The charge's own overlays. Each is one PATCH on the charge. No success
+  // toast: the card, caption or button you touched shows the result.
+  const chargePatch = (id: number, body: Record<string, unknown>, error: string) =>
+    write(() => patchJson(`/api/transactions/${id}`, body), { error });
   const [splitting, setSplitting] = useState(false);
-  async function chargeUndoSplit(id: number) {
-    if (
-      await mutate(() => deleteJson(`/api/transactions/${id}/split`), { success: "Split undone", error: "Couldn't undo the split — please try again" }, { refresh: "never" })
-    ) {
-      refreshTarget();
-      onChange.current?.();
-    }
-  }
+  const chargeUndoSplit = (id: number) =>
+    write(() => deleteJson(`/api/transactions/${id}/split`), { success: "Split undone", error: "Couldn't undo the split — please try again" });
+  const txSetMembership = (txId: number, put: "in" | "out", plan: string | null) =>
+    chargePatch(txId, put === "out" ? { recurringExcluded: true } : { recurringIncluded: plan }, UPDATE_ERROR);
   // The category's own verbs, in its shelf (the row only opens the shelf).
-  async function categorySetExcluded(id: number, excludeFromTotals: boolean) {
-    if (
-      await mutate(
-        () => patchJson(`/api/categories/${id}`, { excludeFromTotals }),
-        {
-          error: "Couldn't update category — please try again",
-        },
-        { refresh: "never" }
-      )
-    ) {
-      refreshTarget();
-      onChange.current?.();
-    }
-  }
+  const categorySetExcluded = (id: number, excludeFromTotals: boolean) =>
+    write(() => patchJson(`/api/categories/${id}`, { excludeFromTotals }), { error: "Couldn't update category — please try again" });
   // Two-step delete, no native confirm: the first click arms the button for
   // three seconds, the second deletes; the shelf closes on its category.
   const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
-  async function categoryDelete(c: CatSummary) {
+  function categoryDelete(c: CatSummary) {
     if (confirmingDelete !== c.id) {
       setConfirmingDelete(c.id);
       setTimeout(() => setConfirmingDelete((cur) => (cur === c.id ? null : cur)), 3000);
       return;
     }
     setConfirmingDelete(null);
-    if (
-      await mutate(() => deleteJson(`/api/categories/${c.id}`), {
+    return write(
+      () => deleteJson(`/api/categories/${c.id}`),
+      {
         success: `Deleted "${c.name}" · ${c.txCount} transaction${c.txCount === 1 ? "" : "s"} now uncategorized`,
         error: `Couldn't delete "${c.name}" — please try again`,
-      }, { refresh: "never" })
-    ) {
-      close();
-      onChange.current?.();
-    }
-  }
-  async function txSetMembership(txId: number, put: "in" | "out", plan: string | null) {
-    if (
-      await mutate(
-        () =>
-          put === "out"
-            ? patchJson(`/api/transactions/${txId}`, { recurringExcluded: true })
-            : patchJson(`/api/transactions/${txId}`, { recurringIncluded: plan }),
-        {
-          error: "Couldn't update — please try again",
-        },
-        { refresh: "never" }
-      )
-    ) {
-      refreshTarget();
-      onChange.current?.();
-    }
-  }
-  async function txToggleRecurring(merchant: string, makeIt: boolean) {
-    if (
-      await mutate(
-        () => postJson("/api/recurrings/override", { merchant, status: makeIt ? "force" : "mute" }),
-        {
-          error: "Couldn't update — please try again",
-        },
-        { refresh: "never" }
-      )
-    ) {
-      refreshTarget();
-      onChange.current?.();
-    }
+      },
+      close
+    );
   }
 
   const loading = target?.kind === "merchant" ? !mData : target?.kind === "category" ? !cData : !xData;
@@ -508,7 +412,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                   merchant={target.merchant}
                   data={mData}
                   onUnlink={unlinkName}
-                  onRename={(alias) => saveMerchantSettings({ alias }, alias ? "Name updated" : "Name reset")}
+                  onRename={(alias) => saveMerchantSettings({ alias })}
                 />
               ) : target.kind === "category" ? (
                 <CategoryHeader data={cData} month={target.month} />
@@ -577,7 +481,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onSplit={() => setSplitting(true)}
                 onUndoSplit={() => chargeUndoSplit(xData.id)}
                 onOpenVendor={() => drillToMerchant(xData.merchant)}
-                onMakeRecurring={() => txToggleRecurring(xData.merchant, true)}
+                onMakeRecurring={() => setRecurring(xData.merchant, true)}
                 onOpenCharge={(id) => {
                   setTarget({ kind: "charge", id });
                   fetchCharge(id);
@@ -1146,20 +1050,7 @@ function MerchantBody({
   onRecategorize: (categoryId: number | null) => void;
   onTxSetMembership: (txId: number, put: "in" | "out", plan: string | null) => void;
   onToggleRecurring: () => void;
-  onSaveSettings: (
-    patch: {
-      alias?: string | null;
-      expectedAmount?: number | null;
-      cadence?: string | null;
-      endedDate?: string | null;
-      nextDate?: string | null;
-      matchMode?: "exact" | "contains" | null;
-      matchText?: string | null;
-      amountTolerance?: number | null;
-      clear?: boolean; // reset every override (not endedDate)
-    },
-    message: string
-  ) => void;
+  onSaveSettings: (patch: SettingsPatch, success?: string) => void; // a success line only where the result spans every field ("Overrides reset")
   amountHint?: number | null;
   vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
@@ -1219,8 +1110,8 @@ function MerchantBody({
                   onClick={(e) => (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()}
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null }, "Next due reset to auto");
-                    else if (v !== data.nextDate) onSaveSettings({ nextDate: v }, "Next due updated");
+                    if (v === "" || v === d.nextDate) onSaveSettings({ nextDate: null });
+                    else if (v !== data.nextDate) onSaveSettings({ nextDate: v });
                   }}
                   className="absolute inset-0 w-full cursor-pointer opacity-0"
                 />
@@ -1238,12 +1129,12 @@ function MerchantBody({
                   onCommit={(v) => {
                     const t = v.trim();
                     if (t === "") {
-                      if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                      if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null });
                       return;
                     }
                     const n = Math.abs(Number(t));
                     if (!Number.isFinite(n)) return; // ignore non-numeric input
-                    if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+                    if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n });
                   }}
                   className="w-full min-w-0 bg-transparent text-[15px] font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
                 />
@@ -1283,7 +1174,7 @@ function MerchantBody({
                 tag={<StateTag edited={data.cadence != null} />}
                 aria-label="Cadence"
                 value={data.cadence ?? "__auto"}
-                onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value }, e.target.value === "__auto" ? "Cadence reset to auto" : "Cadence updated")}
+                onChange={(e) => onSaveSettings({ cadence: e.target.value === "__auto" ? null : e.target.value })}
               >
                 <option value="__auto">{data.detectedCadence ? `${CADENCE_LABELS[data.detectedCadence] ?? data.detectedCadence} (auto)` : "Auto"}</option>
                 {Object.entries(CADENCE_LABELS).map(([v, label]) => (
@@ -1322,12 +1213,12 @@ function MerchantBody({
                 onCommit={(v) => {
                   const t = v.trim();
                   if (t === "") {
-                    if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null }, "Expected amount cleared");
+                    if (data.expectedAmount != null) onSaveSettings({ expectedAmount: null });
                     return;
                   }
                   const n = Math.abs(Number(t));
                   if (!Number.isFinite(n)) return;
-                  if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n }, "Expected amount updated");
+                  if (n !== (data.expectedAmount ?? null)) onSaveSettings({ expectedAmount: n });
                 }}
                 className="w-full min-w-0 bg-transparent text-[15px] font-semibold tabular-nums placeholder:font-semibold placeholder:text-[var(--foreground)] focus:outline-none"
               />
@@ -1482,8 +1373,7 @@ function MerchantBody({
               onSaveSettings(
                 r
                   ? { matchMode: r.matchMode, matchText: r.matchText, amountTolerance: r.amountTolerance }
-                  : { matchMode: null, matchText: null, amountTolerance: null },
-                r ? "Match rule updated" : "Match rule reset to auto"
+                  : { matchMode: null, matchText: null, amountTolerance: null }
               )
             }
           />
@@ -1517,14 +1407,14 @@ function MerchantBody({
           {data.recurring &&
             (data.ended ? (
               <button
-                onClick={() => onSaveSettings({ endedDate: null }, "Reactivated")}
+                onClick={() => onSaveSettings({ endedDate: null })}
                 className="btn-ghost flex-1 text-xs"
               >
                 Reactivate
               </button>
             ) : (
               <button
-                onClick={() => onSaveSettings({ endedDate: new Date().toISOString().slice(0, 10) }, "Marked ended")}
+                onClick={() => onSaveSettings({ endedDate: new Date().toISOString().slice(0, 10) })}
                 className="btn-ghost flex-1 text-xs"
               >
                 Mark as ended
