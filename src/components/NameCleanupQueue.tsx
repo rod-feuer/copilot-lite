@@ -137,14 +137,16 @@ export function NameCleanupQueue({ onChange, version = 0 }: { onChange?: () => v
               <button
                 disabled={busy === keyOf(s)}
                 onClick={() => apply(s)}
-                className="btn-primary text-xs disabled:opacity-50"
+                data-queue-accept
+                  className="btn-ghost text-xs disabled:opacity-50"
               >
                 Apply
               </button>
               <button
                 disabled={busy === keyOf(s)}
                 onClick={() => dismiss(s)}
-                className="btn-ghost text-xs disabled:opacity-50"
+                data-queue-dismiss
+                  className="tap rounded-lg px-2 text-xs text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-50"
               >
                 Dismiss
               </button>

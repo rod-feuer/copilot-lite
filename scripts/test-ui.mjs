@@ -86,6 +86,13 @@ async function loadFixture() {
     // Two vendors no rule knows, so they land uncategorized: the Uncategorized
     // filter, the queue's "Show all uncategorized", and "categorize → the row
     // leaves" have real rows to act on.
+    // One vendor under two spellings, so the merge queue has a card: with the
+    // history-backed category suggestion below, the Transactions page then
+    // holds two review-queue rows at once.
+    [day(-3, 5), "Jimmy John's", "-11.20", "Credit"],
+    [day(-3, 19), "Jimmy John's", "-9.85", "Credit"],
+    [day(-3, 12), "Jimmy Johns", "-12.05", "Credit"],
+    [day(-3, 26), "Jimmy Johns", "-10.40", "Credit"],
     [day(-1, 7), "Zylo Widget Works", "-31.00", "Credit"],
     [day(-1, 8), "Quorra Bakehouse", "-12.40", "Credit"],
   ];
@@ -536,6 +543,31 @@ async function splitRulesInShelf(browser) {
     } finally {
       await page.evaluate(async (id) => { await fetch(`/api/transactions/${id}/split`, { method: "DELETE" }); }, setup.id);
     }
+  });
+}
+
+// A review queue repeats one decision per row, so its accept can't be the
+// page's primary: four merge cards put four filled buttons on one page. Accept
+// is secondary, Dismiss is quiet text (the pair still ranks), and the page
+// keeps at most one primary however many rows its queues hold.
+async function queueButtons(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-queue-accept]");
+    const r = await page.evaluate(() => {
+      const bg = (el) => getComputedStyle(el).backgroundColor;
+      const accent = (() => { const p = document.createElement("span"); p.style.background = "var(--accent)"; document.body.append(p); const c = getComputedStyle(p).backgroundColor; p.remove(); return c; })();
+      const accepts = [...document.querySelectorAll("[data-queue-accept]")], dismisses = [...document.querySelectorAll("[data-queue-dismiss]")];
+      return {
+        accepts: accepts.length,
+        labels: [...new Set(accepts.map((b) => b.textContent.trim()))].join("/"),
+        filled: accepts.filter((b) => bg(b) === accent).length,
+        bordered: accepts.filter((b) => parseFloat(getComputedStyle(b).borderTopWidth) >= 1).length,
+        dismissQuiet: dismisses.length === accepts.length && dismisses.every((b) => parseFloat(getComputedStyle(b).borderTopWidth) === 0),
+        primaries: document.querySelectorAll("main .btn-primary, header .btn-primary").length,
+      };
+    });
+    record("queue buttons", "with several queue rows on the page, accept is secondary, Dismiss is quiet, and no row adds a primary", r.accepts >= 2 && r.filled === 0 && r.bordered === r.accepts && r.dismissQuiet && r.primaries <= 1, `${r.accepts} accept buttons (${r.labels}), ${r.filled} filled, ${r.bordered} bordered; dismiss quiet=${r.dismissQuiet}; ${r.primaries} primaries on the page`);
   });
 }
 
@@ -1061,7 +1093,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
