@@ -36,6 +36,11 @@ const server = spawn(NEXT, ["dev", "-p", String(PORT)], {
     COPILOT_DB_PATH: DB,
     APP_PASSWORD: "", // no login gate (an already-set var wins over .env.local)
     PLAID_CLI_PATH: "/nonexistent/plaid", // launch sync fails fast and stays quiet
+    // The suite never calls a model. A placeholder key makes the queue offer
+    // "Suggest with AI"; the one test that presses it answers the request in
+    // the browser. Both real keys are blanked so nothing can reach either API.
+    TYPESAFE_API_KEY: "test-key-not-real",
+    ANTHROPIC_API_KEY: "",
     NODE_OPTIONS: "--max-old-space-size=4096",
   },
 });
@@ -571,6 +576,41 @@ async function queueButtons(browser) {
   });
 }
 
+// Model suggestions come with a confidence, and the queue shows it: sure ones as
+// suggestions, middling ones tagged "possible match" and left out of Apply all,
+// and what the model wasn't sure about counted rather than guessed at. The
+// model's likeliest categories lead the picker. The model's answer is supplied
+// here, in the browser; no API is called.
+async function modelSuggestionTiers(browser) {
+  await withPage(browser, async (page) => {
+    const cats = await (await fetch(BASE + "/api/categories")).json();
+    const pick = (i) => cats.filter((c) => c.kind === "expense")[i];
+    const sug = (merchant, c, possible) => ({ merchant, categoryId: c.id, categoryName: c.name, categoryIcon: c.icon, count: 1, source: "ai", possible: possible || undefined, alternatives: [c.id, pick(3).id, pick(4).id] });
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      if (req.url().endsWith("/api/category-suggestions") && req.method() === "POST" && (req.postData() ?? "").includes("suggestAI"))
+        return req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ provider: "typesafe", unsure: 1, suggestions: [sug("Zylo Widget Works", pick(0), false), sug("Quorra Bakehouse", pick(1), true)] }) });
+      req.continue();
+    });
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    const ask = await page.waitForFunction(() => [...document.querySelectorAll("button")].find((b) => /Suggest with AI/.test(b.textContent)), { timeout: 8000 }).catch(() => null);
+    if (!ask) { record("model suggestions", "the queue offers Suggest with AI", false, "no button"); return; }
+    await ask.asElement().click();
+    await page.waitForSelector("[data-possible]", { timeout: 8000 });
+    const r = await page.evaluate((likely) => {
+      const rows = [...document.querySelectorAll("[data-suggestion]")].map((li) => ({ name: li.querySelector(".truncate").textContent, possible: !!li.querySelector("[data-possible]") }));
+      const row = [...document.querySelectorAll("[data-suggestion]")].find((li) => li.querySelector("[data-possible]"));
+      const groups = [...row.querySelectorAll("select optgroup")].map((g) => ({ label: g.label, first: [...g.children].slice(0, 3).map((o) => Number(o.value)) }));
+      return { rows, applyAll: document.querySelector("[data-apply-all]")?.textContent.trim(), footer: document.querySelector("[data-needs-model]")?.textContent.trim(), askAgain: [...document.querySelectorAll("button")].some((b) => /Suggest with AI/.test(b.textContent)), groups, likely };
+    }, [pick(1).id, pick(3).id, pick(4).id]);
+    const zylo = r.rows.find((x) => x.name === "Zylo Widget Works"), quorra = r.rows.find((x) => x.name === "Quorra Bakehouse");
+    record("model suggestions", "a sure guess is a suggestion, a middling one is a tagged possible match, and both sort sure-first", !!zylo && !zylo.possible && !!quorra && quorra.possible && r.rows.indexOf(zylo) < r.rows.indexOf(quorra), JSON.stringify(r.rows.filter((x) => x === zylo || x === quorra)));
+    record("model suggestions", "Apply all leaves possible matches out, and says so", /^Apply the \d+ sure$/.test(r.applyAll ?? ""), r.applyAll ?? "no button");
+    record("model suggestions", "what the model wasn't sure about is counted, and it isn't asked again", /wasn.t sure about 1 vendor/.test(r.footer ?? "") && !r.askAgain, `${r.footer}; ask-again button=${r.askAgain}`);
+    record("model suggestions", "the picker leads with the model's likeliest categories", r.groups[0]?.label === "Most likely" && JSON.stringify(r.groups[0].first) === JSON.stringify(r.likely) && r.groups[1]?.label === "All categories", JSON.stringify(r.groups.map((g) => g.label)));
+  });
+}
+
 async function statementMode(browser) {
   for (const [mode, url] of [["statement", "/transactions?vendor=Chipotle"], ["normal", "/transactions"]]) {
     await withPage(browser, async (page, errs) => {
@@ -1093,7 +1133,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

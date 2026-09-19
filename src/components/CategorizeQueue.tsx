@@ -30,6 +30,9 @@ export function CategorizeQueue({
   const [items, setItems] = useState<Proposal[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [needsModel, setNeedsModel] = useState(0);
+  // After an ask: how many vendors the model left alone (unsure, or no answer).
+  // They still need a category, but asking again would only repeat the answer.
+  const [asked, setAsked] = useState(false);
   const [dismissedCount, setDismissedCount] = useState(0);
   const [modelEnabled, setModelEnabled] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,10 +96,14 @@ export function CategorizeQueue({
     );
   }
 
+  // Apply all commits what is sure. A possible match is a question to the user,
+  // so it waits for its own Apply — unless they already redirected it, which is
+  // their answer.
+  const sure = items.filter((s) => !s.possible || s.edited);
   async function applyAll() {
     setBusy("__all");
-    const batch = items.map((s) => ({ merchant: s.merchant, categoryId: s.categoryId }));
-    setItems([]); // optimistic
+    const batch = sure.map((s) => ({ merchant: s.merchant, categoryId: s.categoryId }));
+    setItems((a) => a.filter((s) => s.possible && !s.edited)); // optimistic
     const ok = await mutate(
       () => postJson("/api/category-suggestions", { action: "applyAll", items: batch }),
       {
@@ -115,8 +122,10 @@ export function CategorizeQueue({
       async () => {
         const d = (await postJson("/api/category-suggestions", { action: "suggestAI" })) as {
           suggestions: CategorySuggestion[];
+          unsure: number;
         };
-        setNeedsModel(0);
+        setNeedsModel(d.unsure ?? 0);
+        setAsked(true);
         setItems((a) => {
           const have = new Set(a.map((x) => x.merchant));
           return [...a, ...d.suggestions.filter((x) => !have.has(x.merchant))];
@@ -141,9 +150,9 @@ export function CategorizeQueue({
             {items.length}
           </span>
         )}
-        {items.length > 0 && (
-          <button onClick={applyAll} disabled={busy != null} className="btn-ghost ml-auto text-xs disabled:opacity-50">
-            {busy === "__all" ? "Applying…" : "Apply all"}
+        {sure.length > 0 && (
+          <button onClick={applyAll} disabled={busy != null} className="btn-ghost ml-auto text-xs disabled:opacity-50" data-apply-all>
+            {busy === "__all" ? "Applying…" : sure.length === items.length ? "Apply all" : `Apply the ${sure.length} sure`}
           </button>
         )}
       </div>
@@ -170,6 +179,7 @@ export function CategorizeQueue({
                   categoryName={s.categoryName}
                   categoryIcon={s.categoryIcon}
                   cats={cats}
+                  likely={s.alternatives}
                   onChange={(id) => redirect(s.merchant, id)}
                   ariaLabel={`Category for ${s.merchant}`}
                   className="-ml-2"
@@ -177,6 +187,11 @@ export function CategorizeQueue({
                 <span className="shrink-0 text-xs text-[var(--muted)]">({s.count})</span>
                 {s.edited ? (
                   <span className="shrink-0 rounded-full bg-[var(--accent)]/15 px-2 text-[11px] font-medium text-[var(--accent)]">edited</span>
+                ) : s.possible ? (
+                  // The same tag the merge queue uses for a match it is not sure of.
+                  <span data-possible className="shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]">
+                    possible match
+                  </span>
                 ) : (
                   <SourceTag source={s.source} />
                 )}
@@ -208,12 +223,16 @@ export function CategorizeQueue({
         <div className={`flex items-center gap-2 text-xs text-[var(--muted)] ${items.length > 0 ? "mt-3" : ""}`}>
           {modelEnabled ? (
             <>
-              <span>
-                {needsModel} vendor{needsModel === 1 ? "" : "s"} need a closer look.
+              <span data-needs-model>
+                {asked
+                  ? `The model wasn't sure about ${needsModel} vendor${needsModel === 1 ? "" : "s"}.`
+                  : `${needsModel} vendor${needsModel === 1 ? "" : "s"} need a closer look.`}
               </span>
-              <button onClick={suggestAI} disabled={busy != null} className="btn-ghost py-1 text-xs">
-                {busy === "__ai" ? "Asking AI…" : "Suggest with AI"}
-              </button>
+              {!asked && (
+                <button onClick={suggestAI} disabled={busy != null} className="btn-ghost py-1 text-xs">
+                  {busy === "__ai" ? "Asking AI…" : "Suggest with AI"}
+                </button>
+              )}
               {/* The hand-work path: when the model has nothing to offer, the
                   list itself, filtered to what needs a category. */}
               {onShowUncategorized && (
@@ -232,7 +251,7 @@ export function CategorizeQueue({
             </>
           ) : (
             <span>
-              {needsModel} vendor{needsModel === 1 ? "" : "s"} need the model — set ANTHROPIC_API_KEY to get AI suggestions.{" "}
+              {needsModel} vendor{needsModel === 1 ? "" : "s"} need the model — set TYPESAFE_API_KEY or ANTHROPIC_API_KEY to get AI suggestions.{" "}
               {onShowUncategorized && (
                 <button onClick={onShowUncategorized} className="btn-link" data-show-uncategorized>
                   Show all uncategorized →

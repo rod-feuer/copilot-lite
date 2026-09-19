@@ -2240,3 +2240,130 @@ test("a vendor's shelf lists its split rules, and removing one restores what it 
   assert.equal(removeSplitRule(rules[1].id), 0, "a rule that never applied restores nothing, and goes");
   assert.equal(removeSplitRule(999999), null);
 });
+
+// ---- category suggestions from a model: TypeSafe first, Haiku as the fallback ----
+import { proposeCategoriesWithTypeSafe, proposeCategories, CONFIDENCE } from "../src/lib/categorize";
+import { categorizeSuggestionsAI } from "../src/lib/categorizeSuggest";
+
+// Answer the two APIs from a script, record what was sent, restore everything after.
+// What a request to either API carried, as far as these tests read it.
+type Wire = { model?: string; state: { merchant: string }; questions: { category: { type: string; criteria: Record<string, string> } }; messages: { content: string }[] };
+async function withModelApis<T>(
+  env: { typesafe?: boolean; anthropic?: boolean },
+  typesafe: (merchant: string, body: Wire, call: number) => { status?: number; choice?: string; probabilities?: Record<string, number>; confidence?: number },
+  run: (sent: { url: string; auth: string | null; body: Wire }[]) => Promise<T>,
+  haiku?: (prompt: string) => { merchant: string; categoryId: number }[]
+): Promise<T> {
+  const saved = { fetch: globalThis.fetch, ts: process.env.TYPESAFE_API_KEY, an: process.env.ANTHROPIC_API_KEY };
+  const sent: { url: string; auth: string | null; body: Wire }[] = [];
+  let calls = 0;
+  if (env.typesafe) process.env.TYPESAFE_API_KEY = "ts-test-key"; else delete process.env.TYPESAFE_API_KEY;
+  if (env.anthropic) process.env.ANTHROPIC_API_KEY = "an-test-key"; else delete process.env.ANTHROPIC_API_KEY;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    const raw = init?.body ?? (input instanceof Request ? input.body : null);
+    const body = JSON.parse(typeof raw === "string" ? raw : await new Response(raw).text()) as Wire;
+    sent.push({ url, auth: headers.get("authorization"), body });
+    const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+    if (url.includes("api.typesafe.ai")) {
+      const r = typesafe(body.state.merchant, body, calls++);
+      if (r.status && r.status !== 200) return json({ error: "x" }, r.status);
+      return json({ model: "jev-latest", answers: { category: { type: "choice", choice: r.choice, probabilities: r.probabilities, confidence: r.confidence } }, usage: { input_tokens: 1, output_tokens: 1 } });
+    }
+    if (url.includes("anthropic.com")) {
+      const text = JSON.stringify(haiku ? haiku(body.messages[0].content) : []);
+      return json({ id: "msg_test", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
+    }
+    throw new Error("unexpected request to " + url);
+  }) as typeof fetch;
+  try {
+    return await run(sent);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    if (saved.ts === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = saved.ts;
+    if (saved.an === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = saved.an;
+  }
+}
+
+// WHY: this is the one place the app's data leaves the machine, so what goes out
+// is a contract: the merchant's name, the category names and kinds, and merchants
+// already filed under each category. Never an amount, a date, an account or a
+// note. And what comes back is only trusted when it names one of the user's
+// categories; a rate-limited ask is retried, as the API requires.
+test("TypeSafe ask: only names go out; the answer maps to the user's categories, best three first", async () => {
+  const dining = addCat("Dining out (ask)"), dog = addCat("Cody (ask)");
+  const cats = getDb().prepare("SELECT * FROM categories").all() as never[];
+  const examples = new Map([[dog, ["Healthy Paws", "Pet Supplies Plus"]]]);
+  await withModelApis(
+    { typesafe: true },
+    (merchant, _b, call) =>
+      merchant === "Bark Avenue" && call === 0 ? { status: 429 }
+      : merchant === "Bark Avenue" ? { choice: "Cody (ask)", confidence: 0.91, probabilities: { "Cody (ask)": 0.92, "Dining out (ask)": 0.05, Groceries: 0.03 } }
+      : { choice: "A Category I Made Up", confidence: 0.99, probabilities: {} as Record<string, number> },
+    async (sent) => {
+      const out = await proposeCategoriesWithTypeSafe(["Bark Avenue", "Mystery Llc"], cats, examples);
+      assert.deepEqual(out, [{ merchant: "Bark Avenue", categoryId: dog, confidence: 0.91, alternatives: [dog, dining, CAT] }]);
+      assert.equal(sent.filter((s) => s.body.state.merchant === "Bark Avenue").length, 2, "the 429 was retried");
+      for (const s of sent) {
+        assert.equal(s.url, "https://api.typesafe.ai/v1/systemone");
+        assert.equal(s.auth, "Bearer ts-test-key");
+        assert.deepEqual(Object.keys(s.body).sort(), ["model", "questions", "state"]);
+        assert.deepEqual(Object.keys(s.body.state), ["merchant"], "the state is the merchant's name and nothing else");
+        assert.equal(s.body.questions.category.type, "choice");
+        assert.equal(s.body.questions.category.criteria["Cody (ask)"], "expense category. Merchants already filed here: Healthy Paws; Pet Supplies Plus");
+        assert.equal(s.body.questions.category.criteria["Dining out (ask)"], "expense category");
+      }
+    }
+  );
+});
+
+// WHY: Haiku answers every merchant with equal assurance, which is how a wrong
+// guess used to look as good as a right one. TypeSafe's confidence sorts them:
+// sure ones are suggestions, middling ones are "possible matches" (last, and
+// left out of Apply all), and below the bar the model is guessing — 38% right
+// in the 200-merchant test — so the vendor stays under "need a closer look"
+// instead of appearing as a suggestion. Thresholds are CONFIDENCE, from that test.
+test("model suggestions are tiered by confidence, and nothing but names leaves the machine", async () => {
+  const dining = addCat("Dining out (tiers)");
+  tx("Olive Garden", { amount: -84.31, date: "2026-08-02", categoryId: dining, account: "Visa 4417" });
+  tx("Olive Garden", { amount: -61.07, date: "2026-08-20", categoryId: dining, account: "Visa 4417" });
+  for (const [m, a] of [["Sure Bistro", -4321.09], ["Maybe Cafe", -55.5], ["Maybe Cafe", -12.25], ["Cryptic Llc 0042", -9.99]] as [string, number][])
+    tx(m, { amount: a, date: "2026-09-10", categoryId: null, account: "Visa 4417" });
+  const conf: Record<string, number> = { "Sure Bistro": 0.95, "Maybe Cafe": 0.62, "Cryptic Llc 0042": 0.31 };
+  await withModelApis(
+    { typesafe: true },
+    (merchant) => ({ choice: "Dining out (tiers)", confidence: conf[merchant], probabilities: { "Dining out (tiers)": conf[merchant], Groceries: 1 - conf[merchant] } }),
+    async (sent) => {
+      const r = await categorizeSuggestionsAI();
+      assert.equal(r.provider, "typesafe");
+      assert.deepEqual(r.suggestions.map((s) => [s.merchant, s.categoryId, s.possible ?? false, s.count]), [["Sure Bistro", dining, false, 1], ["Maybe Cafe", dining, true, 2]]);
+      assert.deepEqual(r.suggestions[0].alternatives, [dining, CAT]);
+      assert.equal(r.unsure, 1, "the guess is counted, not shown");
+      assert.ok(CONFIDENCE.show <= 0.62 && 0.62 < CONFIDENCE.sure && 0.31 < CONFIDENCE.show);
+      const wire = JSON.stringify(sent.map((s) => s.body));
+      assert.ok(wire.includes("Olive Garden"), "a filed merchant is the category's example");
+      assert.ok(!/Sure Bistro[^"]*;|; ?Sure Bistro/.test(JSON.stringify(sent[0].body.questions)), "a merchant being asked about is never its own example");
+      for (const secret of ["4321.09", "84.31", "61.07", "Visa 4417", "2026-09-10", "2026-08-02"]) assert.ok(!wire.includes(secret), `${secret} stayed home`);
+    }
+  );
+});
+
+// WHY: a provider being down must not take suggestions away when the other key
+// is there — and with no fallback the failure must be loud, not an empty list
+// that reads as "the model had no suggestions" (Rule 12).
+test("when TypeSafe cannot be reached, Haiku answers; with no fallback the failure is loud", async () => {
+  const cats = getDb().prepare("SELECT * FROM categories").all() as never[];
+  await withModelApis({ typesafe: true, anthropic: true }, () => ({ status: 500 }), async () => {
+    const r = await proposeCategories(["Corner Store"], cats);
+    assert.equal(r.provider, "haiku");
+    assert.deepEqual(r.proposals, [{ merchant: "Corner Store", categoryId: CAT }], "and says nothing about confidence");
+  }, () => [{ merchant: "Corner Store", categoryId: CAT }]);
+  await withModelApis({ typesafe: true }, () => ({ status: 500 }), async () => {
+    await assert.rejects(() => proposeCategories(["Corner Store"], cats), /TypeSafe 500/);
+  });
+  await withModelApis({}, () => ({}), async (sent) => {
+    assert.deepEqual(await proposeCategories(["Corner Store"], cats), { provider: null, proposals: [] });
+    assert.equal(sent.length, 0, "no key, no request");
+  });
+});

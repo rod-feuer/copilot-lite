@@ -16,15 +16,27 @@ import type { Category } from "@/lib/types";
 // category <select> that offers "+ New category…": the row's property below
 // and the shelf's caption picker. Four copies had the same three lines of
 // "is it the new-category sentinel, else a number or null".
-export function CategoryOptions({ cats, withNew = false }: { cats: Category[]; withNew?: boolean }) {
+export function CategoryOptions({ cats, withNew = false, likely }: { cats: Category[]; withNew?: boolean; likely?: number[] }) {
+  const option = (c: Category) => (
+    <option key={c.id} value={c.id}>
+      {c.icon} {c.name}
+    </option>
+  );
+  // A model's most probable categories lead the list (its top three held the
+  // right one 76% of the time), so redirecting a wrong guess is usually one of
+  // the first three rows and not a scroll through all of them.
+  const first = (likely ?? []).map((id) => cats.find((c) => c.id === id)).filter((c): c is Category => !!c);
   return (
     <>
       <option value="">Uncategorized</option>
-      {cats.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.icon} {c.name}
-        </option>
-      ))}
+      {first.length > 1 ? (
+        <>
+          <optgroup label="Most likely">{first.map(option)}</optgroup>
+          <optgroup label="All categories">{cats.map(option)}</optgroup>
+        </>
+      ) : (
+        cats.map(option)
+      )}
       {withNew && <NewCategoryOption />}
     </>
   );
@@ -54,6 +66,7 @@ export function CategoryProperty({
   onDeactivate,
   ariaLabel = "Category",
   className = "",
+  likely,
 }: {
   categoryId: number | null;
   categoryName: string | null;
@@ -67,6 +80,7 @@ export function CategoryProperty({
   onDeactivate?: () => void;
   ariaLabel?: string;
   className?: string;
+  likely?: number[]; // a model's most probable categories, to lead the list
 }) {
   const set = categoryId != null;
   const label = set ? `${categoryIcon ?? ""} ${categoryName ?? ""}`.trim() : "Uncategorized";
@@ -102,7 +116,7 @@ export function CategoryProperty({
         className="tap-native absolute inset-0 w-full cursor-pointer opacity-0"
       >
         {active ? (
-          <CategoryOptions cats={cats} withNew={!!onNewCategory} />
+          <CategoryOptions cats={cats} withNew={!!onNewCategory} likely={likely} />
         ) : set ? (
           <option value={categoryId as number}>{label}</option>
         ) : (
