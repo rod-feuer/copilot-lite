@@ -1933,6 +1933,26 @@ test("transactionById: the vendor's plan, and recent charges across descriptors 
   assert.equal(transactionById(999999), null);
 });
 
+// WHY: the charge's shelf shows what its vendor costs a year, as evidence. It
+// must be the vendor's own figures — every linked descriptor, no excluded
+// charge, a split counted once — or the two shelves would state different
+// totals for one vendor, a tap apart.
+test("transactionById.byYear is the vendor's by-year spend: linked names in, excluded out, a split counted once", () => {
+  tx("Gym Co", { amount: -40, date: "2025-11-15", categoryId: CAT });
+  tx("Gym Co", { amount: -40, date: "2026-01-15", categoryId: CAT, hash: "jan" });
+  tx("Gym Company Llc", { amount: -45, date: "2026-02-15", categoryId: CAT });
+  linkMerchant("Gym Company Llc", "Gym Co");
+  tx("Gym Co", { amount: -500, date: "2026-03-01", categoryId: CAT, excluded: 1 }); // excluded from totals
+  tx("Gym Co", { amount: -100, date: "2026-03-20", categoryId: CAT, excluded: 1, hash: "p" }); // a split parent
+  tx("Gym Co", { amount: -60, date: "2026-03-20", categoryId: CAT, hash: "p:s0" });
+  tx("Gym Co", { amount: -40, date: "2026-03-20", categoryId: CAT, hash: "p:s1" });
+  tx("Gym Co", { amount: 15, date: "2026-04-01", categoryId: CAT }); // a refund is not spend
+  const jan = (getDb().prepare("SELECT id FROM transactions WHERE hash = 'jan'").get() as { id: number }).id;
+  const charge = transactionById(jan)!;
+  assert.deepEqual(charge.byYear, [{ year: "2026", spent: 185 }, { year: "2025", spent: 40 }]);
+  assert.deepEqual(charge.byYear, merchantSummary("Gym Co")!.byYear, "the charge's shelf and the vendor's agree");
+});
+
 // WHY: Plaid must begin the day after the imported back-history ends, or it
 // re-delivers charges the import already holds under a different key (double
 // counting). Plaid's own rows — and the parts of a split Plaid charge, which

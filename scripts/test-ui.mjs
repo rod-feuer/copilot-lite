@@ -688,15 +688,23 @@ async function quietLogin(browser) {
 // the vendor's charge count (it read "All 62 charges →" and opened the vendor).
 async function openVendorFromCharge(browser) {
   await withPage(browser, async (page) => {
-    await page.goto(BASE + "/transactions?month=" + PAST, { waitUntil: "networkidle2" });
+    // A monthly bill in the seed's first month (Dec 2025), so the vendor spans
+    // two calendar years and has a by-year block to show.
+    await page.goto(BASE + "/transactions?month=2025-12&vendor=Netflix", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-drawer-row]");
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
     await page.waitForSelector(`${shelfSel} [data-open-vendor]`);
     const c = await page.evaluate((sel) => { const a = document.querySelector(sel); const links = [...a.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => /→$/.test(t) && /vendor|charges/i.test(t)); return { name: a.querySelector("[data-open-vendor]").textContent.trim(), links, title: a.querySelector("[data-charge-recent]").previousElementSibling.textContent.trim() }; }, shelfSel);
     record("open vendor", "the link under a charge's recent list says what it opens, whatever the count", c.links.length === 1 && c.links[0] === "Open vendor →", `${c.links.join(" | ") || "none"}; title "${c.title}"`);
+    // The charge's shelf answers "what does this vendor cost a year" without the
+    // step up, and with the vendor's own figures.
+    const years = (sel) => page.evaluate((sel) => { const b = document.querySelector(`${sel} [data-by-year]`); return b ? { title: b.firstElementChild.textContent.trim(), rows: [...b.lastElementChild.children].map((r) => r.textContent.replace(/\s+/g, " ").trim()) } : null; }, sel);
+    const onCharge = await years(shelfSel);
     await page.click(`${shelfSel} [data-open-vendor]`);
     let vendor = false; try { await page.waitForSelector(`${shelfSel} button::-p-text(Combine)`, { timeout: 8000 }); vendor = true; } catch {}
     const back = await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button`)].some((b) => /Back/.test(b.textContent)), shelfSel);
+    const onVendor = vendor ? await years(shelfSel) : null;
+    record("open vendor", "a charge's shelf shows its vendor's spend by year, the same figures as the vendor's shelf", !!onCharge && onCharge.rows.length >= 2 && /vendor/i.test(onCharge.title) && !!onVendor && onCharge.rows.join("|") === onVendor.rows.join("|"), onCharge ? `charge: ${onCharge.rows.join(", ")}; vendor: ${onVendor ? onVendor.rows.join(", ") : "none"}` : "no by-year block on the charge");
     record("open vendor", "the vendor's name in a charge's header opens the vendor's shelf, with Back", c.name.length > 0 && vendor && back, `"${c.name}" → vendor shelf=${vendor}, back=${back}`);
   });
 }
