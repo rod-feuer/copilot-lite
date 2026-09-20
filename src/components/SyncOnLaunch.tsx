@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useToast } from "@/components/Toast";
 
 // Fire a background Plaid sync when the app launches — at most once per window so
@@ -13,7 +14,12 @@ const THROTTLE_MS = 15 * 60 * 1000; // 15 minutes
 
 export function SyncOnLaunch() {
   const toast = useToast();
+  // The login screen is not a launch. Syncing there got a 401 — and had already
+  // stamped the 15-minute throttle, so signing in on a new device (a phone,
+  // first visit) skipped the launch sync it was about to need.
+  const onLogin = usePathname() === "/login";
   useEffect(() => {
+    if (onLogin) return;
     const KEY = "copilot:lastAutoSync";
     let last = 0;
     try {
@@ -46,7 +52,7 @@ export function SyncOnLaunch() {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [toast, onLogin]);
 
   return null;
 }

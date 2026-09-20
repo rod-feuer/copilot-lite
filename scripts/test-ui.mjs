@@ -644,6 +644,28 @@ async function modelSuggestionTiers(browser) {
   });
 }
 
+// The login screen asks the server for nothing. It used to request categories,
+// vendors and a bank sync before anyone had signed in: three 401s, the error
+// reply stored as if it were the category list, and the launch sync's 15-minute
+// throttle spent on a request that could not succeed. The pages behind it still
+// load their lists and still sync on launch.
+async function quietLogin(browser) {
+  await withPage(browser, async (page) => {
+    const calls = [];
+    page.on("request", (q) => { const u = new URL(q.url()); if (u.pathname.startsWith("/api/")) calls.push(`${q.method()} ${u.pathname}`); });
+    // Earlier checks share this browser's storage and have already launched:
+    // start each document here as a device that never has.
+    await page.evaluateOnNewDocument(() => { try { localStorage.removeItem("copilot:lastAutoSync"); } catch {} });
+    await page.goto(BASE + "/login", { waitUntil: "networkidle2" }); await sleep(800);
+    const onLogin = [...calls];
+    const stamped = await page.evaluate(() => localStorage.getItem("copilot:lastAutoSync"));
+    record("quiet login", "the login screen makes no API request and does not spend the launch-sync throttle", onLogin.length === 0 && stamped === null, onLogin.length ? onLogin.join(", ") : `no requests; throttle ${stamped === null ? "unspent" : "SPENT"}`);
+    calls.length = 0;
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" }); await sleep(800);
+    record("quiet login", "the app behind it still loads its lists and syncs on launch", calls.includes("GET /api/categories") && calls.includes("GET /api/vendors") && calls.includes("POST /api/plaid/sync"), [...new Set(calls)].filter((c) => /categories|vendors|sync/.test(c)).join(", "));
+  });
+}
+
 async function statementMode(browser) {
   for (const [mode, url] of [["statement", "/transactions?vendor=Chipotle"], ["normal", "/transactions"]]) {
     await withPage(browser, async (page, errs) => {
@@ -1166,7 +1188,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
