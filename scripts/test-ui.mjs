@@ -682,6 +682,25 @@ async function quietLogin(browser) {
   });
 }
 
+// A transaction row opens the charge. The vendor's shelf (its years, its plan,
+// rename, Combine) is one step up, and the step has to be findable: the name in
+// the header opens it, and the link under the list says what it opens whatever
+// the vendor's charge count (it read "All 62 charges →" and opened the vendor).
+async function openVendorFromCharge(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions?month=" + PAST, { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
+    await page.waitForSelector(`${shelfSel} [data-open-vendor]`);
+    const c = await page.evaluate((sel) => { const a = document.querySelector(sel); const links = [...a.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => /→$/.test(t) && /vendor|charges/i.test(t)); return { name: a.querySelector("[data-open-vendor]").textContent.trim(), links, title: a.querySelector("[data-charge-recent]").previousElementSibling.textContent.trim() }; }, shelfSel);
+    record("open vendor", "the link under a charge's recent list says what it opens, whatever the count", c.links.length === 1 && c.links[0] === "Open vendor →", `${c.links.join(" | ") || "none"}; title "${c.title}"`);
+    await page.click(`${shelfSel} [data-open-vendor]`);
+    let vendor = false; try { await page.waitForSelector(`${shelfSel} button::-p-text(Combine)`, { timeout: 8000 }); vendor = true; } catch {}
+    const back = await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button`)].some((b) => /Back/.test(b.textContent)), shelfSel);
+    record("open vendor", "the vendor's name in a charge's header opens the vendor's shelf, with Back", c.name.length > 0 && vendor && back, `"${c.name}" → vendor shelf=${vendor}, back=${back}`);
+  });
+}
+
 // A phone is a narrow column, not a small desktop: what shares a row there is
 // chosen, not whatever wrapping leaves behind.
 async function phoneLayout(browser) {
@@ -1254,7 +1273,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

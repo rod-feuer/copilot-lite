@@ -454,7 +454,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               ) : target.kind === "category" ? (
                 <CategoryHeader data={cData} month={target.month} />
               ) : (
-                <ChargeHeader data={xData} />
+                <ChargeHeader data={xData} onOpenVendor={() => xData && drillToMerchant(xData.merchant)} />
               )}
             </div>
             <button
@@ -738,11 +738,24 @@ function MembershipPill({
   );
 }
 
-function ChargeHeader({ data }: { data: ChargeDetail | null }) {
+function ChargeHeader({ data, onOpenVendor }: { data: ChargeDetail | null; onOpenVendor: () => void }) {
   if (!data) return <div className="truncate text-[15px] font-semibold">…</div>;
   return (
     <>
-      <div className="truncate text-[15px] font-semibold">{data.displayName}</div>
+      {/* The name is the way up: the vendor's shelf holds its history by year,
+          its plan, rename and Combine. A quiet link under the list was the only
+          route, and it read "All 62 charges →", which is not what it opened. */}
+      <button
+        onClick={onOpenVendor}
+        data-open-vendor
+        aria-label={`Open vendor: ${data.displayName}`}
+        className="group/v flex max-w-full items-center gap-1 rounded-lg text-left text-[15px] font-semibold hover:text-[var(--accent)]"
+      >
+        <span className="truncate">{data.displayName}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="h-4 w-4 shrink-0 text-[var(--muted)] opacity-60 transition-all group-hover/v:translate-x-0.5 group-hover/v:opacity-100">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
       {data.displayName !== data.merchant && (
         <div className="truncate text-[11px] text-[var(--muted)]">{data.merchant}</div>
       )}
@@ -904,7 +917,10 @@ function ChargeBody({
           that doesn't count reads muted, as on the vendor shelf. The vendor's
           shelf is the way to the full history and its plan. */}
       <div>
-        <div className="stat-label mb-2">Recent from this vendor</div>
+        <div className="stat-label mb-2">
+          Recent from this vendor
+          {data.vendorCount > data.recent.length ? ` · ${data.recent.length} of ${data.vendorCount}` : ""}
+        </div>
         <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list data-charge-recent>
           {data.recent.map((r) => (
             <ShelfRow
@@ -920,11 +936,9 @@ function ChargeBody({
             />
           ))}
         </ul>
-        <button
-          onClick={onOpenVendor}
-          className="btn-link mt-2 text-[11px]"
-        >
-          {data.vendorCount > data.recent.length ? `All ${data.vendorCount} charges →` : "Open vendor →"}
+        {/* One label, whatever the count: it opens the vendor, so it says so. */}
+        <button onClick={onOpenVendor} className="btn-link mt-2">
+          Open vendor →
         </button>
       </div>
     </div>
