@@ -97,6 +97,14 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const onChange = useRef<(() => void) | undefined>(undefined);
   const asideRef = useRef<HTMLElement>(null);
+  // A bottom sheet is as tall as its content. Moving to another shelf empties
+  // it to three placeholder bars until the read answers, and the sheet dropped
+  // ~310px and rose again, flashing the page behind it. Hold the height it had
+  // across the switch; the effect below lets go once the new content is in.
+  const holdSheet = useCallback(() => {
+    const el = asideRef.current;
+    if (el && window.matchMedia("(max-width: 639px)").matches) el.style.minHeight = `${el.getBoundingClientRect().height}px`;
+  }, []);
   // Each handler below re-reads its own target (the merchant or the category)
   // after a write, so the shared refresh policy is "never" and the refresh
   // happens on the returned success flag.
@@ -167,6 +175,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         close();
         return;
       }
+      holdSheet();
       onChange.current = opts?.onChange;
       setAmountHint(opts?.amountHint ?? null);
       setBack(null);
@@ -174,7 +183,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       setTarget({ kind: "merchant", merchant: m, series: opts?.series });
       fetchMerchant(m, opts?.series);
     },
-    [target, close, fetchMerchant]
+    [target, close, fetchMerchant, holdSheet]
   );
   // One charge: its shelf carries the overlays a charge can take (category,
   // date, note, plan membership, exclude from totals, split), so the
@@ -185,6 +194,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         close();
         return;
       }
+      holdSheet();
       onChange.current = opts?.onChange;
       setAmountHint(null);
       setBack(null);
@@ -193,7 +203,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       setTarget({ kind: "charge", id });
       fetchCharge(id);
     },
-    [target, close, fetchCharge]
+    [target, close, fetchCharge, holdSheet]
   );
   const openCategory = useCallback(
     (categoryId: number, month: string, opts?: OpenOpts) => {
@@ -205,6 +215,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         close();
         return;
       }
+      holdSheet();
       onChange.current = opts?.onChange;
       setAmountHint(null);
       setBack(null);
@@ -212,12 +223,13 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
       setTarget({ kind: "category", categoryId, month });
       fetchCategory(categoryId, month);
     },
-    [target, close, fetchCategory]
+    [target, close, fetchCategory, holdSheet]
   );
 
   // Drill from a category's transaction into that vendor, remembering the
   // category so the panel can offer a "← Back".
   const drillToMerchant = (m: string) => {
+    holdSheet();
     setBack(target);
     setAmountHint(null);
     setCData(null);
@@ -227,6 +239,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   const goBack = () => {
     const b = back;
     if (!b) return;
+    holdSheet();
     setBack(null);
     setTarget(b);
     if (b.kind === "category") fetchCategory(b.categoryId, b.month);
@@ -375,6 +388,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   }
 
   const loading = target?.kind === "merchant" ? !mData : target?.kind === "category" ? !cData : !xData;
+  useEffect(() => {
+    if (!loading && asideRef.current) asideRef.current.style.minHeight = "";
+  }, [loading, target]);
 
   // Swipe the bottom sheet down to close it. Touch only, and only where the
   // shelf is a sheet; a press on a control in the header stays a press.

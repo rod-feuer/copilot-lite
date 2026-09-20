@@ -747,6 +747,29 @@ async function phoneLayout(browser) {
     record("phone layout", "a recurrings row with a difference under its amount is as tall as a plain row", rh.delta !== null && rh.plain !== null && rh.delta === rh.plain && rh.plain >= 43, `(and a full 44px touch target) with difference ${rh.delta}px, plain ${rh.plain}px${rh.delta === null ? `; fixture row: ${rh.comcast || "absent"}` : ""}`);
     await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-drawer-row]");
+    // Moving between shelf types empties the sheet until the read answers. It
+    // must hold its height meanwhile: it used to drop ~310px to its placeholder
+    // and rise again, flashing the page (and its title) behind it. The vendor's
+    // answer is held 500ms here so the gap is long enough to see.
+    {
+      await page.$eval("[data-drawer-row]", (r) => r.click()); await shelfIs(page, true); await shelfSettled(page);
+      await page.waitForSelector(`${shelfSel} [data-open-vendor]`);
+      await page.setRequestInterception(true);
+      const slow = (req) => { if (/\/api\/(merchant|transactions\/\d+)(\?|$)/.test(req.url()) && req.method() === "GET") setTimeout(() => req.continue(), 500); else req.continue(); };
+      page.on("request", slow);
+      const rest1 = await page.$eval(shelfSel, (e) => Math.round(e.getBoundingClientRect().top));
+      await page.evaluate((sel) => { window.__tops = []; window.__sampling = true; const tick = () => { const a = document.querySelector(sel); if (a) window.__tops.push(Math.round(a.getBoundingClientRect().top)); if (window.__sampling) requestAnimationFrame(tick); }; requestAnimationFrame(tick); }, shelfSel);
+      await page.$eval(`${shelfSel} [data-open-vendor]`, (e) => e.click());
+      await page.waitForSelector(`${shelfSel} button::-p-text(Combine)`, { timeout: 8000 });
+      const rest2 = await page.$eval(shelfSel, (e) => Math.round(e.getBoundingClientRect().top));
+      await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button`)].find((x) => /Back/.test(x.textContent))?.click(), shelfSel);
+      await page.waitForSelector(`${shelfSel} [data-open-vendor]`, { timeout: 8000 }); await sleep(300);
+      const tops = await page.evaluate(() => { window.__sampling = false; return window.__tops; });
+      page.off("request", slow); await page.setRequestInterception(false);
+      const lowest = Math.max(...tops), resting = Math.max(rest1, rest2);
+      record("phone layout", "the sheet holds its height while it moves between a charge and its vendor (it dropped to its placeholder and rose again)", tops.length > 20 && lowest <= resting + 2, `resting tops ${rest1}px and ${rest2}px; lowest top seen ${lowest}px over ${tops.length} frames`);
+      await page.keyboard.press("Escape"); await shelfIs(page, false);
+    }
     // The sheet's handle says "pull me down". A short, slow pull springs back;
     // a long one closes the sheet.
     const swipe = async (dist) => { const b = await page.$eval("[data-sheet-drag]", (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 6 }; }); await page.touchscreen.touchStart(b.x, b.y); for (let i = 1; i <= 8; i++) { await page.touchscreen.touchMove(b.x, b.y + (dist * i) / 8); await sleep(40); } await page.touchscreen.touchEnd(); await sleep(400); };
