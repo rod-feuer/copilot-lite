@@ -102,14 +102,16 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   // happens on the returned success flag.
   const mutate = useMutation();
 
+  // Not on the login screen: nobody is signed in there, so both reads came back
+  // 401 — and the reply was stored as if it were the list ({ error } is not an
+  // array). getJson throws on a non-OK reply, so a failed read leaves the lists
+  // empty instead of corrupt.
+  const onLogin = usePathname() === "/login";
   useEffect(() => {
-    fetch("/api/categories")
-      .then((r) => r.json())
-      .then(setCats);
-    fetch("/api/vendors")
-      .then((r) => r.json())
-      .then(setVendors);
-  }, []);
+    if (onLogin) return;
+    getJson<Cat[]>("/api/categories").then(setCats).catch(() => {});
+    getJson<Vendor[]>("/api/vendors").then(setVendors).catch(() => {});
+  }, [onLogin]);
 
   // A failed shelf read shows an error with Retry instead of the skeleton —
   // `loading` below is derived from missing data, so without this flag a
