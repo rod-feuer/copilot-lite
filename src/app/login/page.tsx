@@ -16,7 +16,7 @@ export default async function LoginPage({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--background)] p-4">
-      <form method="POST" action="/api/login" className="card w-full max-w-xs p-6">
+      <form suppressHydrationWarning method="POST" action="/api/login" className="card w-full max-w-xs p-6">
         <div className="mb-1 flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-[13px] font-bold text-white">
             C
@@ -36,6 +36,7 @@ export default async function LoginPage({
         />
         {failed && <p className="mt-2 text-xs text-[var(--bad)]">Incorrect password</p>}
         <button
+          suppressHydrationWarning
           type="submit"
           className="mt-4 w-full rounded-lg bg-[var(--accent)] px-3 py-2 text-[13px] font-medium text-white"
         >

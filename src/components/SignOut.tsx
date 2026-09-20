@@ -13,8 +13,11 @@ export default function SignOut({ variant }: { variant: "sidebar" | "tab" }) {
   );
   if (variant === "tab")
     return (
-      <form method="post" action="/api/logout" className="flex flex-1">
+      // iOS Chrome tags forms, not only fields, for autofill (__gcruniqueid)
+      // before React starts; see SearchBox.
+      <form suppressHydrationWarning method="post" action="/api/logout" className="flex flex-1">
         <button
+          suppressHydrationWarning
           type="submit"
           className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-[var(--muted)] transition-colors"
         >
@@ -24,8 +27,8 @@ export default function SignOut({ variant }: { variant: "sidebar" | "tab" }) {
       </form>
     );
   return (
-    <form method="post" action="/api/logout">
-      <button type="submit" className="nav-link w-full">
+    <form suppressHydrationWarning method="post" action="/api/logout">
+      <button suppressHydrationWarning type="submit" className="nav-link w-full">
         {icon}
         Sign out
       </button>
