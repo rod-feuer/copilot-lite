@@ -1,12 +1,12 @@
 "use client";
 
-import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCategoryShelf } from "@/components/TransactionDrawer";
 import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { CategoryBadge, categoryTint } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
-import Shell, { Toolbar } from "@/components/Shell";
+import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
@@ -174,19 +174,6 @@ export default function CategoriesPage() {
       </div>
       )}
 
-      <Toolbar className="mb-4">
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-          aria-label="Sort categories"
-          className="btn-ghost select-caret ml-auto cursor-pointer appearance-none pr-8 text-[13px]"
-        >
-          <option value="spent">Most spent</option>
-          <option value="pressure">Budget used</option>
-          <option value="name">Name A–Z</option>
-        </select>
-      </Toolbar>
-
       {status === "loading" ? (
         <LoadingRows />
       ) : status === "error" ? (
@@ -197,6 +184,20 @@ export default function CategoriesPage() {
         title={filter === "over" ? "Over budget" : filter === "unbudgeted" ? "Not budgeted" : "Expenses"}
         month={month}
         cats={shownExpense}
+        // The sort shares the section title's line, directly above the list it
+        // orders. Alone in a toolbar it held a 72px row of a phone's screen.
+        aside={
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            aria-label="Sort categories"
+            className="btn-ghost select-caret cursor-pointer appearance-none pr-8 text-[13px]"
+          >
+            <option value="spent">Most spent</option>
+            <option value="pressure">Budget used</option>
+            <option value="name">Name A–Z</option>
+          </select>
+        }
         onBudget={saveBudget}
         onEditAppearance={saveAppearance}
         onRename={saveName}
@@ -348,7 +349,9 @@ function BudgetSummary({
       }
       note={
         hasAnnual &&
-        "Annual budgets counted at 1⁄12 per month here; each annual category tracks its own calendar-year total in the list below."
+        // One line: why this budget isn't the sum of the ones you typed. That an
+        // annual category tracks its year is said on its own row, below.
+        "Annual budgets count here at 1⁄12 per month."
       }
     />
   );
@@ -357,6 +360,7 @@ function BudgetSummary({
 function Group({
   title,
   hint,
+  aside,
   month,
   cats,
   onBudget,
@@ -366,6 +370,7 @@ function Group({
 }: {
   title: string;
   hint?: string;
+  aside?: ReactNode; // a control on the title's line (the sort)
   month: string;
   cats: Cat[];
   onBudget?: (id: number, amount: number | null, period: "monthly" | "annual") => void;
@@ -381,13 +386,10 @@ function Group({
   const openCategory = useCategoryShelf();
   return (
     <div>
-      <h3
-        className={`px-1 text-xs font-semibold uppercase tracking-wide text-[var(--foreground)] ${
-          hint ? "mb-1" : "mb-2"
-        }`}
-      >
-        {title}
-      </h3>
+      <div className={`flex items-center justify-between gap-2 ${hint ? "mb-1" : "mb-2"}`}>
+        <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--foreground)]">{title}</h3>
+        {aside}
+      </div>
       {hint && <p className="mb-2 px-1 text-xs text-[var(--muted)]">{hint}</p>}
       <div className="card divide-y divide-[var(--border)]">
         {cats.length === 0 && (

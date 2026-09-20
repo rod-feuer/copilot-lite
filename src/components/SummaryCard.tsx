@@ -62,7 +62,11 @@ export function SummaryCard({
           figure pushed its number up, and the three big numbers sat on three
           different lines. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <Fig f={primary} />
+        {/* The primary takes what the counter-figure leaves, so a long label
+            wraps under its figure instead of pushing the other to a second row. */}
+        <div className="min-w-0 flex-1">
+          <Fig f={primary} />
+        </div>
         {/* Two counter-figures don't fit beside the primary on a phone: they
             wrapped one under the other, right-aligned, a staircase. There they
             sit as a pair of columns on the primary's left edge instead. */}

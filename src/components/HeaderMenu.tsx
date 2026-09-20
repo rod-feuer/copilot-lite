@@ -14,9 +14,13 @@ export function HeaderMenu({ children }: { children: React.ReactNode }) {
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="btn-ghost px-3 py-2 text-[15px] leading-none"
+        className="btn-ghost"
       >
-        ⋯
+        {/* The larger glyph rides inside a row-size line, so the button is as
+            tall as the month picker beside it (it was 4.5px shorter). */}
+        <span className="block">
+          <span className="align-middle text-[15px] leading-none">⋯</span>
+        </span>
       </button>
       {open && (
         <>

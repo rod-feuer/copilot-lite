@@ -76,7 +76,7 @@ body {
      shelf. Each class carries its full base — Tailwind v4 can't @apply one
      custom component class inside another. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 bg-[var(--accent)] text-white hover:opacity-90;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 border border-transparent bg-[var(--accent)] text-white hover:opacity-90;
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 border border-[var(--border)] bg-card text-[var(--foreground)] hover:bg-[var(--hover)];
