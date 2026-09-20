@@ -34,6 +34,7 @@ const server = spawn(NEXT, ["dev", "-p", String(PORT)], {
   env: {
     ...process.env,
     COPILOT_DB_PATH: DB,
+    NEXT_DIST_DIR: ".next-ui", // its own build folder: the dev server can stay up
     APP_PASSWORD: "", // no login gate (an already-set var wins over .env.local)
     PLAID_CLI_PATH: "/nonexistent/plaid", // launch sync fails fast and stays quiet
     // The suite never calls a model: both keys are blanked, so the queue (which
@@ -88,6 +89,13 @@ async function loadFixture() {
     [day(-3, 28), "Spotify", "-9.99", "Credit"],
     [day(-2, 28), "Spotify", "-9.99", "Credit"],
     [day(-1, 28), "Spotify", "-9.99", "Credit"],
+    // A bill paid this month at more than it usually is, so its recurrings row
+    // carries a difference ("+$15.50") under the amount on a phone. More than 10% off,
+    // or the detector reads it as the new price and there is no difference to show.
+    [day(-3, 2), "Comcast Business", "-79.99", "Credit"],
+    [day(-2, 2), "Comcast Business", "-79.99", "Credit"],
+    [day(-1, 2), "Comcast Business", "-79.99", "Credit"],
+    [day(0, 2), "Comcast Business", "-95.49", "Credit"],
     // Two vendors no rule knows, so they land uncategorized: the Uncategorized
     // filter, the queue's "Show all uncategorized", and "categorize → the row
     // leaves" have real rows to act on.
@@ -189,7 +197,7 @@ async function staleShelfRead(browser) {
     await rows[1].click();                   // B: answers at once
     await sleep(3000);                       // A's late answer has landed
     const head = await page.$eval("[data-shelf] header", (h) => h.innerText.split("\n")[0].replace("✎", "").trim());
-    record("stale shelf read", "a late answer for the previous vendor never replaces the open one", held && names.length === 2 && head.startsWith(names[1].slice(0, 6)) && !head.startsWith(names[0].slice(0, 6)), `opened ${names[0]} then ${names[1]}; shelf shows ${head}`);
+    record("stale shelf read", "a late answer for the previous vendor never replaces the open one", held && names.length === 2 && names[0] !== names[1] && head === names[1], `opened ${names[0]} then ${names[1]}; shelf shows ${head}`);
   });
 }
 // DESIGN.md §2 "Touch is in scope": on a phone (a coarse pointer) every small
@@ -663,6 +671,40 @@ async function quietLogin(browser) {
     calls.length = 0;
     await page.goto(BASE + "/", { waitUntil: "networkidle2" }); await sleep(800);
     record("quiet login", "the app behind it still loads its lists and syncs on launch", calls.includes("GET /api/categories") && calls.includes("GET /api/vendors") && calls.includes("POST /api/plaid/sync"), [...new Set(calls)].filter((c) => /categories|vendors|sync/.test(c)).join(", "));
+  });
+}
+
+// A phone is a narrow column, not a small desktop: what shares a row there is
+// chosen, not whatever wrapping leaves behind.
+async function phoneLayout(browser) {
+  await withPage(browser, async (page) => {
+    await page.setViewport({ width: 375, height: 812, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-figure-pair]");
+    const d = await page.evaluate(() => { const card = document.querySelector("[data-summary]"); const pair = card.querySelector("[data-figure-pair]"); const [a, b] = [...pair.children].map((e) => e.getBoundingClientRect()); const primary = card.firstElementChild.firstElementChild.getBoundingClientRect(); const cr = card.getBoundingClientRect(); return { tops: Math.abs(Math.round(a.top - b.top)), left: Math.abs(Math.round(a.left - primary.left)), inside: b.right <= cr.right + 0.5, scroll: document.documentElement.scrollWidth - innerWidth }; });
+    record("phone layout", "the dashboard's income and expenses share one line on the net figure's left edge (they stair-stepped, right-aligned)", d.tops <= 1 && d.left <= 1 && d.inside && d.scroll <= 0, `tops Δ${d.tops}px, left Δ${d.left}px, inside=${d.inside}, page overflow ${d.scroll}px`);
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const t = await page.evaluate(() => { const head = document.querySelector("header"); const h1 = head.querySelector("h1").getBoundingClientRect(); const pick = head.querySelector("select").getBoundingClientRect(); const sub = head.querySelector("p")?.getBoundingClientRect(); const row = document.querySelector("[data-drawer-row]"); const name = row.querySelector("span.truncate").getBoundingClientRect(); const cat = [...row.querySelectorAll('[class*="group/cat"]')].find((e) => e.offsetParent !== null); const icon = cat?.firstElementChild?.getBoundingClientRect(); return { sameRow: Math.abs((h1.top + h1.bottom) / 2 - (pick.top + pick.bottom) / 2) <= 12, pickRight: pick.left > h1.right, subBelow: sub ? sub.top >= Math.max(h1.bottom, pick.bottom) - 1 : null, catDelta: icon ? Math.abs(Math.round(icon.left - name.left)) : null }; });
+    record("phone layout", "the month picker stays on the title's row, right of it, with the subtitle beneath both", t.sameRow && t.pickRight && t.subBelow !== false, `same row=${t.sameRow}, right of title=${t.pickRight}, subtitle below=${t.subBelow}`);
+    record("phone layout", "a charge's category starts on the vendor name's left edge", t.catDelta !== null && t.catDelta <= 1, t.catDelta === null ? "no category in the row" : `Δ ${t.catDelta}px`);
+    // A paid bill that differed shows the difference under its amount on a
+    // phone — without making that row taller than its neighbours.
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const rh = await page.evaluate(() => { const rows = [...document.querySelectorAll("[data-drawer-row]")].filter((r) => !r.querySelector("[data-cadence]")); const has = (r) => r.querySelector("[data-amount-state]").children.length > 1; const h = (r) => Math.round(r.getBoundingClientRect().height * 2) / 2; const d = rows.find(has), p = rows.find((r) => !has(r)); return { delta: d ? h(d) : null, plain: p ? h(p) : null, comcast: rows.filter((r) => /Comcast B/.test(r.innerText)).map((r) => r.innerText.replace(/\s+/g, " ")).join(" | ") }; });
+    record("phone layout", "a recurrings row with a difference under its amount is as tall as a plain row", rh.delta !== null && rh.plain !== null && rh.delta === rh.plain, `with difference ${rh.delta}px, plain ${rh.plain}px${rh.delta === null ? `; fixture row: ${rh.comcast || "absent"}` : ""}`);
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    // The sheet's handle says "pull me down". A short, slow pull springs back;
+    // a long one closes the sheet.
+    const swipe = async (dist) => { const b = await page.$eval("[data-sheet-drag]", (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 6 }; }); await page.touchscreen.touchStart(b.x, b.y); for (let i = 1; i <= 8; i++) { await page.touchscreen.touchMove(b.x, b.y + (dist * i) / 8); await sleep(40); } await page.touchscreen.touchEnd(); await sleep(400); };
+    await page.$eval("[data-drawer-row]", (r) => r.click()); await shelfIs(page, true); await shelfSettled(page);
+    await swipe(40);
+    const stayed = await page.$eval(shelfSel, (e) => Math.round(new DOMMatrix(getComputedStyle(e).transform).m42)).catch(() => null);
+    await swipe(220);
+    const gone = (await page.$(shelfSel)) === null;
+    record("phone layout", "pulling the sheet's handle down closes it; a short pull springs back", stayed === 0 && gone, `after 40px: ${stayed === null ? "closed" : `open, offset ${stayed}px`}; after 220px: ${gone ? "closed" : "still open"}`);
   });
 }
 
@@ -1188,7 +1230,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

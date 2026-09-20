@@ -376,6 +376,33 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
 
   const loading = target?.kind === "merchant" ? !mData : target?.kind === "category" ? !cData : !xData;
 
+  // Swipe the bottom sheet down to close it. Touch only, and only where the
+  // shelf is a sheet; a press on a control in the header stays a press.
+  const sheetDrag = useRef<{ y: number; t: number } | null>(null);
+  function sheetDragStart(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === "mouse" || window.matchMedia("(min-width: 640px)").matches) return;
+    if ((e.target as HTMLElement).closest("button, input, select, a")) return;
+    sheetDrag.current = { y: e.clientY, t: e.timeStamp };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function sheetDragMove(e: React.PointerEvent<HTMLDivElement>) {
+    const el = asideRef.current;
+    if (!sheetDrag.current || !el) return;
+    el.style.transition = "none";
+    el.style.transform = `translateY(${Math.max(0, e.clientY - sheetDrag.current.y)}px)`;
+  }
+  function sheetDragEnd(e: React.PointerEvent<HTMLDivElement>) {
+    const d = sheetDrag.current;
+    const el = asideRef.current;
+    sheetDrag.current = null;
+    if (!d || !el) return;
+    const dy = e.clientY - d.y;
+    const flick = dy > 24 && dy / Math.max(1, e.timeStamp - d.t) > 0.5; // px per ms
+    el.style.transition = "transform 150ms ease-out";
+    el.style.transform = "";
+    if (dy > 96 || flick) close();
+  }
+
   return (
     <Ctx.Provider value={{ openMerchant, openCategory, openCharge, active: target }}>
       {children}
@@ -395,11 +422,18 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
             // right-side panel on desktop (sm:+) exactly as before.
             className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88vh] flex-col rounded-t-2xl border-t border-[var(--border)] bg-card shadow-2xl sm:inset-x-auto sm:right-0 sm:top-0 sm:bottom-auto sm:h-full sm:max-h-none sm:w-full sm:max-w-sm sm:rounded-none sm:border-t-0 sm:border-l"
           >
-            {/* Grab handle — bottom-sheet affordance (mobile only). */}
+            {/* The handle keeps its promise: on a phone the sheet's top (handle
+                and header) drags down with the finger, and letting go far enough
+                or fast enough closes it. It was decoration before. */}
             <div
-              className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--border)] sm:hidden"
-              aria-hidden
-            />
+              data-sheet-drag
+              className="shrink-0 touch-none sm:touch-auto"
+              onPointerDown={sheetDragStart}
+              onPointerMove={sheetDragMove}
+              onPointerUp={sheetDragEnd}
+              onPointerCancel={sheetDragEnd}
+            >
+            <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--border)] sm:hidden" aria-hidden />
           <header className="flex items-start justify-between border-b border-[var(--border)] px-4 py-3">
             <div className="min-w-0">
               {back && (
@@ -431,6 +465,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               ✕
             </button>
           </header>
+            </div>
 
           <div className="flex-1 overflow-y-auto p-4">
             {loadError ? (

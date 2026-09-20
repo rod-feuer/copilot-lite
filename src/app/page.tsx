@@ -212,7 +212,7 @@ export default function DashboardPage() {
                       // The like-for-like delta belongs to the actual, so it sits
                       // under it — on its own line, or the block grows too wide to
                       // share a phone's row with Income.
-                      <span className="flex flex-col items-end">
+                      <span className="flex flex-col items-start sm:items-end">
                         <span>{usd(data.expenses, { cents: false })} so far</span>
                         <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />
                       </span>
@@ -645,16 +645,17 @@ function DeltaLine({
     : "";
   return (
     <div
-      className={`mt-1 flex items-center gap-1 text-xs font-medium ${
+      className={`mt-1 flex flex-wrap items-center gap-x-1 text-xs font-medium ${
         favorable ? "text-[var(--good)]" : "text-[var(--bad)]"
       }`}
     >
-      <span>{up ? "▲" : "▼"}</span>
-      <span>
-        {dollars}
+      {/* In a narrow column the line breaks between its two halves, never
+          inside one. */}
+      <span className="whitespace-nowrap">
+        {up ? "▲" : "▼"} {dollars}
         {pct}
       </span>
-      <span className="font-normal text-[var(--muted)]">vs {prevLabel}</span>
+      <span className="whitespace-nowrap font-normal text-[var(--muted)]">vs {prevLabel}</span>
     </div>
   );
 }

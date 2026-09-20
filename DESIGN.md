@@ -173,7 +173,8 @@ horizontal. One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
-in one slot on every page, page actions to its right. Then the summary card
+in one slot on every page, page actions to its right (on a phone the title
+and the picker hold one row and the subtitle sits beneath both). Then the summary card
 (the month). Then the toolbar — search, filters, sort — sitting directly
 above the list it acts on, never in the header and never above the summary.
 Then the list, in one of two patterns: **sections** for a handful of groups
@@ -201,6 +202,8 @@ one anatomy: a **vendor** (or one of its plans), a **category**, and a
 date) and its amount (bank data); its caption carries the category and its
 plan membership; then the note and its verbs (exclude from totals, split).
 "Open vendor" drills up, with Back. A transaction row opens the charge.
+On a phone the shelf is a bottom sheet, and its handle is a promise: the
+sheet's top drags down to close.
 
 **Buttons** — three tiers, named: primary (accent fill, at most one per page),
 secondary (bordered), tertiary (text with an arrow, navigation only). A review

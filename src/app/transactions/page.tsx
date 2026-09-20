@@ -961,7 +961,7 @@ const TxRow = memo(function TxRow({
                           onActivate={() => setActiveCatSelect(t.id)}
                           onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
                           onChange={(id) => setCategory(t.id, id)}
-                          className="sm:hidden"
+                          className="-ml-2 sm:hidden"
                         />
                           {!sameAcct && <span className="whitespace-nowrap">{t.account}</span>}
                           {t.effectiveDate && t.effectiveDate !== t.date && (
@@ -1009,7 +1009,7 @@ const TxRow = memo(function TxRow({
                       onActivate={() => setActiveCatSelect(t.id)}
                       onDeactivate={() => setActiveCatSelect((cur) => (cur === t.id ? null : cur))}
                       onChange={(id) => setCategory(t.id, id)}
-                      className="sm:hidden"
+                      className="-ml-2 sm:hidden"
                     />
                     {headed ? (
                       <>
