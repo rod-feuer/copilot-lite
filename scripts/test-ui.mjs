@@ -381,6 +381,14 @@ async function dashboardAnatomy(browser) {
     record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && oneFrame && Math.abs(income.value - expenses.value - net.value) <= 1, f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
     record("dashboard", "a projected figure carries its actual so far beneath it", !forward[0] || f.figs.every((x) => x.sub.includes("so far")), forward[0] ? f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month");
     record("dashboard", "the figures share a top line, and the bar says what it measures", new Set(f.figs.map((x) => x.top)).size === 1 && / of \$[\d,]+ (budget|income)/.test(f.caption), `tops ${f.figs.map((x) => x.top).join(",")}; "${f.caption}"`);
+    // The budget story is told once, in the summary card. A second copy of it
+    // (a "Budgeted spend" block with its own bar) and a strip under the chart
+    // repeated the same figures up to four times. What only the block said
+    // survives as one line on the card: spending outside budgeted categories,
+    // bridging the bar's figure to the Expenses figure.
+    const once = await page.evaluate(() => { const main = document.querySelector("main").innerText; const cap = document.querySelector("[data-bar-caption]")?.textContent ?? ""; const total = cap.match(/of (\$[\d,]+) budget/)?.[1] ?? null; const n = (t) => Number(t.replace(/[^0-9.]/g, "")); const note = document.querySelector("[data-unbudgeted]")?.textContent ?? ""; const [extra, all] = [...note.matchAll(/\$[\d,]+/g)].map((m) => n(m[0])); const spent = n(cap.match(/^\$[\d,]+/)?.[0] ?? "0"); return { total, totalCount: total ? main.split(`of ${total}`).length - 1 : 0, bars: document.querySelectorAll("[data-summary] [role=progressbar]").length, block: /Budgeted spend/i.test(main), strip: /avg \/ day/i.test(main), note, bridges: note ? Math.abs(spent + extra - all) <= 1 : null }; });
+    record("dashboard", "the budget is stated once: no second budget block, no figure strip under the chart", once.total !== null && once.totalCount === 1 && !once.block && !once.strip, `"of ${once.total}" appears ${once.totalCount}×, block=${once.block}, strip=${once.strip}`);
+    record("dashboard", "spending outside budgeted categories is one line on the card, and it adds up to the Expenses figure", once.bridges === true, once.note || "no note");
     record("dashboard", "uncategorized queue is standard rows below the summary (when present)", !r.hasQueue || (r.rows > 0 && r.summaryFirst), r.hasQueue ? `${r.rows} rows, summary first=${r.summaryFirst}` : "no queue in the fixture");
   });
 }
@@ -446,11 +454,11 @@ async function partialMonthQualifiers(browser) {
         record("qualifiers", `${route} ${month} "${n}"`, present === expect, expect ? (present ? "present" : "MISSING") : (present ? "SHOWN on a past month" : "absent"));
       }
     };
-    await check("/", CUR, ["so far", "% used so far"], true); // "expenses so far", or "expenses, projected" over "$X so far"
+    await check("/", CUR, ["so far", "budget used so far"], true); // "expenses so far", or "expenses, projected" over "$X so far"
     await check("/categories", CUR, ["spent so far of", "left so far"], true);
     await check("/recurrings", CUR, ["paid so far of"], true);
     await check("/transactions", CUR, ["· net", "so far"], true);
-    await check("/", PAST, ["Expenses so far", "% used so far"], false);
+    await check("/", PAST, ["Expenses so far", "budget used so far"], false);
     // A finished month's summary is plain actuals: no forward-looking word in the
     // card. (Scoped to the card: the chart's legend says "Projected" on any month.)
     const pastCard = (await page.evaluate(() => document.querySelector("[data-summary]")?.innerText ?? "")).toLowerCase();
