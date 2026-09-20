@@ -738,6 +738,33 @@ function MembershipPill({
   );
 }
 
+// Spend by calendar year as bars. Shared by the vendor's shelf and the
+// charge's, which shows the same figures as read-only evidence.
+function ByYear({ rows, title }: { rows: { year: string; spent: number }[]; title: string }) {
+  if (rows.length < 2) return null;
+  const max = Math.max(...rows.map((y) => y.spent), 1);
+  return (
+    <div data-by-year>
+      <div className="stat-label mb-2">{title}</div>
+      <div className="flex flex-col gap-2">
+        {rows.map((y) => (
+          <div key={y.year} className="flex items-center gap-2 text-xs">
+            {/* A partial year says so — the honesty rule for figures mid-flight. */}
+            <span className="w-[4.6rem] shrink-0 text-[var(--muted)]">
+              {y.year}
+              {y.year === String(new Date().getUTCFullYear()) ? " so far" : ""}
+            </span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--background)]">
+              <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(y.spent / max) * 100}%` }} />
+            </div>
+            <span className="w-14 shrink-0 text-right tabular-nums">{usd(y.spent, { cents: false })}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChargeHeader({ data, onOpenVendor }: { data: ChargeDetail | null; onOpenVendor: () => void }) {
   if (!data) return <div className="truncate text-[15px] font-semibold">…</div>;
   return (
@@ -941,6 +968,11 @@ function ChargeBody({
           Open vendor →
         </button>
       </div>
+
+      {/* What this vendor costs a year — the question a row most often raises.
+          Evidence only: the vendor's controls stay on the vendor's shelf, where
+          "category" means every charge and not this one. */}
+      <ByYear rows={data.byYear} title="This vendor by year" />
     </div>
   );
 }
@@ -1325,34 +1357,7 @@ function MerchantBody({
         )}
       </div>
 
-      {data.byYear.length > 1 && (
-        <div>
-          <div className="stat-label mb-2">By year</div>
-          <div className="flex flex-col gap-2">
-            {(() => {
-              const max = Math.max(...data.byYear.map((y) => y.spent), 1);
-              return data.byYear.map((y) => (
-                <div key={y.year} className="flex items-center gap-2 text-xs">
-                  {/* A partial year says so — the honesty rule for figures mid-flight. */}
-                  <span className="w-[4.6rem] shrink-0 text-[var(--muted)]">
-                    {y.year}
-                    {y.year === String(new Date().getUTCFullYear()) ? " so far" : ""}
-                  </span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--background)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--accent)]"
-                      style={{ width: `${(y.spent / max) * 100}%` }}
-                    />
-                  </div>
-                  <span className="w-14 shrink-0 text-right tabular-nums">
-                    {usd(y.spent, { cents: false })}
-                  </span>
-                </div>
-              ));
-            })()}
-          </div>
-        </div>
-      )}
+      <ByYear rows={data.byYear} title="By year" />
 
       {/* A divider ranks the corrections a tier below the evidence — things
           you reach for occasionally, not every visit. */}

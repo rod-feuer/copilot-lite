@@ -406,6 +406,21 @@ export function listTransactions(
   }));
 }
 
+// Spend by calendar year, newest first (the current year reads as "so far").
+// One query for the vendor's shelf and the charge's, so the two can't disagree.
+function spendByYear(scope: string, args: (string | number)[]): { year: string; spent: number }[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT substr(COALESCE(effectiveDate, date),1,4) AS year,
+           COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS spent
+         FROM transactions WHERE ${scope} AND excluded = 0
+         GROUP BY year ORDER BY year DESC LIMIT 4`
+      )
+      .all(...args) as { year: string; spent: number }[]
+  ).map((r) => ({ year: r.year, spent: Number(r.spent.toFixed(2)) }));
+}
+
 // One charge, for its shelf: the list row's fields plus its plan — the plan it
 // is linked to, else the vendor's most recently charged plan (the one "In
 // plan" would put it into) — and the plan's display name.
@@ -417,6 +432,9 @@ export type ChargeDetail = TransactionRow & {
   // out): the evidence for the charge's verbs — is this amount the usual one?
   recent: { id: number; date: string; amount: number; excluded: 0 | 1; recurringId: number | null }[];
   vendorCount: number;
+  // What the vendor costs a year: read-only evidence, the same figures as the
+  // vendor's shelf. The vendor's controls stay on the vendor's shelf.
+  byYear: { year: string; spent: number }[];
   // A split rule for this vendor that missed this charge by a price change,
   // with its parts scaled to this amount (see splits.ts).
   splitDrift: SplitDrift | null;
@@ -469,6 +487,7 @@ export function transactionById(id: number): ChargeDetail | null {
     planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
     recent,
     vendorCount,
+    byYear: spendByYear(`merchant IN (${ph})`, variants),
     splitDrift: splitDriftFor(row),
     splitMissed: splitDriftFor(row) != null,
   };
@@ -802,17 +821,7 @@ export function merchantSummary(merchant: string, series?: string | null) {
         .get(...scopeArgs) as { f: string | null }
     ).f ?? null;
 
-  // Spend by calendar year (current year reads as YTD).
-  const byYear = (
-    db
-      .prepare(
-        `SELECT substr(COALESCE(effectiveDate, date),1,4) AS year,
-           COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS spent
-         FROM transactions WHERE ${scope} AND excluded = 0
-         GROUP BY year ORDER BY year DESC LIMIT 4`
-      )
-      .all(...scopeArgs) as { year: string; spent: number }[]
-  ).map((r) => ({ year: r.year, spent: Number(r.spent.toFixed(2)) }));
+  const byYear = spendByYear(scope, scopeArgs);
 
   // Recurring detail (via the linked recurring, even if its name drifted).
   // A vendor whose descriptor changed carries two series (WSJ: "D J*wsj"
