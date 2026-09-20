@@ -692,6 +692,18 @@ async function phoneLayout(browser) {
     const labels = await page.evaluate(() => { const row = [...document.querySelectorAll("[data-drawer-row]")].find((r) => [...r.querySelectorAll("[data-category-property]")].length === 2 && !/Uncategorized/.test(r.innerText)); if (!row) return null; const [a, b] = [...row.querySelectorAll("[data-category-property]")]; const shown = a.offsetParent !== null ? a : b, hidden = shown === a ? b : a; const text = (e) => e.firstElementChild.textContent.trim(); return { phone: text(shown), desktop: text(hidden) }; });
     record("phone layout", "a charge's category line drops the icon its glyph already shows (the desktop column keeps it)", !!labels && /^[\p{L}]/u.test(labels.phone) && labels.desktop.endsWith(labels.phone) && labels.desktop !== labels.phone, labels ? `phone "${labels.phone}", desktop "${labels.desktop}"` : "no categorized row");
     record("phone layout", "a charge's category starts on the vendor name's left edge", t.catDelta !== null && t.catDelta <= 1, t.catDelta === null ? "no category in the row" : `Δ ${t.catDelta}px`);
+    // Categories on a phone: the header's controls are one height, the two
+    // summary figures share a line (a long label wraps under its own figure),
+    // and the sort sits on the section title's line, not in a row of its own.
+    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-summary]");
+    const c = await page.evaluate(() => { const hs = [...document.querySelectorAll("header select, header button")].map((e) => e.getBoundingClientRect().height).filter((h) => h > 0); const figs = document.querySelector("[data-summary]").firstElementChild.children; const [a, b] = [figs[0].getBoundingClientRect(), figs[1].getBoundingClientRect()]; const sort = document.querySelector('select[aria-label="Sort categories"]').getBoundingClientRect(); const title = [...document.querySelectorAll("h3")].find((h) => /expenses/i.test(h.textContent)).getBoundingClientRect(); const mid = (r) => (r.top + r.bottom) / 2; return { heights: [...new Set(hs.map((h) => Math.round(h * 2) / 2))], figTops: Math.abs(Math.round(a.top - b.top)), sortLine: Math.abs(Math.round(mid(sort) - mid(title))), overflow: document.documentElement.scrollWidth - innerWidth }; });
+    record("phone layout", "the Categories header's controls are one height (the primary button was 2px shorter than the picker)", c.heights.length === 1, `heights ${c.heights.join(", ")}px`);
+    record("phone layout", "Categories: spent and left share a line, and the sort sits on the section title's line", c.figTops <= 1 && c.sortLine <= 2 && c.overflow <= 0, `figure tops Δ${c.figTops}px, sort vs title Δ${c.sortLine}px, page overflow ${c.overflow}px`);
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const mh = await page.evaluate(() => [...new Set([...document.querySelectorAll("header select, header button")].map((e) => e.getBoundingClientRect().height).filter((h) => h > 0).map((h) => Math.round(h * 2) / 2))]);
+    record("phone layout", "the ⋯ menu button is as tall as the month picker beside it", mh.length === 1, `heights ${mh.join(", ")}px`);
     // A paid bill that differed shows the difference under its amount on a
     // phone — without making that row taller than its neighbours.
     await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
