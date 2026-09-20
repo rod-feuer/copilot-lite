@@ -721,7 +721,7 @@ async function iosAutofillTag(browser) {
     // Tag each field the moment the parser adds it, before React starts.
     await page.evaluateOnNewDocument(() => {
       let n = 0;
-      const sel = "input, select, textarea";
+      const sel = "form, form button, input, select, textarea"; // forms and fields were seen tagged on the phone; a form's own button is the likely next
       new MutationObserver((recs) => { for (const r of recs) for (const el of r.addedNodes) if (el.nodeType === 1) for (const e of [el, ...el.querySelectorAll(sel)]) if (e.matches(sel) && !e.hasAttribute("__gcruniqueid")) e.setAttribute("__gcruniqueid", String(++n)); }).observe(document, { childList: true, subtree: true });
     });
     let tagged = 0;
