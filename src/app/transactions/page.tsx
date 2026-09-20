@@ -999,8 +999,10 @@ const TxRow = memo(function TxRow({
                   <div className="flex flex-wrap items-center gap-x-2 text-xs leading-4 text-[var(--muted)]">
                     {/* Mobile: the category as a compact chip inline in the
                         subtitle (denser than a full-width pill row). Desktop uses
-                        the right-side pill above. */}
+                        the right-side pill above. Name only: the row's glyph is
+                        this category's icon, a few pixels to the left. */}
                     <CategoryProperty
+                      hideIcon
                       categoryId={t.categoryId}
                       categoryName={t.categoryName}
                       categoryIcon={t.categoryIcon}

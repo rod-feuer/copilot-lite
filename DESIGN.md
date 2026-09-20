@@ -169,7 +169,8 @@ accent and the accent is never semantic. Category colours are data, not chrome.
 
 **Space and shape** — spacing steps 4 · 8 · 12 · 16 · 24 · 32 (Tailwind 1 2 3
 4 6 8). Card padding 16; the summary card 24. Rows 8 vertical × 16
-horizontal. One radius for cards and controls (8px, `rounded-lg`); `full` for
+horizontal (12 vertical for a one-line row on a phone: a 44px touch target,
+and room for a difference under the amount). One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
 **Page anatomy** — header: title, optional one-line subtitle, the month picker

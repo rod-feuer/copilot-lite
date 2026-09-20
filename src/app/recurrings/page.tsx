@@ -568,7 +568,7 @@ function BillList({
               data-bill-status={st}
               data-due={r.dueDate}
               {...(onOpen ? rowButtonProps(() => onOpen(r.vendor, isSeriesKey(r.merchant) ? r.merchant : undefined)) : {})}
-              className={`group flex items-center gap-3 px-4 py-2 text-[13px] ${ROW_FOCUS} ${
+              className={`group flex items-center gap-3 px-4 py-3 text-[13px] sm:py-2 ${ROW_FOCUS} ${
                 dim ? "opacity-60" : ""
               } ${
                 onOpen
