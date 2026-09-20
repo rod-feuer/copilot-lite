@@ -168,6 +168,7 @@ export default function DashboardPage() {
             // projected spend it was built from appeared only under the chart.
             const projecting = data.projectedNet != null && data.projectedIncome != null && data.pace.projectedMonthEnd != null;
             const net = projecting ? (data.projectedNet as number) : data.net;
+            const unbudgeted = b ? Math.max(0, Number((data.expenses - b.spent).toFixed(2))) : 0;
             const progress = b && b.total > 0 ? b.spent / b.total : data.income > 0 ? data.expenses / data.income : 0;
             const barLabel =
               b && b.total > 0
@@ -209,13 +210,10 @@ export default function DashboardPage() {
                     label: projecting ? "expenses, projected" : current ? "expenses so far" : "expenses",
                     href: `/transactions?month=${month}&type=expense`,
                     sub: projecting ? (
-                      // The like-for-like delta belongs to the actual, so it sits
-                      // under it — on its own line, or the block grows too wide to
-                      // share a phone's row with Income.
-                      <span className="flex flex-col items-start sm:items-end">
-                        <span>{usd(data.expenses, { cents: false })} so far</span>
-                        <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />
-                      </span>
+                      // One comparison while the month runs, and it is the chart's
+                      // (projected vs last month). A second one here, so far vs the
+                      // same days, gave a different number an inch away.
+                      <span>{usd(data.expenses, { cents: false })} so far</span>
                     ) : (
                       <DeltaLine cur={data.expenses} prev={data.prev?.expenses} prevLabel={prevLabel} higherIsGood={false} />
                     ),
@@ -231,6 +229,17 @@ export default function DashboardPage() {
                     : `${usd(data.expenses, { cents: false })} of ${usd(data.income, { cents: false })} income spent${current ? " so far" : ""}`
                 }
                 alarm={!!b && b.total > 0 && b.spent > b.total}
+                // The bar counts budgeted categories only. When spending outside
+                // them is material (2% of spend, or $250), one line bridges the
+                // bar's figure to the Expenses figure above it.
+                note={
+                  b && b.total > 0 && unbudgeted > 0 && (unbudgeted >= 250 || unbudgeted / data.expenses >= 0.02) ? (
+                    <span data-unbudgeted>
+                      + {usd(unbudgeted, { cents: false })} in categories without a budget = {usd(data.expenses, { cents: false })} spent
+                      {current ? " so far" : ""}
+                    </span>
+                  ) : undefined
+                }
                 status={
                   <span
                     className={`flex items-center gap-2 text-[13px] font-medium ${
@@ -260,11 +269,11 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
             <div className="card flex flex-col p-4 lg:col-span-3">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <h3 className="text-[15px] font-semibold">Spending this month</h3>
-                {/* The projected figure lives once, in the footer strip below; the
-                    header carries the trend the chart implies but never states — how
-                    this month's projection compares to last month's full total. */}
+                {/* The projected figure lives once, in the summary card; the header
+                    carries the trend the chart implies but never states — how this
+                    month's projection compares to last month's full total. */}
                 {data.pace.projectedMonthEnd != null && data.prev != null && (
                   <PaceDelta
                     projected={data.pace.projectedMonthEnd}
@@ -353,7 +362,6 @@ export default function DashboardPage() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-              <PaceStrip pace={data.pace} spent={data.expenses} />
             </div>
 
             <div className="card p-4 lg:col-span-2">
@@ -361,13 +369,6 @@ export default function DashboardPage() {
                 <h3 className="text-[15px] font-semibold">Spending by category</h3>
                 <SeeAll href="/categories" />
               </div>
-              {data.budget && (
-                <BudgetSummary
-                  budget={data.budget}
-                  totalExpenses={data.expenses}
-                  partial={isCurrentMonth(month)}
-                />
-              )}
               <CategoryBars rows={data.byCategory} month={month} />
             </div>
           </div>
@@ -503,33 +504,6 @@ function ChartLegend({
 
 // Pace metrics under the chart — fills the height the category card forces on this
 // card with useful context (and gives the chart card a reason to be this tall).
-function PaceStrip({ pace, spent }: { pace: Dash["pace"]; spent: number }) {
-  const daysLeft = Math.max(pace.daysInMonth - pace.daysElapsed, 0);
-  const avgDay = pace.daysElapsed > 0 ? spent / pace.daysElapsed : 0;
-  const inProgress = pace.projectedMonthEnd != null;
-  const items: { label: string; value: string }[] = [
-    { label: inProgress ? "Spent so far" : "Total spent", value: usd(spent, { cents: false }) },
-    { label: "Avg / day", value: usd(avgDay, { cents: false }) },
-  ];
-  if (inProgress) {
-    items.push({ label: daysLeft === 1 ? "Day left" : "Days left", value: String(daysLeft) });
-    items.push({
-      label: "Projected",
-      value: usd(pace.projectedMonthEnd as number, { cents: false }),
-    });
-  }
-  return (
-    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 sm:grid-cols-4">
-      {items.map((it) => (
-        <div key={it.label}>
-          <div className="text-[13px] font-semibold tabular-nums">{it.value}</div>
-          <div className="stat-label">{it.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // Persistent-but-faint affordance marking a row/card as drillable. Visible at
 // rest (so the interaction is discoverable, not hover-only) and strengthens +
 // nudges right on hover. Parent must carry `group`.
@@ -578,7 +552,7 @@ function buildVerdict(
         tone: "neutral",
         text: `${m(b.spent)} of your ${m(b.total)} budget used — too early to project the month`,
       };
-    // budgetOutlook is shared with BudgetSummary, so the headline and the
+    // budgetOutlook is the one rule for over / under / on budget, so the headline and the
     // budget block can never disagree — including about what counts as "on".
     const o = budgetOutlook(b.total, b.projected, isCurrentMonth);
     const verb = isCurrentMonth ? "On pace to finish" : "Finished";
@@ -663,7 +637,7 @@ function DeltaLine({
 // Header delta for the pace chart: projected month-end vs last month's full
 // total (the gray curve's endpoint = the max of its cumulative series). States
 // the trend the chart shows visually, instead of repeating the projected dollar
-// figure that already appears in the footer strip. Mirrors DeltaLine's idiom
+// figure that already appears in the summary card. Mirrors DeltaLine's idiom
 // (▲/▼ · dollars · "vs <month>") for consistency; spending less is favorable.
 function PaceDelta({
   projected,
@@ -687,6 +661,9 @@ function PaceDelta({
         under ? "text-[var(--good)]" : "text-[var(--bad)]"
       }`}
     >
+      {/* Says which two things it compares: the dashed line's end and last
+          month's total. */}
+      <span className="font-normal text-[var(--muted)]">projected</span>
       <span>{under ? "▼" : "▲"}</span>
       <span className="tabular-nums">{usd(Math.abs(delta), { cents: false })}</span>
       <span className="font-normal text-[var(--muted)]">vs {label}</span>
@@ -943,76 +920,3 @@ function CategoryBars({
     </div>
   );
 }
-
-// Overall budget status (Phase C): spend vs. the sum of budgeted categories,
-// plus a run-rate projection to month-end and whether it lands over/under.
-function BudgetSummary({
-  budget,
-  totalExpenses,
-  partial,
-}: {
-  budget: { total: number; spent: number; projected: number | null };
-  totalExpenses: number;
-  partial: boolean; // the month on screen is still in progress
-}) {
-  const pct = budget.total > 0 ? Math.round((budget.spent / budget.total) * 100) : 0;
-  const overNow = budget.spent > budget.total;
-  const outlook = budget.projected != null ? budgetOutlook(budget.total, budget.projected, partial) : null;
-  // Spend in categories that have no budget — reconciles this card's "budgeted"
-  // figure with the all-expenses total shown in the Expenses stat / pace chart.
-  const unbudgeted = Math.max(0, Number((totalExpenses - budget.spent).toFixed(2)));
-  // Only worth the reconciliation line when the unbudgeted slice is material — a
-  // big enough share (≥2% of spend) or a big enough amount (≥$250). A trivial
-  // sliver (e.g. $10 on $20k) is noise, not a caveat worth a line of arithmetic.
-  const unbudgetedMatters =
-    unbudgeted >= 250 || (totalExpenses > 0 && unbudgeted / totalExpenses >= 0.02);
-  return (
-    <div className="mb-4 rounded-lg bg-[var(--background)] p-3">
-      <div className="flex items-center justify-between text-[13px]">
-        <span className="font-medium">Budgeted spend</span>
-        <span>
-          <span className={overNow ? "font-semibold text-[var(--bad)]" : "font-semibold"}>
-            {usd(budget.spent, { cents: false })}
-          </span>
-          <span className="text-[var(--muted)]"> of {usd(budget.total, { cents: false })}</span>
-        </span>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--border)]">
-        <div
-          className="h-full rounded-full"
-          style={{
-            width: `${Math.min(pct, 100)}%`,
-            background: overNow ? "#e11d48" : "var(--accent)",
-          }}
-        />
-      </div>
-      <div className="mt-2 text-xs text-[var(--muted)]">
-        {pct}% used{partial ? " so far" : ""}
-        {budget.projected != null && outlook != null ? (
-          <>
-            {" · "}projected {usd(budget.projected, { cents: false })}{" "}
-            {outlook.kind === "on" ? (
-              <span data-budget-outlook="on">(on budget)</span>
-            ) : (
-              <span data-budget-outlook={outlook.kind} className={outlook.kind === "over" ? "text-[var(--bad)]" : "text-[var(--good)]"}>
-                ({outlook.kind} by {usd(Math.abs(outlook.delta), { cents: false })})
-              </span>
-            )}
-          </>
-        ) : (
-          " · too early to project"
-        )}
-      </div>
-      {unbudgetedMatters && (
-        <div className="mt-1 text-xs text-[var(--muted)]">
-          + {usd(unbudgeted, { cents: false })} in categories without a budget ={" "}
-          <span className="font-medium text-[var(--foreground)]">
-            {usd(totalExpenses, { cents: false })}
-          </span>{" "}
-          spent
-        </div>
-      )}
-    </div>
-  );
-}
-
