@@ -18,7 +18,11 @@ export function SearchBox({
     // Width lives on the wrapper (so `w-full sm:w-60` actually sizes the box); the
     // input fills it. Default keeps the old fixed width for any caller.
     <div className={`relative ${className}`}>
+      {/* Chrome on iOS tags form fields for autofill (__gcruniqueid) before React
+          starts; without this React reports the extra attribute as a hydration
+          error on every page that server-renders a field. */}
       <input
+        suppressHydrationWarning
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
