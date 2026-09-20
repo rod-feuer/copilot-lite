@@ -67,6 +67,7 @@ export function CategoryProperty({
   ariaLabel = "Category",
   className = "",
   likely,
+  hideIcon = false,
 }: {
   categoryId: number | null;
   categoryName: string | null;
@@ -81,9 +82,10 @@ export function CategoryProperty({
   ariaLabel?: string;
   className?: string;
   likely?: number[]; // a model's most probable categories, to lead the list
+  hideIcon?: boolean; // the row's glyph already shows this icon right beside it
 }) {
   const set = categoryId != null;
-  const label = set ? `${categoryIcon ?? ""} ${categoryName ?? ""}`.trim() : "Uncategorized";
+  const label = set ? `${hideIcon ? "" : (categoryIcon ?? "")} ${categoryName ?? ""}`.trim() : "Uncategorized";
   return (
     <span
       data-category-property
