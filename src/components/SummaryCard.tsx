@@ -15,7 +15,7 @@ export type Figure = {
   tone?: "good" | "bad";
   alarm?: boolean; // = tone "bad"
 };
-function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" }) {
+function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" | "pair" }) {
   const colour =
     f.alarm || f.tone === "bad" ? "text-[var(--bad)]" : f.tone === "good" ? "text-[var(--good)]" : "";
   const inner = (
@@ -25,7 +25,7 @@ function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" }) {
       {f.sub && <div className="text-xs text-[var(--muted)]">{f.sub}</div>}
     </>
   );
-  const cls = align === "right" ? "text-right" : "";
+  const cls = align === "right" ? "text-right" : align === "pair" ? "sm:text-right" : "";
   return f.href ? (
     <Link href={f.href} className={`${cls} block rounded-lg hover:underline`}>
       {inner}
@@ -63,12 +63,23 @@ export function SummaryCard({
           different lines. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <Fig f={primary} />
-        {secondary && (
-          <div className="flex flex-wrap items-start justify-end gap-6">
-            {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
-              <Fig key={i} f={f} align="right" />
+        {/* Two counter-figures don't fit beside the primary on a phone: they
+            wrapped one under the other, right-aligned, a staircase. There they
+            sit as a pair of columns on the primary's left edge instead. */}
+        {Array.isArray(secondary) && secondary.length > 1 ? (
+          <div data-figure-pair className="grid w-full grid-cols-2 items-start gap-4 sm:flex sm:w-auto sm:flex-wrap sm:justify-end sm:gap-6">
+            {secondary.map((f, i) => (
+              <Fig key={i} f={f} align="pair" />
             ))}
           </div>
+        ) : (
+          secondary && (
+            <div className="flex flex-wrap items-start justify-end gap-6">
+              {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
+                <Fig key={i} f={f} align="right" />
+              ))}
+            </div>
+          )
         )}
       </div>
       {barCaption && (

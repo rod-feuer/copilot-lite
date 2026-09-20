@@ -30,6 +30,9 @@ const nextConfig: NextConfig = {
   // then reported as "1 issue" in the app. Build and runtime errors still
   // surface without it (per the Next docs).
   devIndicators: false,
+  // The browser suite builds into its own folder, so it can run while the dev
+  // server is up (two `next dev` can't share one: the folder is locked).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
 };
 
 export default nextConfig;

@@ -165,10 +165,11 @@ export function AmountCell({
     // An amount never wraps: the line-breaker treats the minus and the dollar
     // sign as two prefixes and may break between them ("−" / "$12,748.12").
     // On a phone the difference sits under the amount (the column is 96px
-    // there); from sm up, beside it.
-    <span data-amount-state={state} className={`inline-flex flex-col-reverse items-end whitespace-nowrap tabular-nums sm:flex-row sm:items-baseline sm:justify-end ${tone} ${className}`}>
+    // there); from sm up, beside it. Stacked, the pair is set tight and gives
+    // back its extra height, so a row with a difference is as tall as any other.
+    <span data-amount-state={state} className={`inline-flex flex-col-reverse items-end whitespace-nowrap tabular-nums sm:flex-row sm:items-baseline sm:justify-end ${delta != null ? "max-sm:-my-2 max-sm:leading-4" : ""} ${tone} ${className}`}>
       {delta != null && (
-        <span className="text-[11px] font-medium text-[var(--muted)] sm:mr-2">
+        <span className="text-[11px] font-medium text-[var(--muted)] max-sm:leading-3 sm:mr-2">
           {delta > 0 ? "+" : "−"}
           {usd(Math.abs(delta))}
         </span>
