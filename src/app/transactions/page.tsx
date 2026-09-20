@@ -649,6 +649,7 @@ export default function TransactionsPage() {
         )}
 
         <select
+          suppressHydrationWarning // iOS Chrome's autofill tag; see SearchBox
           value={`${sort}-${dir}`}
           onChange={(e) => {
             const [s, d] = e.target.value.split("-");

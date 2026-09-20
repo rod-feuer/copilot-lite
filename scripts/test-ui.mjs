@@ -709,6 +709,27 @@ async function openVendorFromCharge(browser) {
   });
 }
 
+// Chrome on iOS tags every form field with an attribute of its own
+// (__gcruniqueid) for autofill, before React starts. React then finds an
+// attribute the server never sent and reports a hydration error on every page
+// that server-renders a field — a red "1 Issue" pill over the phone's nav in
+// dev. No iOS here, so the fields are tagged the same way as they are parsed.
+async function iosAutofillTag(browser) {
+  await withPage(browser, async (page) => {
+    const seen = [];
+    page.on("console", (m) => { if (/hydrat/i.test(m.text())) seen.push(m.text().split("\n")[0].slice(0, 80)); });
+    // Tag each field the moment the parser adds it, before React starts.
+    await page.evaluateOnNewDocument(() => {
+      let n = 0;
+      const sel = "input, select, textarea";
+      new MutationObserver((recs) => { for (const r of recs) for (const el of r.addedNodes) if (el.nodeType === 1) for (const e of [el, ...el.querySelectorAll(sel)]) if (e.matches(sel) && !e.hasAttribute("__gcruniqueid")) e.setAttribute("__gcruniqueid", String(++n)); }).observe(document, { childList: true, subtree: true });
+    });
+    let tagged = 0;
+    for (const path of ["/transactions", "/", "/login"]) { await page.goto(BASE + path, { waitUntil: "networkidle2" }); await sleep(600); tagged += await page.evaluate(() => document.querySelectorAll("[__gcruniqueid]").length); }
+    record("ios autofill tag", "a browser's own attribute on a server-rendered field is not a hydration error", tagged >= 3 && seen.length === 0, `${tagged} fields tagged across 3 pages; ${seen.length ? seen[0] : "no hydration error"}`);
+  });
+}
+
 // A phone is a narrow column, not a small desktop: what shares a row there is
 // chosen, not whatever wrapping leaves behind.
 async function phoneLayout(browser) {
@@ -1304,7 +1325,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

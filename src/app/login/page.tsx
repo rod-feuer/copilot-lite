@@ -24,8 +24,9 @@ export default async function LoginPage({
           <div className="text-[15px] font-semibold tracking-tight">Copilot Lite</div>
         </div>
         <p className="mb-4 text-[13px] text-[var(--muted)]">Enter your password to continue.</p>
-        <input type="hidden" name="from" value={from} />
+        <input suppressHydrationWarning type="hidden" name="from" value={from} />
         <input
+          suppressHydrationWarning // iOS Chrome's autofill tag; see SearchBox
           type="password"
           name="password"
           autoFocus

@@ -64,6 +64,7 @@ export function ImportButton({ onDone }: { onDone: () => void }) {
   return (
     <>
       <input
+        suppressHydrationWarning // iOS Chrome's autofill tag; see SearchBox
         ref={ref}
         type="file"
         accept=".csv,text/csv"
