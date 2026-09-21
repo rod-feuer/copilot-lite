@@ -412,3 +412,28 @@ test("the email escapes vendor names, and its subject is the headline", () => {
   assert.ok(!/<script>/.test(html));
   assert.equal(subjectOf(built), "Daybook: On pace to finish September $10 under budget");
 });
+
+// WHY: eighteen due bills, most of them $20 subscriptions, bury the three that
+// matter. The small ones fold into one line — but the total in the title still
+// counts every bill, or the email would understate what is leaving the account.
+test("a long list of due bills folds the small ones into one line, and the total still counts them all", () => {
+  if (Number(daysAgo(-1).slice(8, 10)) > 22) return; // the fixture's due days must exist in every month and stay in order
+  const cat = addCat("Bills");
+  const bills: [string, number, number][] = [["Loan Co", 1351, 1], ["Sub A", 20, 2], ["Sub B", 15, 2], ["Coffee Co", 89, 3], ["Sub C", 27, 4], ["Watch Co", 600, 5], ["Sub D", 19, 5], ["Sub E", 5, 6]];
+  for (const [name, amount, days] of bills) for (const back of [3, 2, 1]) tx(name, { amount: -amount, date: monthsBefore(daysAgo(-days), back), categoryId: cat });
+  detectRecurrings();
+  const due = titled(weeklyDigest(), /^Due in the next 7 days/)!;
+  assert.equal(due.title, "Due in the next 7 days: $2,126 expected", "every bill, folded or not");
+  assert.deepEqual(due.lines.map((l) => l.replace(/^[A-Z][a-z]{2} \d+ /, "")), ["Loan Co $1,351", "Coffee Co $89", "Watch Co $600", "All other (5) $86"]);
+  const amounts = due.lines.map((l) => Number(l.match(/\$([\d,]+)$/)![1].replace(/,/g, "")));
+  assert.equal(amounts.reduce((a, b) => a + b, 0), 2126, "the lines add up to the title, to the dollar");
+});
+
+test("a short list of due bills is shown whole, small ones included", () => {
+  if (Number(daysAgo(-1).slice(8, 10)) > 25) return;
+  const cat = addCat("Bills");
+  for (const [name, amount, days] of [["Loan Co", 1351, 1], ["Sub A", 20, 2], ["Sub B", 15, 3]] as const)
+    for (const back of [3, 2, 1]) tx(name, { amount: -amount, date: monthsBefore(daysAgo(-days), back), categoryId: cat });
+  detectRecurrings();
+  assert.equal(titled(weeklyDigest(), /^Due in the next 7 days/)!.lines.length, 3);
+});
