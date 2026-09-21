@@ -17,3 +17,10 @@ export function budgetOutlook(total: number, projected: number, isForecast: bool
   if (Math.abs(delta) <= slack) return { kind: "on", delta };
   return { kind: delta > 0 ? "over" : "under", delta };
 }
+
+// Whether a category is over its budget. An annual budget is judged on the
+// calendar year so far, a monthly one on the month — so a category with an
+// annual budget is not "over" for one heavy month.
+type Budgeted = { budget: number | null; budgetPeriod: "monthly" | "annual"; ytdSpent: number; total: number };
+export const budgetSpent = (c: Budgeted) => (c.budgetPeriod === "annual" ? c.ytdSpent : c.total);
+export const isOverBudget = (c: Budgeted) => c.budget != null && budgetSpent(c) > c.budget;

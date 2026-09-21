@@ -20,6 +20,7 @@ import { getJson, postJson } from "@/lib/http";
 import { CADENCE_DAYS, CADENCE_LABEL } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
+import { billStatus, billDelta } from "@/lib/bills";
 import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
 import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
 import type { Category } from "@/lib/types";
@@ -214,8 +215,8 @@ export default function RecurringsPage() {
   const totalBills = paidSoFar + leftToPay;
   // The status line under the summary bar: overdue in red when there are any.
   const todayIso = new Date().toISOString().slice(0, 10);
-  const overdueCount = bills.filter((r) => !r.paid && r.dueDate < todayIso).length;
-  const upcomingCount = bills.filter((r) => !r.paid && r.dueDate >= todayIso).length;
+  const overdueCount = bills.filter((r) => billStatus(r, todayIso) === "od").length;
+  const upcomingCount = bills.filter((r) => billStatus(r, todayIso) === "up").length;
   const paidCount = bills.filter((r) => r.paid).length;
 
   // Stale recurrings that didn't charge this month — tucked away.
@@ -535,7 +536,7 @@ function BillList({
   // "Today" divider splits what has happened from what is ahead; an unpaid
   // bill above it is overdue and wears amber. A past month has no today.
   const today = new Date().toISOString().slice(0, 10);
-  const status = (r: Rec): "pd" | "od" | "up" => (r.paid ? "pd" : r.dueDate < today ? "od" : "up");
+  const status = (r: Rec) => billStatus(r, today);
   const dividerAt = dim || pastMonth ? -1 : recs.findIndex((r) => r.dueDate >= today);
   const showDivider = dividerAt > 0; // something behind it and something ahead
   return (
@@ -653,10 +654,7 @@ function BillList({
                   row opens on click, tap, or Enter. */}
               {(() => {
                 const state = r.paid ? "settled" : st === "od" ? "overdue" : "provisional";
-                const delta =
-                  r.paid && r.paidAmount != null && Math.abs(r.paidAmount - r.expectedAmount) >= 0.5
-                    ? r.paidAmount - r.expectedAmount
-                    : null;
+                const delta = billDelta(r);
                 return (
                   <AmountCell
                     value={amount}
