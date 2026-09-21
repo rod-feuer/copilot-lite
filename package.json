@@ -10,6 +10,8 @@
     "lint:design": "node scripts/lint-design.mjs",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "digest": "node --env-file-if-exists=.env.local --import tsx scripts/digest.ts",
+    "digest:install": "node --env-file-if-exists=.env.local --import tsx scripts/digest-install.ts",
+    "digest:uninstall": "node --import tsx scripts/digest-install.ts --uninstall",
     "smoke": "node --env-file-if-exists=.env.local scripts/smoke.mjs",
     "test:clock": "node scripts/test-clock.mjs",
     "test:ui": "node scripts/test-ui.mjs"
