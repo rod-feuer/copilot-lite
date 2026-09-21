@@ -1975,6 +1975,38 @@ test("transactionById.byYear is the vendor's by-year spend: linked names in, exc
   assert.deepEqual(charge.byYear, merchantSummary("Gym Co")!.byYear, "the charge's shelf and the vendor's agree");
 });
 
+// WHY: a month's "paid" is what the bill cost. A plan claims every charge from
+// its vendor, so a $20 subscription and a separate $200 purchase from the same
+// vendor read as a $220 bill, "$200 more than expected", on the Recurrings page
+// and in the digest. A plan that charges once a month is paid by ONE charge: the
+// one nearest what it expects. A weekly plan really is paid several times.
+test("recurringsForMonth: a once-a-month plan is paid by the charge nearest its expected amount, a weekly plan by the sum", () => {
+  const at = (back: number, day: number) => {
+    const d = new Date();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, day)).toISOString().slice(0, 10);
+  };
+  for (const back of [3, 2, 1, 0]) tx("Ai Lab", { amount: -20, date: at(back, 3), categoryId: CAT });
+  for (const day of [1, 8, 15, 22]) for (const back of [1, 0]) tx("Lawn Crew", { amount: -60, date: at(back, day), categoryId: CAT });
+  for (const back of [3, 2, 1, 0]) tx("Car Loan", { amount: -818.4, date: at(back, 1), categoryId: CAT });
+  detectRecurrings();
+  // A one-off purchase from the same vendor, the same month. The plan claims
+  // every charge on its vendor's name, whether or not the detector linked it.
+  tx("Ai Lab", { amount: -200, date: at(0, 2), categoryId: CAT });
+  tx("Ai Lab", { amount: -18.99, date: at(0, 9), categoryId: CAT }); // a second, similar subscription: a different bill, not a duplicate
+  // And a bill that really was charged twice this month (the 1st and the 28th).
+  tx("Car Loan", { amount: -818.4, date: at(0, 28), categoryId: CAT });
+  const rows = recurringsForMonth(at(0, 1).slice(0, 7));
+  const lab = rows.find((r) => r.merchant === "Ai Lab")!;
+  const lawn = rows.find((r) => r.merchant === "Lawn Crew")!;
+  assert.equal(lab.cadence, "monthly");
+  assert.equal(lab.paidAmount, 20, "the subscription, not the subscription plus the purchase");
+  assert.equal(lab.paidTimes, 1, "neither the purchase nor a similar $18.99 subscription is a second copy of the $20 bill");
+  const loan = rows.find((r) => r.merchant === "Car Loan")!;
+  assert.deepEqual([loan.paidAmount, loan.paidTimes], [818.4, 2], "one bill's amount, and the fact that it was charged twice");
+  assert.equal(lawn.cadence, "weekly");
+  assert.equal(lawn.paidAmount, 240, "four weekly visits are four payments");
+});
+
 // WHY: Plaid must begin the day after the imported back-history ends, or it
 // re-delivers charges the import already holds under a different key (double
 // counting). Plaid's own rows — and the parts of a split Plaid charge, which

@@ -1058,6 +1058,7 @@ export type RecurringForMonth = Recurring & {
   expectedThisMonth: boolean;
   paid: boolean;
   paidAmount: number | null;
+  paidTimes: number; // how many of this month's charges were the bill itself (2 = charged twice)
   dueDate: string;
   matchRule: MatchRule | null;
   linkedMerchants: string[]; // descriptor aliases folded into this recurring
@@ -1136,6 +1137,9 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   const consumed = new Set<number>();
   const actual = new Array(recs.length).fill(0);
   const matched = new Array(recs.length).fill(false);
+  // Every charge a plan claimed this month. A plan that charges once a month or
+  // less is paid by ONE of them (see below), not by their sum.
+  const claimed: number[][] = recs.map(() => []);
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
   const canon = (m: string) => canonicalMerchant(m, links);
@@ -1177,6 +1181,7 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       if (!amtOk) return;
       consumed.add(i);
       actual[ri] += Math.abs(t.amount);
+      claimed[ri].push(Math.abs(t.amount));
       matched[ri] = true;
     });
   });
@@ -1198,9 +1203,29 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       if (ours && (expense ? t.amount < 0 : t.amount > 0)) {
         consumed.add(i);
         actual[ri] += Math.abs(t.amount);
+        claimed[ri].push(Math.abs(t.amount));
         matched[ri] = true;
       }
     });
+  });
+  // A weekly or biweekly plan is paid several times a month, so its month is the
+  // sum. Any slower plan is paid once: of the charges it claimed, the bill is the
+  // one nearest its expected amount. Summed, a $20 subscription and a separate
+  // $200 purchase from the same vendor read as a $220 bill, "$200 more than
+  // expected"; and a bill that posted on the 1st and the 31st read as doubled.
+  // How many of the claimed charges were the bill itself: the paid one and any
+  // other for the same amount (to 1%, or 50 cents). 2 means it was charged twice
+  // this month — a duplicate, or next month's payment going out on the 31st —
+  // which the single paid amount would otherwise hide. The same amount, not a
+  // similar one: a $9.99 and a $10.69 subscription from one vendor are two bills.
+  const paidTimes = new Array(recs.length).fill(0);
+  recs.forEach((r, ri) => {
+    const once = r.cadence !== "weekly" && r.cadence !== "biweekly";
+    if (!once || claimed[ri].length < 2) return void (paidTimes[ri] = claimed[ri].length);
+    const expected = settings[r.merchant]?.expectedAmount ?? Math.abs(r.avgAmount);
+    const bill = claimed[ri].reduce((best, a) => (Math.abs(a - expected) < Math.abs(best - expected) ? a : best));
+    actual[ri] = bill;
+    paidTimes[ri] = claimed[ri].filter((a) => Math.abs(a - bill) <= Math.max(0.5, 0.01 * bill)).length;
   });
   // Pass 2 — the bank relabeled the bill: a charge on the same vendor key (the
   // shelf's rollup: first two words, processor prefixes stripped) within 5% of
@@ -1253,6 +1278,7 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       expectedThisMonth: expectedInMonth(r.cadence, Number(dayBasis.slice(5, 7)), mm),
       paid: actual[ri] > 0.005,
       paidAmount: actual[ri] > 0.005 ? Number(actual[ri].toFixed(2)) : null,
+      paidTimes: paidTimes[ri],
       dueDate: `${month}-${String(day).padStart(2, "0")}`,
       matchRule: matchRuleFor(r.merchant),
       vendor: seriesVendor(r.merchant),
