@@ -336,7 +336,10 @@ test("the weekly says how the projection moved only against an earlier weekly in
 
   const now = weeklyDigest().value as number;
   put(`weekly:${thisMonth()}-01`, now + 1900);
-  assert.match(weeklyDigest().lede![0], /^Projected spending is down \$1,900 since [A-Z][a-z]{2} 1\.$/);
+  // On the 1st that row is today's own: a weekly never measures itself, and
+  // there can be no earlier one this month.
+  if (daysAgo(0).endsWith("-01")) assert.deepEqual(weeklyDigest().lede, []);
+  else assert.match(weeklyDigest().lede![0], /^Projected spending is down \$1,900 since [A-Z][a-z]{2} 1\.$/);
 });
 
 // WHY: "went over this week" must mean this week did it. An annual budget is
