@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getDb } from "./db";
-import { categorizeByRules, categorizeByHistory } from "./core";
+import { categorizeByRules, categorizeByHistory, detectRecurrings } from "./core";
+import { applySplitRules } from "./splits";
 import { normalizeMerchant } from "./merchant";
 import { nameAffinity, NAME_MATCH } from "./merges";
 
@@ -226,6 +227,28 @@ export function importPlaidTransactions(items: PlaidItem[]): {
       drop.run(was.hash);
     }
   });
-  tx(items);
+  // Immediate: this transaction reads (is the posted twin here?) before it
+  // writes. Deferred, a commit from another process in between fails it at once
+  // with SQLITE_BUSY_SNAPSHOT, which no busy timeout retries.
+  tx.immediate(items);
   return { inserted, updated, reconciled };
+}
+
+// A whole sync, callable from anywhere (the route, the digest job): pull from
+// the bank since the last imported day, import, apply the split rules, and
+// rebuild the plans when anything changed.
+export async function syncFromBank(): Promise<{ inserted: number; updated: number; reconciled: number; split: number; total: number }> {
+  const end = new Date().toISOString().slice(0, 10);
+  // Start after existing history so Plaid doesn't duplicate the back-import.
+  // Clamp to `end` in case prior data is future-dated (nothing to pull then).
+  const startDate = plaidSyncStartDate();
+  const start = startDate > end ? end : startDate;
+
+  const items = await fetchPlaidTransactions(start, end);
+  const result = importPlaidTransactions(items);
+  const split = applySplitRules();
+  if (result.inserted > 0 || result.updated > 0) detectRecurrings();
+
+  const total = items.reduce((a, i) => a + i.transactions.length, 0);
+  return { ...result, split, total };
 }

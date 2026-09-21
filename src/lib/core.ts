@@ -557,7 +557,15 @@ function concurrentParts<T extends { date: string; amount: number }>(parts: DayP
   return covered >= 0.8 * total ? overlapping : null;
 }
 
+// The rebuild clears every plan and writes them again. As separate commits, a
+// reader in another process (the digest job beside the dev server) could see
+// zero plans mid-rebuild, and two rebuilds could interleave into duplicates. One
+// immediate transaction: readers see the old plans or the new ones, never none.
 export function detectRecurrings(): Recurring[] {
+  return getDb().transaction(rebuildRecurrings).immediate();
+}
+
+function rebuildRecurrings(): Recurring[] {
   const db = getDb();
   // Same calendar and same rows as every reader of the result: a charge lives in
   // its effective month (the user's overlay), and an excluded charge — a
