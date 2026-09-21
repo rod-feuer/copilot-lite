@@ -79,6 +79,11 @@ npm run digest -- daily   # send today's digest (what changed, what needs you) a
                     # iMessage, only if there is something new; `weekly` emails the
                     # Sunday summary. Add --dry-run to print instead of sending, and
                     # --no-sync to skip the bank sync. Runs without the dev server.
+npm run digest:install    # schedule both on this Mac (macOS LaunchAgents): the daily at
+                    # 7:30am, the weekly on Sundays at 6pm, logging to data/digest.log.
+                    # The Mac must be on and logged in; a run missed while asleep fires
+                    # on wake. Re-run after moving the repo or upgrading Node (both
+                    # paths are pinned). `npm run digest:uninstall` removes them.
 ```
 
 ## Design principle: code does the math, the model only judges
