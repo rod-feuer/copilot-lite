@@ -54,6 +54,9 @@ All optional. Put them in a `.env.local` file at the repo root (gitignored).
 | `COPILOT_DB_PATH` | Override the SQLite file location. Tests set this to a throwaway file so they never touch `data/copilot.db`. | `data/copilot.db` |
 | `APP_PASSWORD` | **Login gate.** When set, every page/API requires a session cookie (log in at `/login`). Leave unset for plain localhost dev — auth is off and nothing changes. **Set this before exposing the app beyond localhost** (e.g. over a private network / Tailscale). | unset (auth off) |
 | `APP_SESSION_SECRET` | Optional key for signing the session cookie. Defaults to deriving from `APP_PASSWORD`; set it only if you want to rotate sessions independently. | derived from `APP_PASSWORD` |
+| `DIGEST_IMESSAGE_TO` | **Daily digest.** The phone number (with country code) or Apple ID the daily text is sent to, through the Messages app on this Mac. Texting your own number works and does notify. | unset (the daily can only be printed) |
+| `DIGEST_EMAIL_TO`, `SMTP_USER`, `SMTP_PASS` | **Weekly digest.** Where the Sunday email goes, and the account it is sent from. For Gmail, `SMTP_PASS` is a 16-letter **app password** (Google account → Security → App passwords; needs 2-step verification), never the account password. | unset (the weekly can only be printed) |
+| `SMTP_HOST` | Mail server for the weekly digest. | `smtp.gmail.com` |
 
 ```bash
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env.local
@@ -72,10 +75,10 @@ npm run smoke    # load every page/route in a real browser and assert no errors
                  # APP_PASSWORD from .env.local when the gate is on)
 npm run test:clock  # re-run the suite against future clocks to catch date-rotted
                     # tests (ones that pass only because of today's date)
-npm run digest -- daily --dry-run   # print today's digest (what changed, what needs
-                    # you) without sending it; `weekly` prints the Sunday summary.
-                    # Syncs the bank first, --no-sync to skip. Runs without the dev
-                    # server. Sending is not built yet.
+npm run digest -- daily   # send today's digest (what changed, what needs you) as an
+                    # iMessage, only if there is something new; `weekly` emails the
+                    # Sunday summary. Add --dry-run to print instead of sending, and
+                    # --no-sync to skip the bank sync. Runs without the dev server.
 ```
 
 ## Design principle: code does the math, the model only judges
