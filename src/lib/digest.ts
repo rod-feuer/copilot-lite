@@ -302,6 +302,8 @@ export function dailyDigest(): Built | null {
 }
 
 // ---------- the weekly message ----------
+export const DUE_LIST_MAX = 6;
+export const DUE_FOLD_UNDER = 50;
 // Always sent: the rhythm read. The verdict and how it moved since the last
 // weekly (its date named, never "last week": a Mac that was off skips one),
 // what crossed its budget this week, the week against a typical one, what is
@@ -385,12 +387,26 @@ export function weeklyDigest(): Built {
       ],
     });
 
+  // A long week of bills is mostly small subscriptions. Past DUE_LIST_MAX lines,
+  // the ones under DUE_FOLD_UNDER fold into one closing line; the total in the
+  // title still counts every bill.
   const due = upcomingRecurringExpenses(today, iso(new Date(Date.now() + 7 * 86_400_000)));
-  if (due.length)
+  if (due.length) {
+    const small = due.length > DUE_LIST_MAX ? due.filter((r) => Math.abs(r.avgAmount) < DUE_FOLD_UNDER) : [];
+    const folded = small.length > 1 ? new Set(small) : new Set<(typeof due)[number]>();
+    const shown = due.filter((r) => !folded.has(r));
+    // In whole dollars, so the lines add up to the title: the folded line is
+    // the total less what is listed, not its own separately rounded sum.
+    const total = Math.round(Math.abs(due.reduce((a, r) => a + r.avgAmount, 0)));
+    const listed = shown.reduce((a, r) => a + Math.round(Math.abs(r.avgAmount)), 0);
     sections.push({
-      title: `Due in the next 7 days: ${dollars(due.reduce((a, r) => a + r.avgAmount, 0))} expected`,
-      lines: due.map((r) => `${shortDate(r.nextDate)} ${billName(r.displayName)} ${dollars(r.avgAmount)}`),
+      title: `Due in the next 7 days: ${dollars(total)} expected`,
+      lines: [
+        ...shown.map((r) => `${shortDate(r.nextDate)} ${billName(r.displayName)} ${dollars(r.avgAmount)}`),
+        ...(folded.size ? [`All other (${folded.size}) ${dollars(total - listed)}`] : []),
+      ],
     });
+  }
 
   const late = overdueNow(today);
   if (late.length) sections.push({ title: "Bills that haven't posted", lines: late });
