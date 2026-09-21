@@ -18,11 +18,10 @@ import { NewCategoryForm, PALETTE } from "@/components/NewCategoryForm";
 import { Tooltip } from "@/components/Tooltip";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
+import { budgetSpent, isOverBudget } from "@/lib/budgetOutlook";
 
 type Cat = CategoryWithTotals;
 
-const budgetSpent = (c: Cat) => (c.budgetPeriod === "annual" ? c.ytdSpent : c.total);
-const isOver = (c: Cat) => c.budget != null && budgetSpent(c) > c.budget;
 
 export default function CategoriesPage() {
   const [months, setMonths] = useState<string[]>([]);
@@ -133,7 +132,7 @@ export default function CategoriesPage() {
   // The attention filter only narrows expenses (where budgets live).
   const shownExpense =
     filter === "over"
-      ? expense.filter(isOver)
+      ? expense.filter(isOverBudget)
       : filter === "unbudgeted"
       ? expense.filter((c) => c.budget == null && c.name !== "Uncategorized")
       : expense;
@@ -283,7 +282,7 @@ function BudgetSummary({
   const spent = budgeted.reduce((s, c) => s + c.total, 0);
   // Over-budget is period-aware (annual categories judged on calendar-YTD), so
   // the chip and the list filter agree.
-  const overCats = budgeted.filter(isOver);
+  const overCats = budgeted.filter(isOverBudget);
   const overCount = overCats.length;
   // Name the over-budget categories when there are only a couple — far more
   // useful than a bare count; fall back to a count when there are several.

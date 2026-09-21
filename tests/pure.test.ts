@@ -5,7 +5,9 @@ import { classifyCadence, addCadence, txHash } from "../src/lib/core";
 import { medianGap, monthlyFactor, CADENCE_DAYS, PER_YEAR, CADENCE_LABEL } from "../src/lib/cadence";
 import { seriesKey, seriesVendor, isSeriesKey } from "../src/lib/series";
 import { parseCsv } from "../src/lib/import";
-import { budgetOutlook, BUDGET_TOLERANCE } from "../src/lib/budgetOutlook";
+import { budgetOutlook, BUDGET_TOLERANCE, budgetSpent, isOverBudget } from "../src/lib/budgetOutlook";
+import { buildVerdict } from "../src/lib/verdict";
+import { billStatus, billDelta, BILL_DELTA_MIN } from "../src/lib/bills";
 import { variableStillToCome, LARGE_CHARGE } from "../src/lib/forecast";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
@@ -250,4 +252,47 @@ test("variableStillToCome: everyday spending is paced; large purchases are a mon
   // With no history to lean on, the old rule stands in — for a new database.
   assert.equal(variableStillToCome({ ...base, history: [], seen: [...everyday, 4000] }), 1000 + 2000);
   assert.equal(variableStillToCome({ ...base, daysRemaining: 0, seen: everyday }), 0, "a finished month has nothing still to come");
+});
+
+// WHY: these three rules were each written inside a page. The digests state
+// the same facts in a message, so they live in lib, and these tests pin what
+// the screens already said: a message must never disagree with the screen.
+test("buildVerdict: withholds a projection it doesn't have, qualifies a forecast, and states a finished month as fact", () => {
+  const base = { expenses: 3100, net: -400 };
+  // too early: the budget is quoted, no month-end claim is made
+  assert.deepEqual(buildVerdict({ ...base, budget: { total: 5000, spent: 800, projected: null } }, true), {
+    tone: "neutral",
+    text: "$800 of your $5,000 budget used — too early to project the month",
+  });
+  // a forecast speaks in pace terms; a finished month in the past tense
+  assert.equal(buildVerdict({ ...base, budget: { total: 5000, spent: 3100, projected: 4400 } }, true).text, "On pace to finish $600 under budget");
+  assert.deepEqual(buildVerdict({ ...base, budget: { total: 5000, spent: 5600, projected: 5600 } }, false), { tone: "bad", text: "Finished $600 over budget" });
+  // inside the forecast's own noise it is "on budget", with no dollar figure
+  assert.equal(buildVerdict({ ...base, budget: { total: 5000, spent: 3100, projected: 5000 * (1 + BUDGET_TOLERANCE) } }, true).text, "On pace to finish on budget");
+  // no budgets: mid-month stays factual; a finished month calls the net
+  assert.equal(buildVerdict({ ...base, budget: null }, true).text, "$3,100 spent so far this month");
+  assert.equal(buildVerdict({ ...base, budget: null }, false).tone, "bad");
+});
+
+test("billStatus and billDelta: overdue is unpaid and past due; a difference under 50 cents is rounding", () => {
+  assert.equal(billStatus({ paid: true, dueDate: "2026-03-01" }, "2026-03-10"), "pd");
+  assert.equal(billStatus({ paid: false, dueDate: "2026-03-09" }, "2026-03-10"), "od");
+  assert.equal(billStatus({ paid: false, dueDate: "2026-03-10" }, "2026-03-10"), "up", "due today is not overdue yet");
+  const bill = { paid: true, dueDate: "2026-03-01", expectedAmount: 100 };
+  assert.equal(billDelta({ ...bill, paidAmount: 100 + BILL_DELTA_MIN - 0.01 }), null);
+  assert.equal(billDelta({ ...bill, paidAmount: 100 + BILL_DELTA_MIN }), BILL_DELTA_MIN);
+  assert.equal(billDelta({ ...bill, paidAmount: 81.46 }), 81.46 - 100, "paid less is a negative difference");
+  assert.equal(billDelta({ ...bill, paid: false, paidAmount: null }), null, "an unpaid bill has no difference to report");
+});
+
+test("isOverBudget: an annual budget is judged on the year so far, a monthly one on the month", () => {
+  // $1,250 spent this year against $1,200 a year is over, though this month was only $100
+  const annual = { budget: 1200, budgetPeriod: "annual" as const, ytdSpent: 1250, total: 100 };
+  assert.equal(budgetSpent(annual), 1250);
+  assert.equal(isOverBudget(annual), true);
+  assert.equal(isOverBudget({ ...annual, ytdSpent: 1200 }), false, "at the budget is not over it");
+  // a monthly budget ignores the year: $499 of $500 this month is fine whatever came before
+  assert.equal(isOverBudget({ budget: 500, budgetPeriod: "monthly", ytdSpent: 9000, total: 499 }), false);
+  assert.equal(isOverBudget({ budget: 500, budgetPeriod: "monthly", ytdSpent: 9000, total: 501 }), true);
+  assert.equal(isOverBudget({ budget: null, budgetPeriod: "monthly", ytdSpent: 0, total: 999 }), false, "no budget, never over");
 });
