@@ -48,7 +48,11 @@ const SUMMED_CADENCES = new Set(["weekly", "biweekly"]);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const daysBefore = (n: number) => iso(new Date(Date.now() - n * 86_400_000));
 
-export type Section = { title: string; lines: string[] };
+// `title` and `lines` are the plain-text form (the iMessage, the email's text
+// part). The email's HTML part reads the same facts as columns where a section
+// provides them: a label, an amount to right-align, a quiet lead (a date).
+export type Row = { lead?: string; label: string; amount: string; quiet?: boolean };
+export type Section = { title: string; lines: string[]; heading?: { label: string; aside?: string }; intro?: string; rows?: Row[] };
 export type Surprise = { key: string; line: string };
 
 // ---------- what has been said ----------
@@ -228,16 +232,17 @@ function surprises(today: string): Found[] {
 // the month named. "Still" when the last text this month said the same thing,
 // "Now" when it has moved, neither when this is the month's first word on it.
 const KIND_VALUE = { under: -1, on: 0, over: 1 } as const;
-function headline(today: string): { text: string; state: { key: string; value: number } | null; flipped: boolean } {
+type Tone = "good" | "bad" | "neutral";
+function headline(today: string): { text: string; tone: Tone; state: { key: string; value: number } | null; flipped: boolean } {
   const month = today.slice(0, 7);
   const name = monthName(month);
   // Always name the month: with none, dashboard() picks the latest month that
   // has data, which can be a future-dated one.
   const d = dashboard(month);
   const b = d.budget;
-  if (!b || b.total <= 0) return { text: `${dollars(d.expenses)} spent so far in ${name}.`, state: null, flipped: false };
+  if (!b || b.total <= 0) return { text: `${dollars(d.expenses)} spent so far in ${name}.`, tone: "neutral", state: null, flipped: false };
   if (b.projected == null)
-    return { text: `${dollars(b.spent)} of your ${dollars(b.total)} budget used. Too early to project ${name}.`, state: null, flipped: false };
+    return { text: `${dollars(b.spent)} of your ${dollars(b.total)} budget used. Too early to project ${name}.`, tone: "neutral", state: null, flipped: false };
   const o = budgetOutlook(b.total, b.projected, true);
   const key = `verdict:${month}`;
   const db = getDb();
@@ -246,7 +251,8 @@ function headline(today: string): { text: string; state: { key: string; value: n
   const moved = before != null && before !== KIND_VALUE[o.kind];
   const lead = before == null ? "On pace" : moved ? "Now on pace" : "Still on pace";
   const tail = o.kind === "on" ? "on budget" : `${dollars(o.delta)} ${o.kind} budget`;
-  return { text: `${lead} to finish ${name} ${tail}.`, state: { key, value: KIND_VALUE[o.kind] }, flipped: moved && o.kind === "over" };
+  const tone: Tone = o.kind === "over" ? "bad" : o.kind === "under" ? "good" : "neutral";
+  return { text: `${lead} to finish ${name} ${tail}.`, tone, state: { key, value: KIND_VALUE[o.kind] }, flipped: moved && o.kind === "over" };
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -264,7 +270,9 @@ function chores(needsReview: number): string[] {
 
 export type Built = {
   headline: string;
+  tone?: Tone; // the verdict's colour in the email: the dashboard's dot
   lede?: string[]; // sentences under the headline (the weekly's "since Sep 14")
+  preheader?: string; // the email's inbox preview line: something the subject doesn't already say
   sections: Section[];
   todo: string[];
   keys: string[];
@@ -308,10 +316,10 @@ export const DUE_FOLD_UNDER = 50;
 // weekly (its date named, never "last week": a Mac that was off skips one),
 // what crossed its budget this week, the week against a typical one, what is
 // due, and what is still open.
-function overdueNow(today: string): string[] {
+function overdueNow(today: string): Row[] {
   return recurringsForMonth(today.slice(0, 7))
     .filter((r) => r.avgAmount < 0 && billStatus(r, daysBefore(OVERDUE_GRACE_DAYS)) === "od" && r.expectedThisMonth && !r.ended && isRecurringActive(r.lastDate, r.cadence))
-    .map((r) => `${billName(r.displayName)} ${dollars(r.expectedAmount)}, due ${shortDate(r.dueDate)}`);
+    .map((r) => ({ lead: shortDate(r.dueDate), label: billName(r.displayName), amount: dollars(r.expectedAmount) }));
 }
 
 // Counted spending outside the plans, per 7-day window ending `endDaysAgo` days ago.
@@ -340,7 +348,8 @@ export function weeklyDigest(): Built {
   const projected = dash.budget?.projected ?? null;
   const db = getDb();
   ensureDigestSent(db);
-  const last = db.prepare("SELECT key, value FROM digest_sent WHERE key LIKE 'weekly:%' ORDER BY key DESC LIMIT 1").get() as { key: string; value: number | null } | undefined;
+  // An EARLIER weekly: a second run on the same day must not measure itself.
+  const last = db.prepare("SELECT key, value FROM digest_sent WHERE key LIKE 'weekly:%' AND key < ? ORDER BY key DESC LIMIT 1").get(`weekly:${today}`) as { key: string; value: number | null } | undefined;
   const lede: string[] = [];
   if (last && last.value != null && projected != null && last.key.slice(7, 14) === month) {
     const moved = projected - last.value;
@@ -366,8 +375,8 @@ export function weeklyDigest(): Built {
       const thisWeek = inPeriod.reduce((a, [, v]) => a + v, 0);
       return budgetSpent(c) - thisWeek <= (c.budget as number);
     })
-    .map((c) => `${c.name} ${dollars(budgetSpent(c))} of ${dollars(c.budget as number)}${c.budgetPeriod === "annual" ? " this year" : ""}`);
-  if (crossed.length) sections.push({ title: "Went over budget this week", lines: crossed });
+    .map((c) => ({ label: c.name, amount: `${dollars(budgetSpent(c))} of ${dollars(c.budget as number)}${c.budgetPeriod === "annual" ? " this year" : ""}` }));
+  if (crossed.length) sections.push({ title: "Went over budget this week", lines: crossed.map((r) => `${r.label} ${r.amount}`), rows: crossed });
 
   // The week outside your bills, against a typical one: the median of the eight
   // weeks before it, and only when at least four of them have anything in them.
@@ -378,13 +387,14 @@ export function weeklyDigest(): Built {
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
   const largest = [...week].sort((a, b) => a.amount - b.amount).slice(0, 3);
+  const weekLine = `${dollars(sum(week))} spent${typical != null ? `, against a typical ${dollars(typical)}` : ""}`;
   if (week.length)
     sections.push({
       title: "This week, outside your bills",
-      lines: [
-        `${dollars(sum(week))} spent${typical != null ? `, against a typical ${dollars(typical)}` : ""}`,
-        ...largest.map((r) => `${dollars(r.amount)} to ${merchantDisplayName(r.merchant, settings, links)} on ${shortDate(r.date)}`),
-      ],
+      lines: [weekLine, ...largest.map((r) => `${dollars(r.amount)} to ${merchantDisplayName(r.merchant, settings, links)} on ${shortDate(r.date)}`)],
+      heading: { label: "This week, outside your bills", aside: dollars(sum(week)) },
+      intro: typical != null ? `Against a typical week of ${dollars(typical)}. The largest:` : "The largest:",
+      rows: largest.map((r) => ({ lead: shortDate(r.date), label: merchantDisplayName(r.merchant, settings, links), amount: dollars(r.amount) })),
     });
 
   // A long week of bills is mostly small subscriptions. Past DUE_LIST_MAX lines,
@@ -399,22 +409,29 @@ export function weeklyDigest(): Built {
     // the total less what is listed, not its own separately rounded sum.
     const total = Math.round(Math.abs(due.reduce((a, r) => a + r.avgAmount, 0)));
     const listed = shown.reduce((a, r) => a + Math.round(Math.abs(r.avgAmount)), 0);
+    const rows: Row[] = [
+      ...shown.map((r) => ({ lead: shortDate(r.nextDate), label: billName(r.displayName), amount: dollars(r.avgAmount) })),
+      ...(folded.size ? [{ label: `All other (${folded.size})`, amount: dollars(total - listed), quiet: true }] : []),
+    ];
     sections.push({
       title: `Due in the next 7 days: ${dollars(total)} expected`,
-      lines: [
-        ...shown.map((r) => `${shortDate(r.nextDate)} ${billName(r.displayName)} ${dollars(r.avgAmount)}`),
-        ...(folded.size ? [`All other (${folded.size}) ${dollars(total - listed)}`] : []),
-      ],
+      lines: rows.map((r) => `${r.lead ? `${r.lead} ` : ""}${r.label} ${r.amount}`),
+      heading: { label: "Due in the next 7 days", aside: `${dollars(total)} expected` },
+      rows,
     });
   }
 
   const late = overdueNow(today);
-  if (late.length) sections.push({ title: "Bills that haven't posted", lines: late });
+  if (late.length) sections.push({ title: "Bills that haven't posted", lines: late.map((r) => `${r.label} ${r.amount}, due ${r.lead}`), rows: late });
 
-  return { headline: head.text, lede, sections, todo: chores(dash.needsReview), keys: [`weekly:${today}`], value: projected, state: head.state };
+  // The inbox shows the subject (the verdict) and then the start of the body:
+  // give it the next two facts, not the verdict again.
+  const dueSection = sections.find((x) => x.heading?.label === "Due in the next 7 days");
+  const preheader = [week.length ? `${dollars(sum(week))} spent this week outside your bills${typical != null ? `, against a typical ${dollars(typical)}` : ""}.` : null, dueSection ? `${dueSection.heading!.aside} in bills over the next 7 days.` : null].filter(Boolean).join(" ");
+  return { headline: head.text, tone: head.tone, lede, preheader, sections, todo: chores(dash.needsReview), keys: [`weekly:${today}`], value: projected, state: head.state };
 }
 
-type Rendered = Pick<Built, "headline" | "lede" | "sections" | "todo">;
+type Rendered = Pick<Built, "headline" | "lede" | "sections" | "todo" | "tone" | "preheader">;
 // Each item is marked: on a phone a line wraps at about 27 characters, and
 // without a marker a wrapped item runs into the next one.
 export function renderText(built: Rendered, note?: string | null): string {
@@ -425,14 +442,49 @@ export function renderText(built: Rendered, note?: string | null): string {
     ...(built.todo.length ? [`To do: ${built.todo.join(", ")}.`] : []),
   ].join("\n\n");
 }
-// Vendor names come from a bank: escape them.
+
+// The email, as a statement: one narrow column in the app's type and colours,
+// the verdict with its tone dot, quiet uppercase section labels, names left and
+// amounts right in tabular figures. Inline styles and tables, because mail
+// clients drop stylesheets and ignore flexbox. Vendor names come from a bank:
+// everything is escaped.
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const FONT = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`;
+const INK = "#1a1c1e", MUTED = "#6b7280", RULE = "#e8eaed";
+const TONE = { good: "#047857", bad: "#e11d48", neutral: MUTED };
+const LABEL = `font:600 11px/16px ${FONT};letter-spacing:.06em;text-transform:uppercase;color:${MUTED}`;
 export function renderHtml(built: Rendered, note?: string | null): string {
+  // The date is a column of its own, so a long name wraps under itself and not
+  // under its date. A row without one (the folded "All other") spans both.
+  const cell = (quiet: boolean | undefined, extra = "") => `padding:7px 0;border-top:1px solid ${RULE};font:400 15px/20px ${FONT};color:${quiet ? MUTED : INK};${extra}`;
+  const row = (dated: boolean) => (r: Row) =>
+    `<tr>` +
+    (dated && r.lead ? `<td width="56" valign="top" style="${cell(true, "font-size:13px;white-space:nowrap;padding-right:12px")}">${esc(r.lead)}</td>` : "") +
+    `<td${dated && !r.lead ? ' colspan="2"' : ""} valign="top" style="${cell(r.quiet)}">${esc(r.label)}</td>` +
+    `<td align="right" valign="top" style="${cell(r.quiet, `padding-left:12px;font-weight:${r.quiet ? 400 : 600};font-variant-numeric:tabular-nums;white-space:nowrap`)}">${esc(r.amount)}</td></tr>`;
+  const section = (s: Section) => {
+    const rows: Row[] = s.rows ?? s.lines.map((l) => ({ label: l, amount: "" }));
+    const dated = rows.some((r) => r.lead);
+    const span = dated ? ' colspan="2"' : "";
+    return (
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0 0;border-collapse:collapse">` +
+      `<tr><td${span} style="padding:0 0 6px;${LABEL}">${esc(s.heading?.label ?? s.title)}</td><td align="right" style="padding:0 0 6px 12px;font:600 13px/16px ${FONT};font-variant-numeric:tabular-nums;white-space:nowrap;color:${INK}">${esc(s.heading?.aside ?? "")}</td></tr>` +
+      (s.intro ? `<tr><td colspan="${dated ? 3 : 2}" style="padding:0 0 8px;font:400 13px/18px ${FONT};color:${MUTED}">${esc(s.intro)}</td></tr>` : "") +
+      rows.map(row(dated)).join("") +
+      `</table>`
+    );
+  };
   return [
-    `<p><strong>${esc(built.headline)}</strong>${(built.lede ?? []).map((l) => `<br>${esc(l)}`).join("")}</p>`,
-    ...(note ? [`<p><em>${esc(note)}</em></p>`] : []),
-    ...built.sections.map((s) => `<h3>${esc(s.title)}</h3><ul>${s.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`),
-    ...(built.todo.length ? [`<p>To do: ${esc(built.todo.join(", "))}.</p>`] : []),
+    `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(built.preheader ?? "")}</div>`,
+    `<div style="max-width:520px;margin:0 auto;padding:8px 0 24px">`,
+    `<div style="${LABEL}">Daybook</div>`,
+    `<div style="margin:6px 0 0;font:600 20px/26px ${FONT};color:${INK}"><span style="color:${TONE[built.tone ?? "neutral"]};font-size:13px;vertical-align:3px">&#9679;</span>&nbsp;${esc(built.headline)}</div>`,
+    ...(built.lede ?? []).map((l) => `<div style="margin:4px 0 0;font:400 15px/20px ${FONT};color:${MUTED}">${esc(l)}</div>`),
+    ...(note ? [`<div style="margin:12px 0 0;font:400 13px/18px ${FONT};color:${MUTED}">${esc(note)}</div>`] : []),
+    ...built.sections.map(section),
+    ...(built.todo.length ? [`<div style="margin:28px 0 0;font:400 15px/20px ${FONT};color:${INK}"><span style="${LABEL}">To do</span><br>${esc(built.todo.join(", "))}.</div>`] : []),
+    `<div style="margin:32px 0 0;padding:12px 0 0;border-top:1px solid ${RULE};font:400 12px/16px ${FONT};color:${MUTED}">Sent by Daybook from your Mac.</div>`,
+    `</div>`,
   ].join("\n");
 }
 export const subjectOf = (built: Rendered) => `Daybook: ${built.headline.replace(/\.$/, "")}`;
