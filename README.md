@@ -72,6 +72,9 @@ npm run smoke    # load every page/route in a real browser and assert no errors
                  # APP_PASSWORD from .env.local when the gate is on)
 npm run test:clock  # re-run the suite against future clocks to catch date-rotted
                     # tests (ones that pass only because of today's date)
+npm run digest -- daily --dry-run   # print today's digest (what changed, what needs
+                    # you) without sending it; syncs the bank first, --no-sync to skip.
+                    # Runs without the dev server. Sending is not built yet.
 ```
 
 ## Design principle: code does the math, the model only judges
