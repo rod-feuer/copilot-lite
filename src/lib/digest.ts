@@ -9,7 +9,7 @@ import {
   merchantDisplayName,
 } from "./queries";
 import { billDelta, billStatus } from "./bills";
-import { buildVerdict } from "./verdict";
+import { budgetOutlook } from "./budgetOutlook";
 import { categorizeSuggestions } from "./categorizeSuggest";
 import { allMergeSuggestions } from "./merges";
 import { nameCleanupSuggestions } from "./nameCleanup";
@@ -32,9 +32,10 @@ export const OVERDUE_GRACE_DAYS = 3;
 // restaurant is a "first charge".
 export const FIRST_VENDOR_FLOOR = 200;
 // "Well above usual": at least twice the vendor's median over three or more
-// earlier charges, and at least this many dollars above it.
+// earlier charges, and at least this many dollars above it (at $50 every big
+// grocery run was "unusual").
 export const ABOVE_USUAL_FACTOR = 2;
-export const ABOVE_USUAL_MIN = 50;
+export const ABOVE_USUAL_MIN = 100;
 // How far back a surprise can be and still be reported, so a first run (or a run
 // after a week away) can't dump history.
 export const SURPRISE_WINDOW_DAYS = 14;
@@ -47,7 +48,6 @@ const daysBefore = (n: number) => iso(new Date(Date.now() - n * 86_400_000));
 
 export type Section = { title: string; lines: string[] };
 export type Surprise = { key: string; line: string };
-export type Built = { sections: Section[]; keys: string[] };
 
 // ---------- what has been said ----------
 // One key per thing said, so each is said once. Never keyed on a plan's id (the
@@ -70,6 +70,12 @@ export function markSent(keys: string[], value: number | null = null): void {
   const put = db.prepare("INSERT OR IGNORE INTO digest_sent (key, sentAt, value) VALUES (?, ?, ?)");
   const now = new Date().toISOString();
   db.transaction(() => keys.forEach((k) => put.run(k, now, value))).immediate();
+}
+// A value that is replaced, not said once: what the headline last said.
+function setValue(key: string, value: number): void {
+  const db = getDb();
+  ensureDigestSent(db);
+  db.prepare("INSERT OR REPLACE INTO digest_sent (key, sentAt, value) VALUES (?, ?, ?)").run(key, new Date().toISOString(), value);
 }
 
 // ---------- the one new calculation ----------
@@ -127,12 +133,39 @@ export function unusualCharges(sinceIso: string): UnusualCharge[] {
 }
 
 // ---------- the daily message ----------
-function surprises(today: string): Surprise[] {
+// One fixed shape, so every text reads the same way:
+//
+//   Daybook: Still on pace to finish September $4,185 under budget.
+//
+//   Bills that came in high
+//   Duke Energy $368, up $153
+//
+//   Charges worth a look
+//   $288 to Ble Llc on Sep 13, first time
+//   $3,365 to Bill.com on Sep 17, large
+//
+// The verdict leads, as it does on the dashboard: it answers "do I need to
+// worry?", and a notification shows enough lines for the first item to follow
+// it. Then what happened TO you (a bill that never posted, a bill someone
+// changed), then the charges — a large charge last, since you were there when
+// you made it. Whole dollars: cents belong on a statement.
+
+// A bill's difference is worth a text only when it is real money and a real
+// share of the bill: $8 on a $114 grooming bill is neither.
+export const BILL_CHANGE_MIN = 25;
+export const BILL_CHANGE_SHARE = 0.1;
+
+type Group = "late" | "bill" | "charge";
+type Found = Surprise & { group: Group; rank: number; change?: "up" | "down" | "twice" };
+const dollars = (n: number) => usd(Math.abs(n), { cents: false });
+const monthName = (month: string) => new Date(month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+
+function surprises(today: string): Found[] {
   const since = daysBefore(SURPRISE_WINDOW_DAYS);
   const month = today.slice(0, 7);
   const settings = getRecurringSettings();
   const links = getMerchantLinks();
-  const out: Surprise[] = [];
+  const out: Found[] = [];
 
   // Bills, this month and last (a bill paid on the 30th is read on the 1st).
   const lastMonth = iso(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1))).slice(0, 7);
@@ -141,42 +174,82 @@ function surprises(today: string): Surprise[] {
     for (const r of recurringsForMonth(m)) {
       if (r.avgAmount >= 0) continue; // deposits are not bills
       const delta = billDelta(r);
-      if (delta != null && !SUMMED_CADENCES.has(r.cadence) && r.lastDate >= since)
+      const matters = delta != null && Math.abs(delta) >= BILL_CHANGE_MIN && Math.abs(delta) >= BILL_CHANGE_SHARE * r.expectedAmount;
+      if (delta != null && matters && !SUMMED_CADENCES.has(r.cadence) && r.lastDate >= since)
         out.push({
           key: `differed:${r.merchant}:${m}`,
-          line: `${r.displayName} came in at ${usd(r.paidAmount as number)}, ${usd(Math.abs(delta))} ${delta > 0 ? "more" : "less"} than expected.`,
+          group: "bill",
+          rank: Math.abs(delta),
+          change: delta > 0 ? "up" : "down",
+          line: `${r.displayName} ${dollars(r.paidAmount as number)}, ${delta > 0 ? "up" : "down"} ${dollars(delta)}`,
+        });
+      // Charged twice in one month: a duplicate, or next month's payment gone
+      // out early. Either way the single paid amount above would hide it.
+      if (!SUMMED_CADENCES.has(r.cadence) && r.paidTimes >= 2 && r.lastDate >= since)
+        out.push({
+          key: `twice:${r.merchant}:${m}`,
+          group: "bill",
+          rank: r.expectedAmount,
+          change: "twice",
+          line: `${r.displayName} ${dollars(r.paidAmount as number)}, charged ${r.paidTimes === 2 ? "twice" : `${r.paidTimes} times`} in ${monthName(m)}`,
         });
       const late = m === month && billStatus(r, daysBefore(OVERDUE_GRACE_DAYS)) === "od";
       if (late && r.expectedThisMonth && !r.ended && isRecurringActive(r.lastDate, r.cadence))
         out.push({
           key: `overdue:${r.merchant}:${r.dueDate}`,
-          line: `${r.displayName} (${usd(r.expectedAmount)}) was due ${shortDate(r.dueDate)} and hasn't posted.`,
+          group: "late",
+          rank: r.expectedAmount,
+          line: `${r.displayName} ${dollars(r.expectedAmount)}, due ${shortDate(r.dueDate)}`,
         });
     }
   }
 
+  // Within the charges: a first-time vendor (it might not be you), then one
+  // well above its usual, then a large one (it was probably you).
+  const order = { first: 3e9, "above-usual": 2e9, large: 1e9 };
   for (const u of unusualCharges(since)) {
-    const name = merchantDisplayName(u.merchant, settings, links);
-    const what = `${name}: ${usd(Math.abs(u.amount))} on ${shortDate(u.date)}`;
+    const what = `${dollars(u.amount)} to ${merchantDisplayName(u.merchant, settings, links)} on ${shortDate(u.date)}`;
     out.push({
       key: `unusual:${u.hash}`,
-      line:
-        u.reason === "large"
-          ? `${what}, a large charge.`
-          : u.reason === "first"
-            ? `${what}, the first charge from this vendor.`
-            : `${what}; this vendor is usually about ${usd(u.usual as number, { cents: false })}.`,
+      group: "charge",
+      rank: order[u.reason] + Math.abs(u.amount),
+      line: u.reason === "large" ? `${what}, large` : u.reason === "first" ? `${what}, first time` : `${what}, usually ${dollars(u.usual as number)}`,
     });
   }
   return out;
 }
 
+// The headline: the dashboard's verdict, by the same rule (budgetOutlook), with
+// the month named. "Still" when the last text this month said the same thing,
+// "Now" when it has moved, neither when this is the month's first word on it.
+const KIND_VALUE = { under: -1, on: 0, over: 1 } as const;
+function headline(today: string): { text: string; state: { key: string; value: number } | null; flipped: boolean } {
+  const month = today.slice(0, 7);
+  const name = monthName(month);
+  // Always name the month: with none, dashboard() picks the latest month that
+  // has data, which can be a future-dated one.
+  const d = dashboard(month);
+  const b = d.budget;
+  if (!b || b.total <= 0) return { text: `${dollars(d.expenses)} spent so far in ${name}.`, state: null, flipped: false };
+  if (b.projected == null)
+    return { text: `${dollars(b.spent)} of your ${dollars(b.total)} budget used. Too early to project ${name}.`, state: null, flipped: false };
+  const o = budgetOutlook(b.total, b.projected, true);
+  const key = `verdict:${month}`;
+  const db = getDb();
+  ensureDigestSent(db);
+  const before = (db.prepare("SELECT value FROM digest_sent WHERE key = ?").get(key) as { value: number | null } | undefined)?.value;
+  const moved = before != null && before !== KIND_VALUE[o.kind];
+  const lead = before == null ? "On pace" : moved ? "Now on pace" : "Still on pace";
+  const tail = o.kind === "on" ? "on budget" : `${dollars(o.delta)} ${o.kind} budget`;
+  return { text: `${lead} to finish ${name} ${tail}.`, state: { key, value: KIND_VALUE[o.kind] }, flipped: moved && o.kind === "over" };
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 function chores(needsReview: number): string[] {
   const out: string[] = [];
-  if (needsReview > 0) out.push(`${plural(needsReview, "charge needs", "charges need")} a category this month`);
+  if (needsReview > 0) out.push(`${plural(needsReview, "charge needs", "charges need")} a category`);
   const suggested = categorizeSuggestions().suggestions.length;
-  if (suggested > 0) out.push(`${plural(suggested, "category suggestion", "category suggestions")} ready to apply`);
+  if (suggested > 0) out.push(`${plural(suggested, "category suggestion", "category suggestions")} to apply`);
   const merges = allMergeSuggestions().length;
   if (merges > 0) out.push(`${plural(merges, "vendor", "vendors")} to combine`);
   const tidy = nameCleanupSuggestions().length;
@@ -184,29 +257,50 @@ function chores(needsReview: number): string[] {
   return out;
 }
 
-// null = a quiet day: nothing new, so nothing is sent.
+export type Built = {
+  headline: string;
+  sections: Section[];
+  todo: string[];
+  keys: string[];
+  state: { key: string; value: number } | null; // what the headline said, for next time's "Still" or "Now"
+};
+// null = a quiet day: nothing new, so nothing is sent. The month turning from
+// under budget to over is news by itself, once.
 export function dailyDigest(): Built | null {
   const today = iso(new Date());
   const found = surprises(today);
-  const sent = alreadySent(found.map((s) => s.key));
-  const fresh = found.filter((s) => !sent.has(s.key));
-  if (!fresh.length) return null;
-  // Always name the month: with none, dashboard() picks the latest month that
-  // has data, which can be a future-dated one.
-  const dash = dashboard(today.slice(0, 7));
+  const head = headline(today);
+  const flipKey = `flip:${today.slice(0, 7)}:over`;
+  const sent = alreadySent([...found.map((s) => s.key), flipKey]);
+  const fresh = found.filter((s) => !sent.has(s.key)).sort((a, b) => b.rank - a.rank);
+  const flip = head.flipped && !sent.has(flipKey);
+  if (!fresh.length && !flip) return null;
+
+  const of = (g: Group) => fresh.filter((s) => s.group === g);
+  const bills = of("bill");
+  const all = (c: Found["change"]) => bills.every((s) => s.change === c);
+  const billsTitle = all("up") ? "Bills that came in high" : all("down") ? "Bills that came in low" : all("twice") ? "Bills charged twice" : "Bills that changed";
   const sections: Section[] = [
-    { title: "New", lines: fresh.map((s) => s.line) },
-    { title: "Budget", lines: [`${buildVerdict(dash, true).text}.`] },
-  ];
-  const todo = chores(dash.needsReview);
-  if (todo.length) sections.push({ title: "To do", lines: todo });
-  return { sections, keys: fresh.map((s) => s.key) };
+    { title: "Bills that haven't posted", lines: of("late").map((s) => s.line) },
+    { title: billsTitle, lines: bills.map((s) => s.line) },
+    { title: "Charges worth a look", lines: of("charge").map((s) => s.line) },
+  ].filter((s) => s.lines.length);
+  return {
+    headline: head.text,
+    sections,
+    todo: chores(dashboard(today.slice(0, 7)).needsReview),
+    keys: [...fresh.map((s) => s.key), ...(flip ? [flipKey] : [])],
+    state: head.state,
+  };
 }
 
-export function renderText(sections: Section[], note?: string | null): string {
-  const head = `Daybook, ${shortDate(iso(new Date()))}`;
-  const body = sections.map((s) => [s.title, ...s.lines.map((l) => `• ${l}`)].join("\n"));
-  return [head, ...(note ? [note] : []), ...body].join("\n\n");
+export function renderText(built: Pick<Built, "headline" | "sections" | "todo">, note?: string | null): string {
+  return [
+    `Daybook: ${built.headline}`,
+    ...(note ? [note] : []),
+    ...built.sections.map((s) => [s.title, ...s.lines].join("\n")),
+    ...(built.todo.length ? [`To do: ${built.todo.join(", ")}.`] : []),
+  ].join("\n\n");
 }
 
 // ---------- running one ----------
@@ -231,17 +325,18 @@ export async function runDigest(build: () => Built | null, deps: DigestDeps): Pr
       await deps.sync();
     } catch {
       const last = (getDb().prepare("SELECT MAX(date) AS d FROM transactions WHERE source = 'plaid'").get() as { d: string | null }).d;
-      note = `Bank sync failed. Figures as of ${last ? shortDate(last) : "the last sync"}.`;
+      note = `Couldn't reach the bank, so this is as of ${last ? shortDate(last) : "the last sync"}.`;
     }
   }
   const built = build();
   if (!built) return "quiet";
-  const text = renderText(built.sections, note);
+  const text = renderText(built, note);
   if (deps.dryRun) {
     (deps.print ?? console.log)(text);
     return "dry";
   }
   await deps.send(text);
   markSent(built.keys);
+  if (built.state) setValue(built.state.key, built.state.value);
   return "sent";
 }

@@ -47,7 +47,9 @@ test("unusualCharges: large, a sizeable first charge, or well above the vendor's
   tx("New Dentist", { amount: -FIRST_VENDOR_FLOOR, date: daysAgo(2), categoryId: cat });
   tx("New Cafe", { amount: -(FIRST_VENDOR_FLOOR - 1), date: daysAgo(2), categoryId: cat }); // every new restaurant is a "first"
   for (const d of [90, 60, 30]) tx("Grocer", { amount: -80, date: daysAgo(d), categoryId: cat });
-  tx("Grocer", { amount: -170, date: daysAgo(1), categoryId: cat }); // 2x the usual and $50 above it
+  tx("Grocer", { amount: -190, date: daysAgo(1), categoryId: cat }); // over 2x the usual and $100 above it
+  for (const d of [90, 60, 30]) tx("Market", { amount: -55, date: daysAgo(d), categoryId: cat });
+  tx("Market", { amount: -140, date: daysAgo(1), categoryId: cat }); // a big grocery run ($85 over): not news
   for (const d of [60, 30]) tx("Florist", { amount: -40, date: daysAgo(d), categoryId: cat });
   tx("Florist", { amount: -200, date: daysAgo(1), categoryId: cat }); // only two earlier charges: no "usual" yet
   tx("Old Roof Co", { amount: LARGE, date: daysAgo(SURPRISE_WINDOW_DAYS + 1), categoryId: cat }); // outside the window
@@ -88,7 +90,7 @@ test("a bill that differed is reported once, as a bill, and never again as an un
 
   const built = dailyDigest()!;
   assert.deepEqual(built.keys.map((k) => k.split(":")[0]), ["differed"]);
-  assert.match(built.sections[0].lines[0], /Acme Insurance came in at \$1,900\.00, \$400\.00 more than expected\./);
+  assert.deepEqual(built.sections, [{ title: "Bills that came in high", lines: ["Acme Insurance $1,900, up $400"] }]);
 });
 
 // WHY: `paidAmount` is a month's SUM. A weekly plan paid four times is four
@@ -111,9 +113,10 @@ test("an overdue bill is reported only after the bank has had time to post it", 
   seedBill("Water Co", OVERDUE_GRACE_DAYS + 1);
   seedBill("Gas Co", OVERDUE_GRACE_DAYS - 1);
   detectRecurrings();
-  const lines = dailyDigest()?.sections[0].lines ?? [];
-  assert.equal(lines.length, 1);
-  assert.match(lines[0], /^Water Co \(\$90\.00\) was due .* and hasn't posted\.$/);
+  const sections = dailyDigest()?.sections ?? [];
+  assert.deepEqual(sections.map((s) => s.title), ["Bills that haven't posted"]);
+  assert.equal(sections[0].lines.length, 1);
+  assert.match(sections[0].lines[0], /^Water Co \$90, due [A-Z][a-z]{2} \d+$/);
 });
 // The fixture needs "due four days ago" to be a day of THIS month that also
 // exists in the three months before it; on the 1st to 4th, or for a day past
@@ -141,8 +144,8 @@ test("nothing is said twice, including when the bank re-posts a charge with a ne
   tx("Roof Co", { amount: LARGE, date: daysAgo(3), categoryId: cat, hash: "roof" });
   const first = deps();
   assert.equal(await runDigest(dailyDigest, first.d), "sent");
-  assert.match(first.sent[0], /Roof Co: \$1,500\.00 on .*, a large charge\./);
-  assert.match(first.sent[0], /^Daybook, /);
+  assert.match(first.sent[0], /^Daybook: /);
+  assert.match(first.sent[0], /\nCharges worth a look\n\$1,500 to Roof Co on [A-Z][a-z]{2} \d+, large$/);
 
   const second = deps();
   assert.equal(await runDigest(dailyDigest, second.d), "quiet");
@@ -185,28 +188,113 @@ test("a failed sync is stated with the last data day, and does not by itself bre
   getDb().prepare("INSERT INTO transactions (date, merchant, amount, account, source, hash) VALUES (?, 'Cafe', -5, 'Visa', 'plaid', 'p1')").run(daysAgo(5));
   const loud = deps(failing);
   assert.equal(await runDigest(dailyDigest, loud.d), "sent");
-  assert.match(loud.sent[0], /Bank sync failed\. Figures as of [A-Z][a-z]{2} \d+\./);
+  assert.match(loud.sent[0], /Couldn't reach the bank, so this is as of [A-Z][a-z]{2} \d+\./);
 
   let calls = 0;
   const flaky = deps({ sync: async () => (++calls === 1 ? Promise.reject(new Error("no wifi yet")) : undefined) });
   getDb().exec("DELETE FROM digest_sent");
   await runDigest(dailyDigest, flaky.d);
   assert.equal(calls, 2, "one retry: a job that fires on wake often runs before the network is up");
-  assert.doesNotMatch(flaky.sent[0], /sync failed/);
+  assert.doesNotMatch(flaky.sent[0], /reach the bank/);
 });
 
 // WHY: the app never shows a month-end projection it doesn't have (before day
 // 5), and qualifies the one it does. The message carries the same sentence, so
 // it must keep the same promise.
-test("the budget line withholds a projection early in the month and qualifies it after", async () => {
+test("the headline withholds a projection early in the month and qualifies it after", async () => {
   const cat = addCat("Groceries");
   setBudget(cat, 5000);
   const month = daysAgo(0).slice(0, 7);
   tx("Grocer", { amount: -120, date: `${month}-01`, categoryId: cat });
   tx("Roof Co", { amount: LARGE, date: daysAgo(1), categoryId: null, hash: "trigger" }); // something to report, outside the budget
-  const budgetLine = () => dailyDigest()!.sections.find((s) => s.title === "Budget")!.lines[0];
-  if (daysAgo(1) <= `${month}-04`) assert.match(budgetLine(), /too early to project the month\.$/);
+  const budgetLine = () => dailyDigest()!.headline;
+  if (daysAgo(1) <= `${month}-04`) assert.match(budgetLine(), /^\$\S+ of your \$5,000 budget used\. Too early to project [A-Z][a-z]+\.$/);
 
   for (const day of ["03", "06", "10"]) tx("Grocer", { amount: -150, date: `${month}-${day}`, categoryId: cat });
-  assert.match(budgetLine(), /^On pace to finish .*(under|over|on) budget\.$/);
+  assert.match(budgetLine(), /^On pace to finish [A-Z][a-z]+ (\$[\d,]+ (under|over)|on) budget\.$/);
+});
+
+
+// WHY: a text full of lines you ignore teaches you to ignore the text. A bill's
+// difference has to be real money AND a real share of the bill.
+test("a bill's difference is reported only when it is at least $25 and at least 10% of the bill", () => {
+  const cat = addCat("Bills");
+  const bill = (name: string, usual: number, now: number) => {
+    for (const back of [3, 2, 1]) tx(name, { amount: -usual, date: monthsBefore(daysAgo(2), back), categoryId: cat });
+    tx(name, { amount: -now, date: daysAgo(2), categoryId: cat });
+  };
+  bill("Groomer", 114, 122.4); // $8 on $114: neither
+  bill("Mortgage Co", 900, 930); // $30 on $900: money, but 3% of the bill
+  bill("Water Co", 74, 142); // $68 on $74: both
+  bill("Phone Co", 120, 85); // $35 less on $120: both, and it fell
+  detectRecurrings();
+  for (const [name, usual] of [["Groomer", 114], ["Mortgage Co", 900], ["Water Co", 74], ["Phone Co", 120]] as const) setRecurringSetting(name, { expectedAmount: usual });
+  assert.deepEqual(dailyDigest()!.sections, [{ title: "Bills that changed", lines: ["Water Co $142, up $68", "Phone Co $85, down $35"] }]);
+});
+
+// WHY: the order is the message. What happened TO you leads (a bill that never
+// posted, then a bill someone changed); among charges, a vendor you have never
+// paid (it might not be you) comes before one that is merely large (you were
+// there when you made it).
+test("the text leads with what you did not choose, and puts a large charge last", { skip: overdueSkip() }, () => {
+  const cat = addCat("Home");
+  tx("Roof Co", { amount: LARGE, date: daysAgo(3), categoryId: cat });
+  tx("New Dentist", { amount: -FIRST_VENDOR_FLOOR, date: daysAgo(2), categoryId: cat });
+  for (const back of [3, 2, 1]) tx("Water Co", { amount: -74, date: monthsBefore(daysAgo(2), back), categoryId: cat });
+  tx("Water Co", { amount: -142, date: daysAgo(2), categoryId: cat });
+  for (const back of [3, 2, 1]) tx("Gas Co", { amount: -90, date: monthsBefore(daysAgo(OVERDUE_GRACE_DAYS + 1), back), categoryId: cat });
+  detectRecurrings();
+  setRecurringSetting("Water Co", { expectedAmount: 74 });
+  const built = dailyDigest()!;
+  assert.deepEqual(built.sections.map((s) => s.title), ["Bills that haven't posted", "Bills that came in high", "Charges worth a look"]);
+  assert.deepEqual(built.sections[2].lines.map((l) => l.split(", ").pop()), ["first time", "large"]);
+});
+
+// WHY: the headline is the dashboard's verdict. "Still" and "Now" tell the
+// reader whether this text changes the picture — and the month turning from
+// under budget to over is the one piece of news that needs no other surprise.
+test("the headline says Still or Now against the last text, and the month going over budget is news by itself, once", async () => {
+  const cat = addCat("Groceries");
+  setBudget(cat, 5000);
+  const month = daysAgo(0).slice(0, 7);
+  for (const day of ["01", "04", "07", "10"]) tx("Grocer", { amount: -300, date: `${month}-${day}`, categoryId: cat });
+  const other = addCat("Home");
+  tx("Roof Co", { amount: LARGE, date: daysAgo(3), categoryId: other, hash: "r1" });
+
+  const first = deps();
+  assert.equal(await runDigest(dailyDigest, first.d), "sent");
+  assert.match(first.sent[0], /^Daybook: On pace to finish [A-Z][a-z]+ \$[\d,]+ under budget\./, "the month's first word on it: neither Still nor Now");
+
+  tx("Fence Co", { amount: LARGE, date: daysAgo(2), categoryId: other, hash: "r2" });
+  const second = deps();
+  assert.equal(await runDigest(dailyDigest, second.d), "sent");
+  assert.match(second.sent[0], /^Daybook: Still on pace to finish [A-Z][a-z]+ \$[\d,]+ under budget\./);
+
+  // Groceries run far past the budget: no new surprise, but the month has turned.
+  // (Each run is under twice the usual $300, so none of them is itself a surprise.)
+  for (const day of ["02", "03", "05", "06", "08", "09", "11", "12"]) tx("Grocer", { amount: -550, date: `${month}-${day}`, categoryId: cat });
+  const third = deps();
+  assert.equal(await runDigest(dailyDigest, third.d), "sent");
+  assert.match(third.sent[0], /^Daybook: Now on pace to finish [A-Z][a-z]+ \$[\d,]+ over budget\.$/, "the turn is the whole message");
+  assert.equal(await runDigest(dailyDigest, deps().d), "quiet", "said once");
+});
+
+// WHY: a bill's paid amount is one charge, so a bill charged twice would look
+// normal. A duplicate charge (or next month's payment going out on the 31st)
+// is exactly what a digest is for.
+test("a once-a-month bill charged twice in a month is reported, once", async () => {
+  const cat = addCat("Auto");
+  for (const back of [3, 2, 1]) tx("Car Loan", { amount: -818.4, date: monthsBefore(daysAgo(3), back), categoryId: cat });
+  tx("Car Loan", { amount: -818.4, date: daysAgo(3), categoryId: cat });
+  detectRecurrings();
+  assert.equal(dailyDigest(), null, "paid once: nothing to say");
+  const sameMonth = daysAgo(3).slice(0, 7) === daysAgo(1).slice(0, 7);
+  tx("Car Loan", { amount: -818.4, date: daysAgo(1), categoryId: cat });
+  const built = dailyDigest();
+  if (!sameMonth) return; // the two charges straddle a month end today: each month was charged once
+  assert.deepEqual(built!.sections.map((s) => s.title), ["Bills charged twice"]);
+  assert.match(built!.sections[0].lines[0], /^Car Loan \$818, charged twice in [A-Z][a-z]+$/);
+  const run = deps();
+  assert.equal(await runDigest(dailyDigest, run.d), "sent");
+  assert.equal(await runDigest(dailyDigest, deps().d), "quiet");
 });
