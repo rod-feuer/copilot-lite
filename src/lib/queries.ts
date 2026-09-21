@@ -61,15 +61,19 @@ export function unlinkMerchant(alias: string) {
   db.prepare("DELETE FROM merchant_links WHERE alias = ?").run(alias);
 }
 
-// The single source of truth for what a merchant is *called* in the UI: a
-// recurring's alias on its canonical vendor, else the raw merchant. Used by the
-// drawer, transactions list, and dashboard recent so a rename shows everywhere.
+// The single source of truth for what a merchant is *called* in the UI: the
+// user's name for its vendor, else the vendor's own name. Used by the drawer,
+// transactions list, and dashboard recent so a rename or a combine shows
+// everywhere. "Its vendor" is the point: a combined bank name that fell back to
+// itself kept reading "Young Mens Chris" beside the "Ymca" rows it had joined,
+// so a combine that worked looked like one that failed.
 export function merchantDisplayName(
   merchant: string,
   settings: Record<string, RecurringSettings>,
   links: Record<string, string>
 ): string {
-  return settings[canonicalMerchant(merchant, links)]?.alias ?? displayMerchant(merchant);
+  const vendor = canonicalMerchant(merchant, links);
+  return settings[vendor]?.alias ?? displayMerchant(vendor);
 }
 
 // The names the user gave to plans that share a bank descriptor, by plan id.

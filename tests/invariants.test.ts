@@ -149,6 +149,28 @@ test("a vendor's alias reads from the canonical merchant, whichever descriptor o
   }
 });
 
+// WHY: Combine says "these bank names are one vendor". If the vendor was never
+// renamed, its combined charges kept their own bank names in every list, so a
+// combine that worked looked like one that failed ("Young Mens Chris" beside
+// five "Ymca" rows, all one vendor). A combined charge is called what its
+// vendor is called: the user's name for it, else the vendor's own.
+test("a combined charge takes its vendor's name, whether or not the vendor was renamed", () => {
+  tx("Ymca", { amount: -80, categoryId: CAT });
+  tx("Young Mens Chris", { amount: -200, categoryId: CAT, hash: "new-name" });
+  tx("Corner Bakery", { amount: -9, categoryId: CAT, hash: "unlinked" });
+  linkMerchant("Young Mens Chris", "Ymca");
+  const named = () => Object.fromEntries(listTransactions({}).map((r) => [r.merchant, r.displayName]));
+  const id = (getDb().prepare("SELECT id FROM transactions WHERE hash = 'new-name'").get() as { id: number }).id;
+
+  assert.equal(named()["Young Mens Chris"], "Ymca", "never renamed: the vendor's own name, not the charge's bank name");
+  assert.equal(transactionById(id)!.displayName, "Ymca", "and the charge's shelf says the same");
+  assert.equal(transactionById(id)!.merchant, "Young Mens Chris", "the bank's wording is kept, for the line under the name");
+  assert.equal(named()["Corner Bakery"], "Corner Bakery", "a charge that was never combined is untouched");
+
+  setRecurringSetting("Ymca", { alias: "YMCA" });
+  assert.deepEqual([named()["Ymca"], named()["Young Mens Chris"]], ["YMCA", "YMCA"], "renamed: both take the user's name");
+});
+
 test("a per-transaction note is trimmed, isolated to its row, and cleared by whitespace", () => {
   // WHY: a generic payment vendor (Venmo) covers many unrelated purchases. A note
   // explaining one charge must attach to THAT transaction only — never bleed to
