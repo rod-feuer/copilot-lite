@@ -437,3 +437,20 @@ test("a short list of due bills is shown whole, small ones included", () => {
   detectRecurrings();
   assert.equal(titled(weeklyDigest(), /^Due in the next 7 days/)!.lines.length, 3);
 });
+
+// WHY: an inbox row shows the subject and then the start of the body. The
+// subject is the verdict, so a body that opens with the verdict spends the
+// preview saying it twice. The hidden first line carries the next two facts;
+// and in the body an amount sits in its own right-aligned cell, so a column of
+// them can be read down.
+test("the weekly email previews what the subject doesn't say, and sets amounts in their own column", () => {
+  const cat = addCat("Shopping");
+  tx("Store A", { amount: -400, date: daysAgo(2), categoryId: cat });
+  const built = weeklyDigest();
+  const html = renderHtml(built);
+  assert.match(built.preheader!, /^\$400 spent this week outside your bills\.$/);
+  assert.ok(!built.preheader!.includes(built.headline.slice(0, 20)), "not the verdict again");
+  assert.ok(html.indexOf(built.preheader!) > -1 && html.indexOf(built.preheader!) < html.indexOf(built.headline), "and it comes first, hidden");
+  assert.match(html, /display:none[^>]*>\$400 spent this week/);
+  assert.match(html, /<td width="56"[^>]*>[A-Z][a-z]{2} \d+<\/td><td[^>]*>Store A<\/td><td align="right"[^>]*tabular-nums[^>]*>\$400<\/td>/, "date, name, amount: three cells");
+});
