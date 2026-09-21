@@ -39,8 +39,8 @@ export const TABLES = [
 export function wipe(except: string[] = []) {
   const db = getDb();
   for (const t of TABLES) if (!except.includes(t)) db.exec(`DELETE FROM ${t}`);
-  // Created lazily by the suggestion queue, so they may not exist yet.
-  for (const t of ["category_model_answers", "category_suggestion_dismissals"]) db.exec(`DROP TABLE IF EXISTS ${t}`);
+  // Created lazily (by the suggestion queue, by the digests), so they may not exist yet.
+  for (const t of ["category_model_answers", "category_suggestion_dismissals", "digest_sent"]) db.exec(`DROP TABLE IF EXISTS ${t}`);
 }
 
 // A clean database before every test in the file. `except` keeps fixture rows a

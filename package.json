@@ -9,6 +9,7 @@
     "lint": "eslint",
     "lint:design": "node scripts/lint-design.mjs",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "digest": "node --env-file-if-exists=.env.local --import tsx scripts/digest.ts",
     "smoke": "node --env-file-if-exists=.env.local scripts/smoke.mjs",
     "test:clock": "node scripts/test-clock.mjs",
     "test:ui": "node scripts/test-ui.mjs"
