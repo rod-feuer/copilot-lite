@@ -386,7 +386,10 @@ Challenger headline to test: *"All the control of a spreadsheet. None of the dat
 
 ---
 
-## Open item — the name
-Codename is `copilot-lite`, but **"Copilot" is a direct competitor** — the product needs
-its own name before any public/marketing surface. Candidates should evoke the POV:
-transparent / correctable / owned.
+## The name — decided 2026-09-20: Daybook
+The codename was `copilot-lite`, and **"Copilot" is a direct competitor's name**. The app
+is now **Daybook**: the accounting journal where each day's transactions are first
+written down. Renamed: the repo, the visible app name, the icon letter, the README and the
+package. Deliberately not renamed: the database file and internal keys (`data/copilot.db`,
+`COPILOT_DB_PATH`, `copilot:*` storage keys), the Copilot Money CSV importer (it names a
+data source), and the local working folder.

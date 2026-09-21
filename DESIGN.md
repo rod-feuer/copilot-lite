@@ -84,7 +84,7 @@ matrix: objects × operations; the blanks are the findings.
 
 ---
 
-## §2 — This app's conventions (copilot-lite)
+## §2 — This app's conventions (Daybook)
 
 How the principles above are realized here. **Rewrite this section per app;** §1
 and §3 carry over unchanged.
