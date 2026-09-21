@@ -3,17 +3,17 @@
 // tested. Runs without the web server, from the repo root (the database path is
 // relative to the working directory). Logs say outcomes, never message bodies
 // or environment values: under the scheduler, stdout is a log file.
-import { dailyDigest, runDigest } from "../src/lib/digest";
+import { dailyDigest, weeklyDigest, runDigest } from "../src/lib/digest";
 import { syncFromBank } from "../src/lib/plaid";
 
 async function main() {
   const args = process.argv.slice(2);
   const kind = args.find((a) => !a.startsWith("--"));
   const dryRun = args.includes("--dry-run");
-  if (kind !== "daily") throw new Error("usage: digest daily --dry-run [--no-sync]");
+  if (kind !== "daily" && kind !== "weekly") throw new Error("usage: digest daily|weekly --dry-run [--no-sync]");
   if (!dryRun) throw new Error("sending is not built yet: run with --dry-run");
 
-  const outcome = await runDigest(dailyDigest, {
+  const outcome = await runDigest(kind === "daily" ? dailyDigest : weeklyDigest, {
     sync: args.includes("--no-sync") ? async () => {} : syncFromBank,
     send: async () => {
       throw new Error("sending is not built yet");

@@ -7,6 +7,9 @@ import { linkMerchant, setBudget, setRecurringSetting } from "../src/lib/queries
 import { LARGE_CHARGE } from "../src/lib/forecast";
 import {
   dailyDigest,
+  weeklyDigest,
+  renderHtml,
+  subjectOf,
   runDigest,
   unusualCharges,
   alreadySent,
@@ -28,7 +31,7 @@ const sentKeys = () => {
 // test never reaches a bank or a phone.
 function deps(over: Partial<DigestDeps> = {}) {
   const sent: string[] = [];
-  const d: DigestDeps = { sync: async () => {}, send: async (t) => void sent.push(t), dryRun: false, retryMs: 0, ...over };
+  const d: DigestDeps = { sync: async () => {}, send: async (m) => void sent.push(m.text), dryRun: false, retryMs: 0, ...over };
   return { d, sent };
 }
 const LARGE = -(LARGE_CHARGE + 500);
@@ -145,7 +148,7 @@ test("nothing is said twice, including when the bank re-posts a charge with a ne
   const first = deps();
   assert.equal(await runDigest(dailyDigest, first.d), "sent");
   assert.match(first.sent[0], /^Daybook: /);
-  assert.match(first.sent[0], /\nCharges worth a look\n\$1,500 to Roof Co on [A-Z][a-z]{2} \d+, large$/);
+  assert.match(first.sent[0], /\nCharges worth a look\n• \$1,500 to Roof Co on [A-Z][a-z]{2} \d+, large$/);
 
   const second = deps();
   assert.equal(await runDigest(dailyDigest, second.d), "quiet");
@@ -297,4 +300,115 @@ test("a once-a-month bill charged twice in a month is reported, once", async () 
   const run = deps();
   assert.equal(await runDigest(dailyDigest, run.d), "sent");
   assert.equal(await runDigest(dailyDigest, deps().d), "quiet");
+});
+
+// ---------- the weekly ----------
+const thisMonth = () => daysAgo(0).slice(0, 7);
+const titled = (b: { sections: { title: string; lines: string[] }[] }, re: RegExp) => b.sections.find((x) => re.test(x.title));
+
+// WHY: the weekly is the rhythm read, so it is sent even when nothing happened —
+// and what it said is kept, because next week's "how it moved" is measured from it.
+test("the weekly is always sent, and keeps the projection it quoted for next week's comparison", async () => {
+  const cat = addCat("Groceries");
+  setBudget(cat, 5000);
+  for (const day of ["01", "04", "07", "10"]) tx("Grocer", { amount: -300, date: `${thisMonth()}-${day}`, categoryId: cat });
+  const subjects: string[] = [];
+  const run = deps({ send: async (m) => void subjects.push(m.subject) });
+  assert.equal(await runDigest(weeklyDigest, run.d), "sent");
+  assert.match(subjects[0], /^Daybook: On pace to finish [A-Z][a-z]+ \$[\d,]+ under budget$/, "the verdict is the subject line");
+  const row = getDb().prepare("SELECT key, value FROM digest_sent WHERE key LIKE 'weekly:%'").get() as { key: string; value: number };
+  assert.equal(row.key, `weekly:${daysAgo(0)}`);
+  assert.ok(row.value > 1200, "the projected month-end spend it quoted");
+});
+
+// WHY: "down $1,900 since Sep 14" is only true against a figure this app
+// actually sent, in the same month. With nothing to compare, it says nothing;
+// and it names the date, never "last week" — a Mac that was off skips one.
+test("the weekly says how the projection moved only against an earlier weekly in the same month, and names its date", () => {
+  const cat = addCat("Groceries");
+  setBudget(cat, 5000);
+  for (const day of ["01", "04", "07", "10"]) tx("Grocer", { amount: -300, date: `${thisMonth()}-${day}`, categoryId: cat });
+  assert.deepEqual(weeklyDigest().lede, [], "no earlier weekly: nothing to compare with");
+
+  const put = (key: string, value: number) => getDb().prepare("INSERT INTO digest_sent (key, sentAt, value) VALUES (?, 'x', ?)").run(key, value);
+  put("weekly:2001-01-07", 9999);
+  assert.deepEqual(weeklyDigest().lede, [], "another month's projection is not a baseline");
+
+  const now = weeklyDigest().value as number;
+  put(`weekly:${thisMonth()}-01`, now + 1900);
+  assert.match(weeklyDigest().lede![0], /^Projected spending is down \$1,900 since [A-Z][a-z]{2} 1\.$/);
+});
+
+// WHY: "went over this week" must mean this week did it. An annual budget is
+// judged on the year; and a category already over before the week began is old
+// news (the daily said so), not this week's.
+test("the weekly names a category only in the week it went over, judging an annual budget on the year", () => {
+  const year = thisMonth().slice(0, 4);
+  const monthly = addCat("Restaurants");
+  const annual = addCat("Vacations");
+  const old = addCat("Hobbies");
+  setBudget(monthly, 500);
+  setBudget(annual, 1200, "annual");
+  setBudget(old, 100);
+  tx("Bistro", { amount: -450, date: `${thisMonth()}-01`, categoryId: monthly });
+  tx("Bistro", { amount: -80, date: daysAgo(1), categoryId: monthly }); // this week took it past $500
+  tx("Airline", { amount: -1150, date: `${year}-01-01`, categoryId: annual });
+  tx("Hotel", { amount: -100, date: daysAgo(1), categoryId: annual }); // this week took the YEAR past $1,200
+  tx("Hobby Shop", { amount: -150, date: daysAgo(20), categoryId: old }); // over, but not this week
+  const lines = titled(weeklyDigest(), /over budget this week/)?.lines ?? [];
+  const inMonth = daysAgo(1).slice(0, 7) === thisMonth();
+  const hobbyThisMonth = daysAgo(20).slice(0, 7) === thisMonth();
+  assert.ok(lines.includes("Vacations $1,250 of $1,200 this year") || daysAgo(1).slice(0, 4) !== year);
+  if (inMonth) assert.ok(lines.includes("Restaurants $530 of $500"));
+  if (hobbyThisMonth) assert.ok(!lines.some((l) => l.startsWith("Hobbies")), "over before the week began is not this week's news");
+});
+
+// WHY: "against a typical $1,610" is a claim about your habits. With under four
+// weeks of history it would be a guess, so it is withheld; and a bill is not
+// "spending outside your bills".
+test("the week is compared with a typical one only when there is enough history, and leaves the bills out", () => {
+  const cat = addCat("Shopping");
+  tx("Store A", { amount: -400, date: daysAgo(2), categoryId: cat });
+  tx("Store B", { amount: -90, date: daysAgo(3), categoryId: cat });
+  tx("Store C", { amount: -60, date: daysAgo(4), categoryId: cat });
+  tx("Store D", { amount: -10, date: daysAgo(5), categoryId: cat });
+  const thin = titled(weeklyDigest(), /outside your bills/)!.lines;
+  assert.equal(thin[0], "$560 spent", "no history: no comparison");
+  assert.deepEqual(thin.slice(1).map((l) => l.split(" to ")[0]), ["$400", "$90", "$60"], "the three largest, largest first");
+
+  // (a different shop each week: the same one every seven days would be a plan)
+  for (const week of [1, 2, 3, 4, 5]) tx(`Shop ${"VWXYZ"[week - 1]}`, { amount: -(100 * week), date: daysAgo(7 * week + 3), categoryId: cat });
+  assert.equal(titled(weeklyDigest(), /outside your bills/)!.lines[0], "$560 spent, against a typical $300");
+
+  for (const back of [3, 2, 1]) tx("Landlord", { amount: -900, date: monthsBefore(daysAgo(2), back), categoryId: cat });
+  tx("Landlord", { amount: -900, date: daysAgo(2), categoryId: cat });
+  detectRecurrings();
+  assert.match(titled(weeklyDigest(), /outside your bills/)!.lines[0], /^\$560 spent/, "rent is a bill, not the week's spending");
+});
+
+// WHY: the weekly's job for the week ahead: what will leave the account, with a
+// total, from the same source the dashboard uses.
+test("the weekly lists the bills due in the next seven days with their total", () => {
+  const cat = addCat("Bills");
+  const dueIn = (name: string, days: number, amount: number) => {
+    for (const back of [3, 2, 1]) tx(name, { amount: -amount, date: monthsBefore(daysAgo(-days), back), categoryId: cat });
+  };
+  dueIn("Power Co", 3, 120);
+  dueIn("Phone Co", 5, 80);
+  dueIn("Far Off Co", 20, 999);
+  detectRecurrings();
+  setRecurringSetting("Phone Co", { alias: "Phone Co · $80" }); // the detector's own label for a second plan
+  const due = titled(weeklyDigest(), /^Due in the next 7 days/);
+  if (Number(daysAgo(-3).slice(8, 10)) > 28 || Number(daysAgo(-5).slice(8, 10)) > 28) return; // the fixture clamps to the 28th: the due day would differ
+  assert.equal(due?.title, "Due in the next 7 days: $200 expected");
+  assert.deepEqual(due?.lines.map((l) => l.replace(/^[A-Z][a-z]{2} \d+ /, "")), ["Power Co $120", "Phone Co $80"], "and a name that already ends in its amount doesn't say it twice");
+});
+
+// WHY: vendor names come from a bank and go into HTML mail.
+test("the email escapes vendor names, and its subject is the headline", () => {
+  const built = { headline: "On pace to finish September $10 under budget.", lede: [], sections: [{ title: "Charges <b>", lines: ["$5 to A&W <script>x</script>"] }], todo: [] };
+  const html = renderHtml(built);
+  assert.ok(html.includes("A&amp;W &lt;script&gt;x&lt;/script&gt;") && html.includes("Charges &lt;b&gt;"));
+  assert.ok(!/<script>/.test(html));
+  assert.equal(subjectOf(built), "Daybook: On pace to finish September $10 under budget");
 });
