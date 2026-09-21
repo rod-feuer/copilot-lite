@@ -19,9 +19,9 @@ export default async function LoginPage({
       <form suppressHydrationWarning method="POST" action="/api/login" className="card w-full max-w-xs p-6">
         <div className="mb-1 flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-[13px] font-bold text-white">
-            C
+            D
           </div>
-          <div className="text-[15px] font-semibold tracking-tight">Copilot Lite</div>
+          <div className="text-[15px] font-semibold tracking-tight">Daybook</div>
         </div>
         <p className="mb-4 text-[13px] text-[var(--muted)]">Enter your password to continue.</p>
         <input suppressHydrationWarning type="hidden" name="from" value={from} />

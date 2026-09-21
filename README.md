@@ -1,20 +1,21 @@
-# Copilot Lite
+# Daybook
 
-[![tests](https://github.com/rod-feuer/copilot-lite/actions/workflows/tests.yml/badge.svg)](https://github.com/rod-feuer/copilot-lite/actions/workflows/tests.yml)
+[![tests](https://github.com/rod-feuer/daybook/actions/workflows/tests.yml/badge.svg)](https://github.com/rod-feuer/daybook/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![SQLite](https://img.shields.io/badge/SQLite-better--sqlite3-003B57?logo=sqlite&logoColor=white)](https://github.com/WiseLibs/better-sqlite3)
 
-A simplified, local-only personal finance dashboard — a stripped-down Copilot Money
-clone with four screens: **Dashboard, Transactions, Categories, Recurrings**.
+A local-only personal finance app: a daybook for a household. It keeps each day's
+transactions, finds the recurring bills in them, and says where the month is heading,
+on four screens: **Dashboard, Transactions, Categories, Recurrings**.
 
 Built with Next.js 16 + Tailwind v4 + SQLite (better-sqlite3). All data stays on
 your machine in `data/copilot.db` (gitignored) — nothing is sent anywhere except the
 optional Claude categorization call (see below).
 
-![Copilot Lite dashboard](docs/dashboard.png)
+![Daybook dashboard](docs/dashboard.png)
 
 > Shown with the built-in sample data.
 
@@ -27,8 +28,8 @@ optional Claude categorization call (see below).
 ## Setup
 
 ```bash
-git clone https://github.com/rod-feuer/copilot-lite.git
-cd copilot-lite
+git clone https://github.com/rod-feuer/daybook.git
+cd daybook
 npm install
 npm run dev            # http://localhost:3000
 ```

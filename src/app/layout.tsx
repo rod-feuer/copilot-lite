@@ -22,14 +22,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Copilot Lite",
+  title: "Daybook",
   description: "A simplified personal finance dashboard",
-  applicationName: "Copilot Lite",
+  applicationName: "Daybook",
   // Standalone full-screen + a proper title/status bar when added to the iOS
   // home screen. (The manifest at app/manifest.ts is auto-linked by Next.)
   appleWebApp: {
     capable: true,
-    title: "Copilot Lite",
+    title: "Daybook",
     statusBarStyle: "default",
   },
   // Next emits the modern `mobile-web-app-capable`; add the apple-specific one

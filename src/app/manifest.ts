@@ -6,8 +6,8 @@ import type { MetadataRoute } from "next";
 // arrives with Tailscale; until then this still drives iOS "Add to Home Screen".
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Copilot Lite",
-    short_name: "Copilot Lite",
+    name: "Daybook",
+    short_name: "Daybook",
     description: "A simplified personal finance dashboard",
     start_url: "/",
     display: "standalone",

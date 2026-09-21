@@ -730,6 +730,20 @@ async function iosAutofillTag(browser) {
   });
 }
 
+// The app is Daybook. Its first name borrowed a competitor's, so the places a
+// person sees the name (the tab, the sidebar, the sign-in page, the name a
+// phone gives the home-screen icon) are held to the new one.
+async function appName(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    const seen = await page.evaluate(async () => { const m = await (await fetch("/manifest.webmanifest")).json(); return { title: document.title, wordmark: document.querySelector("aside")?.innerText.split("\n").map((t) => t.trim()).filter(Boolean).slice(0, 2).join(" ") ?? "", manifest: `${m.name} / ${m.short_name}` }; });
+    await page.goto(BASE + "/login", { waitUntil: "networkidle2" });
+    const login = await page.$eval("form[action='/api/login']", (f) => f.innerText.split("\n").map((t) => t.trim()).filter(Boolean).slice(0, 2).join(" "));
+    const all = [seen.title, seen.wordmark, seen.manifest, login];
+    record("app name", "the tab, the sidebar, the sign-in page and the home-screen name all say Daybook", all.every((t) => /Daybook/.test(t) && !/copilot/i.test(t)) && seen.wordmark.startsWith("D") && login.startsWith("D"), `title "${seen.title}"; sidebar "${seen.wordmark}"; manifest "${seen.manifest}"; sign-in "${login}"`);
+  });
+}
+
 // A phone is a narrow column, not a small desktop: what shares a row there is
 // chosen, not whatever wrapping leaves behind.
 async function phoneLayout(browser) {
@@ -1325,7 +1339,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

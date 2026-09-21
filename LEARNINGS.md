@@ -1,4 +1,4 @@
-# LEARNINGS — skills distilled from building copilot-lite
+# LEARNINGS — skills distilled from building Daybook (formerly copilot-lite)
 
 Reusable skills mined from this project's commit history, memory, and session
 transcript (a 29-agent harvest → adversarial prune → synthesis). Each is a
@@ -80,7 +80,7 @@ Why: Renaming was "buried" in the Edit panel (commit 672ed7f); the inline field 
 
 ---
 
-## copilot-lite playbook (project-specific procedures)
+## Daybook playbook (project-specific procedures)
 
 The domain machinery, as decision rules. Most underlying *facts* are in memory
 (see `MEMORY.md`); these are the *how-to* layered on top.
@@ -104,5 +104,5 @@ The domain machinery, as decision rules. Most underlying *facts* are in memory
 Harvested 2026-06 from commits + memory + transcript. The completeness critic
 flagged two residual veins worth a future pass if we extend this: deeper
 **test-authoring heuristics** beyond skill 7, and whether each "general" skill
-*truly* transfers off copilot-lite or is a finance-specific rule in disguise
+*truly* transfers off Daybook or is a finance-specific rule in disguise
 (skills 10–11 lean finance; treat as provisional-general).

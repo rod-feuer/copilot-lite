@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 // App icon, generated (no binary asset) so it stays in sync with the brand. Full
-// square, solid accent background, centered "C" with padding so it survives a
+// square, solid accent background, centered "D" with padding so it survives a
 // maskable crop (Android) and iOS's squircle. Also the favicon (browsers
 // downscale). Mirrors the sidebar/login logo.
 export const size = { width: 512, height: 512 };
@@ -23,7 +23,7 @@ export default function Icon() {
           fontWeight: 700,
         }}
       >
-        C
+        D
       </div>
     ),
     { ...size }
