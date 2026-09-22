@@ -96,7 +96,9 @@ and §3 carry over unchanged.
 - **Correction vocabulary.** One noun: a **plan** (a detected recurring bill or
   deposit; a vendor may carry several). Plain verbs the user owns, and no
   others: **In plan / Not in plan** (one toggle on a charge; an "edited" tag
-  says the user decided, no tag means the detector did), **Mark ended /
+  says the user decided, no tag means the detector did; in a list row the ↻
+  glyph means "in a plan" and nothing else, so a charge taken out shows no
+  glyph rather than a struck one), **Mark ended /
   Reactivate** (a plan stopped, or is back), **Not recurring** (never was a
   pattern: drop the plan), **Start a plan** (on a charge in no plan: this is
   a subscription the detector can't see; a plan from its amount, which the
