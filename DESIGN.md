@@ -98,8 +98,10 @@ and §3 carry over unchanged.
   others: **In plan / Not in plan** (one toggle on a charge; an "edited" tag
   says the user decided, no tag means the detector did), **Mark ended /
   Reactivate** (a plan stopped, or is back), **Not recurring** (never was a
-  pattern: drop the plan), **Combine / Separate** (bank names that are one
-  vendor). **Exclude from totals** and **split** are money verbs and live on
+  pattern: drop the plan), **Start a plan** (on a charge in no plan: this is
+  a subscription the detector can't see; a plan from its amount, which the
+  vendor's other charges at that amount join), **Combine / Separate** (bank
+  names that are one vendor). **Exclude from totals** and **split** are money verbs and live on
   the Transactions tab; the shelf only shows "not counted". Never "series",
   "excluded", "not detected" or "configure" in the UI. *(Teach, One-pattern)*
 - **Auto vs. edited is always legible.** A field shows whether it holds the
