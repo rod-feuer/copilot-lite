@@ -25,7 +25,10 @@ function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" | "pai
       {f.sub && <div className="text-xs text-[var(--muted)]">{f.sub}</div>}
     </>
   );
-  const cls = align === "right" ? "text-right" : align === "pair" ? "sm:text-right" : "";
+  // Every figure is left-aligned: the three read as one row of columns. Pinned
+  // to the card's edges, Net and the pair had 600px of nothing between them on
+  // a wide screen. `align` is kept for callers; it no longer moves text.
+  const cls = align === "right" || align === "pair" ? "" : "";
   return f.href ? (
     <Link href={f.href} className={`${cls} block rounded-lg hover:underline`}>
       {inner}
@@ -65,27 +68,31 @@ export function SummaryCard({
           {eyebrow}
         </div>
       )}
+      {/* The verdict is the card's sentence, and it reads first: under the
+          frame, above the figures it judges. At the foot it lost to the big
+          red net figure, and the card's loudest thing disagreed with its verdict. */}
+      {status && <div data-status className="mb-4 flex flex-wrap items-center gap-x-2 text-[15px] font-semibold">{status}</div>}
       {/* Figures share a top line. Bottom-aligned, a taller caption under one
           figure pushed its number up, and the three big numbers sat on three
           different lines. */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
         {/* The primary takes what the counter-figure leaves, so a long label
             wraps under its figure instead of pushing the other to a second row. */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-sm:flex-1">
           <Fig f={primary} />
         </div>
         {/* Two counter-figures don't fit beside the primary on a phone: they
             wrapped one under the other, right-aligned, a staircase. There they
             sit as a pair of columns on the primary's left edge instead. */}
         {Array.isArray(secondary) && secondary.length > 1 ? (
-          <div data-figure-pair className="grid w-full grid-cols-2 items-start gap-4 sm:flex sm:w-auto sm:flex-wrap sm:justify-end sm:gap-6">
+          <div data-figure-pair className="grid w-full grid-cols-2 items-start gap-4 sm:flex sm:w-auto sm:flex-wrap sm:gap-8">
             {secondary.map((f, i) => (
               <Fig key={i} f={f} align="pair" />
             ))}
           </div>
         ) : (
           secondary && (
-            <div className="flex flex-wrap items-start justify-end gap-6">
+            <div className="flex flex-wrap items-start gap-8">
               {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
                 <Fig key={i} f={f} align="right" />
               ))}
@@ -93,25 +100,30 @@ export function SummaryCard({
           )
         )}
       </div>
-      {barCaption && (
-        <div data-bar-caption className="mt-4 text-right text-xs text-[var(--muted)]">
-          {barCaption}
-        </div>
-      )}
-      <div
-        className={`${barCaption ? "mt-1" : "mt-3"} h-2.5 overflow-hidden rounded-full bg-[var(--background)]`}
-        role="progressbar"
-        aria-label={barLabel}
-        aria-valuenow={Math.round(pct)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
+      {/* The bar and what it measures on one line: the caption at its right
+          end, where the bar's own end is. It sat on a line of its own above.
+          On a phone the caption took half the bar's width, so there it sits
+          above the bar, right-aligned. */}
+      <div className="mt-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
         <div
-          className="h-full rounded-full"
-          style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
-        />
+          className="h-2.5 w-full min-w-0 overflow-hidden rounded-full bg-[var(--background)] sm:flex-1"
+          role="progressbar"
+          aria-label={barLabel}
+          aria-valuenow={Math.round(pct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
+          />
+        </div>
+        {barCaption && (
+          <div data-bar-caption className="order-first shrink-0 whitespace-nowrap text-right text-xs text-[var(--muted)] sm:order-none">
+            {barCaption}
+          </div>
+        )}
       </div>
-      {status && <div className="mt-3 flex flex-wrap items-center gap-x-2 text-xs">{status}</div>}
       {note && <p className="mt-2 text-[11px] text-[var(--muted)]">{note}</p>}
     </div>
   );

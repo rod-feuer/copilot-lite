@@ -179,6 +179,12 @@ horizontal (12 vertical for a one-line row on a phone: a 44px touch target,
 and room for a difference under the amount). One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
+**Summary card anatomy** — the frame as an eyebrow where the figures share
+one ("September, projected"); the verdict sentence next, at the card-title
+size, since it is the judgement the figures serve; the figures as columns from
+the left, never pinned to the card's edges; then the bar with what it measures
+at its right end (above it on a phone), and the reconciling note last.
+
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
 in one slot on every page, page actions to its right (on a phone the title
 and the picker hold one row and the subtitle sits beneath both). Then the summary card
