@@ -539,6 +539,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onSetNote={(note) => chargePatch(xData.id, { note }, "Couldn't save note — please try again")}
                 onSetExcluded={(excluded) => chargePatch(xData.id, { excluded }, "Couldn't update — please try again")}
                 onSetMembership={(put) => txSetMembership(xData.id, put, xData.planKey)}
+                onStartPlan={() => chargePatch(xData.id, { startPlan: true }, "Couldn't start a plan — please try again")}
                 onSplit={() => setSplitting(true)}
                 onUndoSplit={() => chargeUndoSplit(xData.id)}
                 onSplitAsBefore={() =>
@@ -825,6 +826,7 @@ function ChargeBody({
   onSetNote,
   onSetExcluded,
   onSetMembership,
+  onStartPlan,
   onSplit,
   onUndoSplit,
   onSplitAsBefore,
@@ -840,6 +842,7 @@ function ChargeBody({
   onSetNote: (note: string | null) => void;
   onSetExcluded: (excluded: boolean) => void;
   onSetMembership: (put: "in" | "out") => void;
+  onStartPlan: () => void;
   onSplit: () => void;
   onUndoSplit: () => void;
   onSplitAsBefore: () => void; // the vendor's split rule missed this charge by a price change
@@ -894,6 +897,14 @@ function ChargeBody({
             charge is never a dead end for "this should be recurring". */}
         {!data.planKey && !excluded && (
           <MembershipPill kind="vendor" inPlan={false} edited={false} onToggle={onMakeRecurring} />
+        )}
+        {/* A subscription the detector can't see (two amounts on one day, too
+            few charges yet): the user's word makes the plan, from this charge's
+            amount; the vendor's other charges at that amount join it. */}
+        {!excluded && !isParent && data.recurringId == null && (
+          <button onClick={onStartPlan} className="btn-link" data-start-plan>
+            Start a plan →
+          </button>
         )}
         {excluded && <span>not counted in totals</span>}
         {isParent && <span>split · {data.splitParts} parts</span>}

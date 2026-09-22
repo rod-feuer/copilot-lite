@@ -760,6 +760,23 @@ async function appName(browser) {
   });
 }
 
+// A charge the detector left out of any plan can start one: "Start a plan →"
+// on the charge's shelf makes a plan from its amount, and the shelf then shows
+// the charge in it. (Zylo Widget Works: one charge, no plan.)
+async function startAPlan(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions?vendor=Zylo%20Widget%20Works", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    await page.$eval("[data-drawer-row]", (r) => r.click()); await shelfIs(page, true); await shelfSettled(page);
+    const before = await page.evaluate((sel) => document.querySelector(sel).innerText.replace(/\s+/g, " "), shelfSel);
+    await page.click(`${shelfSel} [data-start-plan]`);
+    await page.waitForFunction((sel) => /In plan/.test(document.querySelector(sel)?.innerText ?? ""), { timeout: 8000 }, shelfSel).catch(() => {});
+    await shelfSettled(page);
+    const after = await page.evaluate((sel) => document.querySelector(sel).innerText.replace(/\s+/g, " "), shelfSel);
+    record("start a plan", "a charge outside any plan can start one, and then reads as in it", /Not recurring/.test(before) && /In plan/.test(after) && /Zylo Widget Works · \$31/.test(after), `before: ${/Not recurring/.test(before)}; after: ${after.match(/In plan.{0,40}/)?.[0]}`);
+  });
+}
+
 // A phone is a narrow column, not a small desktop: what shares a row there is
 // chosen, not whatever wrapping leaves behind.
 async function phoneLayout(browser) {
@@ -1355,7 +1372,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

@@ -8,6 +8,8 @@ import {
   linkMerchant,
   setRecurringSetting,
   setRecurringOverride,
+  setTransactionRecurringIncluded,
+  startPlanKey,
   deleteCategory,
   categoriesWithTotals,
 } from "../src/lib/queries";
@@ -251,4 +253,50 @@ test("a forced vendor splits into its day-parts, leaving one-off purchases out, 
   // (as for any vendor) holds beside the 26th's $26.74 as a same-day bill.
   const linked = getDb().prepare("SELECT COUNT(*) AS n, ROUND(MIN(amount),2) AS biggest FROM transactions WHERE merchant = 'Apple' AND recurringId IS NOT NULL").get() as { n: number; biggest: number };
   assert.deepEqual(linked, { n: 13, biggest: -26.74 });
+});
+
+// WHY: a subscription the detector cannot see — Apple's $10.69 on the 21st,
+// three charges with a skipped month between them — had no way in. "Not in plan" only removes evidence. "Start a plan" is the
+// user's word: the plan exists from that charge, the vendor's other charges at
+// that amount join it, and so does next month's, on its own.
+test("Start a plan makes a plan from one charge; same-amount charges join it now and on later syncs", () => {
+  // Apple's real shape: two subscriptions the detector splits out (the 2nd
+  // and the 26th), the $10.69 on the 21st it cannot (it skipped a month, so
+  // three charges don't read as monthly yet), and purchases. Forced, as the
+  // owner had it.
+  seed("Apple", [
+    ...months(6, 3, -9.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-02") })),
+    ...months(6, 3, -12.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-26") })),
+    { date: "2025-06-21", amount: -5.34 },
+    { date: "2025-06-21", amount: -10.69 },
+    { date: "2025-07-21", amount: -10.69 },
+    { date: "2025-09-21", amount: -10.69 },
+    { date: "2025-08-17", amount: -832.46 },
+    { date: "2025-08-04", amount: -1.06 },
+  ]);
+  setRecurringOverride("Apple", "force");
+  const plans = () => detectRecurrings().filter((r) => /^Apple/.test(r.merchant)).map((r) => `${r.merchant} ${r.cadence} ${r.avgAmount} x${r.count}`).sort();
+  assert.deepEqual(plans(), ["Apple · 26th monthly -12.99 x3", "Apple · 2nd monthly -9.99 x3"], "a skipped month on the 21st: no plan for the $10.69");
+
+  const id = (getDb().prepare("SELECT id FROM transactions WHERE amount = -10.69 AND date = '2025-09-21'").get() as { id: number }).id;
+  const key = startPlanKey(id)!;
+  assert.equal(key, "Apple · $10.69");
+  setTransactionRecurringIncluded(id, key);
+  assert.deepEqual(plans(), ["Apple · $10.69 monthly -10.69 x3", "Apple · 26th monthly -12.99 x3", "Apple · 2nd monthly -9.99 x3"], "the pinned charge and the two earlier $10.69s; not the $5.34 or the iPhone");
+
+  seed("Apple", [{ date: "2025-10-21", amount: -10.69 }]);
+  assert.equal(plans()[0], "Apple · $10.69 monthly -10.69 x4", "next month's joins with no further tap — and the plan keeps its key (and so its name) once the detector can see it too");
+  const linked = getDb().prepare("SELECT COUNT(*) AS n FROM transactions WHERE merchant = 'Apple' AND recurringId IS NOT NULL").get() as { n: number };
+  assert.equal(linked.n, 10, "four $10.69, three $9.99, three $12.99; the $5.34, the iPhone and the $1.06 are not bills");
+});
+
+test("a split parent or a charge excluded from totals can't start a plan", () => {
+  seed("Gym", [{ date: "2025-06-01", amount: -50 }]);
+  const gym = (getDb().prepare("SELECT id, hash FROM transactions WHERE merchant = 'Gym'").get() as { id: number; hash: string });
+  getDb().prepare("INSERT INTO transactions (date, merchant, amount, account, source, hash) VALUES ('2025-06-01','Gym',-50,'Checking','test',?)").run(gym.hash + ":s0");
+  assert.equal(startPlanKey(gym.id), null, "a split parent: its parts are the charges");
+  seed("Spa", [{ date: "2025-06-01", amount: -50 }]);
+  const spa = (getDb().prepare("SELECT id FROM transactions WHERE merchant = 'Spa'").get() as { id: number });
+  getDb().prepare("UPDATE transactions SET excluded = 1 WHERE id = ?").run(spa.id);
+  assert.equal(startPlanKey(spa.id), null, "not counted in totals: not a bill");
 });
