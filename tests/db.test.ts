@@ -10,6 +10,7 @@ import {
   setRecurringOverride,
   setTransactionRecurringIncluded,
   startPlanKey,
+  merchantSummary,
   deleteCategory,
   categoriesWithTotals,
 } from "../src/lib/queries";
@@ -299,4 +300,30 @@ test("a split parent or a charge excluded from totals can't start a plan", () =>
   const spa = (getDb().prepare("SELECT id FROM transactions WHERE merchant = 'Spa'").get() as { id: number });
   getDb().prepare("UPDATE transactions SET excluded = 1 WHERE id = ?").run(spa.id);
   assert.equal(startPlanKey(spa.id), null, "not counted in totals: not a bill");
+});
+
+// WHY: a vendor's shelf spoke for the vendor with ONE plan's figures (the most
+// recently charged), which is right for one bill under two bank spellings and
+// wrong for Apple's six subscriptions: "$128 per year" on a vendor that costs
+// $790. A vendor with several plans lists them, named as the user named them,
+// with what the live ones add up to; a plan's own shelf is unchanged.
+test("merchantSummary lists a multi-plan vendor's plans with their monthly total; a plan's own summary does not", () => {
+  seed("Apple", [
+    ...months(6, 4, -9.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-02") })),
+    ...months(6, 4, -12.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-26") })),
+  ]);
+  detectRecurrings();
+  setRecurringSetting("Apple · 26th", { alias: "Apple TV", expectedAmount: 14.99 });
+  const v = merchantSummary("Apple");
+  assert.deepEqual(v.planList.map((p) => [p.key, p.name, p.amount, p.cadence, p.ended]), [
+    ["Apple · 26th", "Apple TV", 14.99, "monthly", false],
+    ["Apple · 2nd", "2nd", 9.99, "monthly", false],
+  ], "most recently charged first; the user's name and expected amount where set, the key's qualifier where not");
+  assert.equal(v.monthly, 24.98);
+  assert.equal(v.recurringDetail?.perCharge, 12.99, "the single-plan figures are still there for a caller that wants them");
+
+  setRecurringSetting("Apple · 26th", { endedDate: "2025-09-30" });
+  assert.equal(merchantSummary("Apple").monthly, 9.99, "an ended plan is listed but not counted");
+
+  assert.deepEqual(merchantSummary("Apple", "Apple · 2nd").planList, [], "a plan's own shelf is about that plan");
 });
