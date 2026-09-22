@@ -228,13 +228,13 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
 
   // Drill from a category's transaction into that vendor, remembering the
   // category so the panel can offer a "← Back".
-  const drillToMerchant = (m: string) => {
+  const drillToMerchant = (m: string, series?: string) => {
     holdSheet();
     setBack(target);
     setAmountHint(null);
     setCData(null);
-    setTarget({ kind: "merchant", merchant: m });
-    fetchMerchant(m);
+    setTarget({ kind: "merchant", merchant: m, series });
+    fetchMerchant(m, series);
   };
   const goBack = () => {
     const b = back;
@@ -506,6 +506,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 data={mData}
                 cats={cats}
                 onClose={close}
+                onOpenPlan={(series) => drillToMerchant(target.merchant, series)}
                 onAddCategory={addCat}
                 onRecategorize={recategorize}
                 onTxSetMembership={txSetMembership}
@@ -1151,6 +1152,7 @@ function MerchantBody({
   data,
   cats,
   onClose,
+  onOpenPlan,
   onAddCategory,
   onRecategorize,
   onTxSetMembership,
@@ -1173,6 +1175,7 @@ function MerchantBody({
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
   onRemoveSplit: (id: number, applied: number) => void;
   onClose: () => void; // the statement link leaves the shelf behind
+  onOpenPlan: (series: string) => void; // one of this vendor's plans, with Back
 }) {
   // "+ New category…" in the Category field: create it here and apply it.
   const newCat = useNewCategory<null>((cat) => {
@@ -1180,7 +1183,12 @@ function MerchantBody({
     onRecategorize(cat.id);
   });
   const [combining, setCombining] = useState(false);
-  const d = data.recurringDetail;
+  // A vendor with several plans is not a plan: its shelf lists them, with what
+  // they add up to, and each opens its own shelf. The single-plan cards below
+  // borrowed the most recently charged plan's figures, which for Apple's six
+  // subscriptions read "$128 per year" on a vendor that costs $790.
+  const multi = !data.series && data.planList.length > 1;
+  const d = multi ? null : data.recurringDetail;
   const monthsActive = monthsSince(data.firstSeen);
   // Placeholder for the expected-amount editor. Priority: a caller-supplied hint
   // (the suggestion row's exact figure, so the two never disagree) → the detected
@@ -1279,7 +1287,32 @@ function MerchantBody({
         </>
       ) : null}
 
-      {!d && (
+      {multi && (
+        <div>
+          <div className="mb-2 flex items-baseline justify-between">
+            <div className="stat-label">{data.planList.length} plans</div>
+            <div className="text-xs tabular-nums text-[var(--muted)]">{usd(data.monthly, { cents: false })} per month</div>
+          </div>
+          <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list data-plan-list>
+            {data.planList.map((p) => (
+              <ShelfRow
+                key={p.id}
+                date={p.nextDate}
+                name={p.name}
+                amount={-p.amount}
+                muted={p.ended}
+                note={p.ended ? "ended" : cadenceLabel(p.cadence)}
+                onClick={() => onOpenPlan(p.key)}
+                flush
+                unsignedDebits
+              />
+            ))}
+          </ul>
+          <div className="mt-2 text-[11px] text-[var(--muted)]">Next due, name, amount. A plan&rsquo;s own shelf edits it.</div>
+        </div>
+      )}
+
+      {!d && !multi && (
         // A vendor with no plan keeps the same anatomy: two cards — what it
         // cost over the last year, and the expected amount (its editor) —
         // then the caption line with the category and the per-month facts.

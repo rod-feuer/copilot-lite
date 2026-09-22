@@ -200,8 +200,9 @@ flush, edge-aligned list with the membership pill (a charge's rows) or the ↻
 glyph (a category's vendors: the verb lives in the vendor shelf a tap away);
 then match, the vendor's split rules (each removable, which restores what it
 split), and the action row. The footer link follows the content, not the panel edge. Three shelves,
-one anatomy: a **vendor** (or one of its plans), a **category**, and a
-**charge** — the charge's cards are its date (the editor for an effective
+one anatomy: a **vendor** (or one of its plans; a vendor with several plans
+lists them with their monthly total in place of the cards, each opening its
+own shelf), a **category**, and a **charge** — the charge's cards are its date (the editor for an effective
 date) and its amount (bank data); its caption carries the category and its
 plan membership; then the note and its verbs (exclude from totals, split),
 the vendor's recent charges and its spend by year (evidence only: the

@@ -920,6 +920,36 @@ export function merchantSummary(merchant: string, series?: string | null) {
   const plans = (
     db.prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[]
   ).filter((r) => canonicalMerchant(seriesVendor(r.merchant), links) === canonicalMerchant(merchant, links)).length;
+  // Every plan this vendor's charges belong to, for a shelf about the vendor
+  // rather than one plan: Apple carries six subscriptions, and the shelf that
+  // borrowed the most recent one's cards read "$128 per year" for a vendor
+  // that costs $790. Named as the user named them, else by the key's own
+  // qualifier ("2nd", "$10.69"). `monthly` is what the live plans add up to.
+  const planList = seriesRow
+    ? []
+    : (
+        db
+          .prepare(
+            `SELECT id, merchant, cadence, avgAmount, lastDate FROM recurrings
+             WHERE id IN (SELECT DISTINCT recurringId FROM transactions WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
+             ORDER BY lastDate DESC`
+          )
+          .all(...variants) as { id: number; merchant: string; cadence: string; avgAmount: number; lastDate: string }[]
+      ).map((r) => {
+        const s = settings[r.merchant];
+        const cadence = s?.cadence ?? r.cadence;
+        const qualifier = isSeriesKey(r.merchant) ? r.merchant.slice(seriesVendor(r.merchant).length + 3) : displayMerchant(r.merchant);
+        return {
+          id: r.id,
+          key: r.merchant,
+          name: s?.alias ?? qualifier,
+          amount: s?.expectedAmount ?? Number(Math.abs(r.avgAmount).toFixed(2)),
+          cadence,
+          nextDate: nextDueFromToday(s?.nextDate ?? nextAfter(r.lastDate, cadence), cadence),
+          ended: recurringEnded(s?.endedDate, r.lastDate),
+        };
+      });
+  const monthly = Number(planList.filter((p) => !p.ended).reduce((a, p) => a + (p.amount * (PER_YEAR[p.cadence as Cadence] ?? 12)) / 12, 0).toFixed(2));
   return {
     merchant,
     series: seriesRow ? (series as string) : null, // the plan this summary is scoped to, if any
@@ -928,6 +958,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
 
     settingsKey, // where alias / expected / cadence / ended / match live for this shelf
     plans,
+    planList,
+    monthly,
     displayName: seriesRow ? (sett?.alias ?? displayMerchant(series as string)) : merchantDisplayName(merchant, settings, links),
     // Current per-merchant overrides, so the shelf can prefill its editors and
     // distinguish a user-set value from the detected one (null = no override).

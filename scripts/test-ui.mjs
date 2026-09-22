@@ -89,6 +89,9 @@ async function loadFixture() {
     [day(-3, 28), "Spotify", "-9.99", "Credit"],
     [day(-2, 28), "Spotify", "-9.99", "Credit"],
     [day(-1, 28), "Spotify", "-9.99", "Credit"],
+    // A vendor with two subscriptions on different days (a two-plan vendor),
+    // for the vendor shelf's plan list.
+    ...[3, 2, 1].flatMap((m) => [[day(-m, 4), "Streamly", "-9.99", "Credit"], [day(-m, 19), "Streamly", "-15.49", "Credit"]]),
     // A bill paid this month at more than it usually is, so its recurrings row
     // carries a difference ("+$15.50") under the amount on a phone. More than 10% off,
     // or the detector reads it as the new price and there is no difference to show.
@@ -777,6 +780,31 @@ async function startAPlan(browser) {
   });
 }
 
+// A vendor with several plans is not a plan: its shelf lists them with what
+// they add up to, and each opens its own shelf. It used to borrow the most
+// recently charged plan's cards, so Apple's six subscriptions read "$128 per
+// year" on a vendor that costs $790.
+async function multiPlanVendor(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const n = await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row]")].filter((r) => /Streamly/.test(r.textContent)).length);
+    await page.evaluate(() => [...document.querySelectorAll("[data-drawer-row]")].find((r) => /Streamly/.test(r.textContent)).click());
+    await shelfIs(page, true); await shelfSettled(page);
+    // The Recurrings row opens the PLAN; "Open vendor"-style drill is the vendor.
+    const planShelf = await page.$eval(shelfSel, (a) => a.innerText.replace(/\s+/g, " "));
+    await page.goto(BASE + "/transactions?vendor=Streamly", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    await page.$eval("[data-drawer-row]", (r) => r.click()); await shelfIs(page, true); await shelfSettled(page);
+    await page.click(`${shelfSel} [data-open-vendor]`); await page.waitForSelector(`${shelfSel} [data-plan-list]`, { timeout: 8000 }).catch(() => {});
+    const v = await page.evaluate((sel) => { const a = document.querySelector(sel); const list = a.querySelector("[data-plan-list]"); return { plans: list ? list.querySelectorAll("li").length : 0, head: a.querySelector("[data-plan-list]")?.previousElementSibling?.innerText.replace(/\s+/g, " ") ?? "", perYear: /per year expected/.test(a.innerText) }; }, shelfSel);
+    record("vendor shelf", "a two-plan vendor's shelf lists both plans with their monthly total, not one plan's cards", n === 2 && v.plans === 2 && /2 plans\s*\$25 per month/i.test(v.head) && !v.perYear, `${n} rows on Recurrings; shelf: "${v.head}", ${v.plans} listed, per-year card=${v.perYear}`);
+    await page.evaluate(() => document.querySelector("[data-plan-list] [role=button]").click()); await shelfSettled(page);
+    const opened = await page.$eval(`${shelfSel} header`, (h) => h.innerText.replace(/\s+/g, " "));
+    record("vendor shelf", "tapping a listed plan opens that plan's shelf, with Back", /Back/.test(opened) && /One of 2 plans/.test(opened) && /per year expected|Per charge/i.test(planShelf), opened.slice(0, 80));
+  });
+}
+
 // A phone is a narrow column, not a small desktop: what shares a row there is
 // chosen, not whatever wrapping leaves behind.
 async function phoneLayout(browser) {
@@ -1372,7 +1400,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
