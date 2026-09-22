@@ -376,20 +376,22 @@ async function dashboardAnatomy(browser) {
     const f = await page.evaluate(() => {
       const card = document.querySelector("[data-summary]");
       const figs = [...card.querySelectorAll(".text-2xl")].map((el) => ({ value: Number(el.textContent.replace(/[^0-9.]/g, "")) * (/[−-]/.test(el.textContent) ? -1 : 1), label: el.nextElementSibling?.textContent.toLowerCase() ?? "", sub: el.nextElementSibling?.nextElementSibling?.textContent.toLowerCase() ?? "", top: Math.round(el.getBoundingClientRect().top) }));
-      return { figs, caption: card.querySelector("[data-bar-caption]")?.textContent ?? "" };
+      return { figs, caption: card.querySelector("[data-bar-caption]")?.textContent ?? "", eyebrow: card.querySelector("[data-eyebrow]")?.textContent.toLowerCase() ?? "", frameWords: (card.innerText.match(/projected|expected/gi) ?? []).length };
     });
     const [net, income, expenses] = f.figs;
-    const forward = f.figs.map((x) => /projected|expected/.test(x.label));
-    const oneFrame = forward.every(Boolean) || !forward.some(Boolean);
-    record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && oneFrame && Math.abs(income.value - expenses.value - net.value) <= 1, f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
-    record("dashboard", "a projected figure carries its actual so far beneath it", !forward[0] || f.figs.every((x) => x.sub.includes("so far")), forward[0] ? f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month");
-    record("dashboard", "the figures share a top line, and the bar says what it measures", new Set(f.figs.map((x) => x.top)).size === 1 && / of \$[\d,]+ (budget|income)/.test(f.caption), `tops ${f.figs.map((x) => x.top).join(",")}; "${f.caption}"`);
+    // The frame is the card's eyebrow ("September, projected"), said once; the
+    // labels are one word each. Three labels each carried the frame before, and
+    // the card read as a paragraph.
+    const forward = /projected/.test(f.eyebrow);
+    record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && f.figs.map((x) => x.label).join("|") === "net|income|expenses" && Math.abs(income.value - expenses.value - net.value) <= 1, `${f.eyebrow || "(no eyebrow)"}: ` + f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
+    record("dashboard", "the frame is said once, in the eyebrow, and each projected figure carries its actual so far beneath it", !forward || (f.frameWords === 1 && f.figs.every((x) => x.sub.includes("so far"))), forward ? `"${f.eyebrow}" · ${f.frameWords} frame word(s) · ` + f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month");
+    record("dashboard", "the figures share a top line, and the bar says its share of the whole without repeating the spent figure", new Set(f.figs.map((x) => x.top)).size === 1 && /^\d+% of \$[\d,]+ (budget|income)$/.test(f.caption.trim()), `tops ${f.figs.map((x) => x.top).join(",")}; "${f.caption}"`);
     // The budget story is told once, in the summary card. A second copy of it
     // (a "Budgeted spend" block with its own bar) and a strip under the chart
     // repeated the same figures up to four times. What only the block said
     // survives as one line on the card: spending outside budgeted categories,
     // bridging the bar's figure to the Expenses figure.
-    const once = await page.evaluate(() => { const main = document.querySelector("main").innerText; const cap = document.querySelector("[data-bar-caption]")?.textContent ?? ""; const total = cap.match(/of (\$[\d,]+) budget/)?.[1] ?? null; const n = (t) => Number(t.replace(/[^0-9.]/g, "")); const note = document.querySelector("[data-unbudgeted]")?.textContent ?? ""; const [extra, all] = [...note.matchAll(/\$[\d,]+/g)].map((m) => n(m[0])); const spent = n(cap.match(/^\$[\d,]+/)?.[0] ?? "0"); return { total, totalCount: total ? main.split(`of ${total}`).length - 1 : 0, bars: document.querySelectorAll("[data-summary] [role=progressbar]").length, block: /Budgeted spend/i.test(main), strip: /avg \/ day/i.test(main), note, bridges: note ? Math.abs(spent + extra - all) <= 1 : null }; });
+    const once = await page.evaluate(() => { const main = document.querySelector("main").innerText; const cap = document.querySelector("[data-bar-caption]")?.textContent ?? ""; const total = cap.match(/of (\$[\d,]+) budget/)?.[1] ?? null; const n = (t) => Number(t.replace(/[^0-9.]/g, "")); const note = document.querySelector("[data-unbudgeted]")?.textContent ?? ""; const [extra, all] = [...note.matchAll(/\$[\d,]+/g)].map((m) => n(m[0])); const pct = n(cap.match(/^\d+%/)?.[0] ?? "0"); const spent = Math.round((pct / 100) * n(total ?? "0")); return { total, totalCount: total ? main.split(`of ${total}`).length - 1 : 0, bars: document.querySelectorAll("[data-summary] [role=progressbar]").length, block: /Budgeted spend/i.test(main), strip: /avg \/ day/i.test(main), note, bridges: note ? Math.abs(spent + extra - all) <= 3 : null }; }); // ±$3: the bar's share is a whole percent of a $500 budget
     record("dashboard", "the budget is stated once: no second budget block, no figure strip under the chart", once.total !== null && once.totalCount === 1 && !once.block && !once.strip, `"of ${once.total}" appears ${once.totalCount}×, block=${once.block}, strip=${once.strip}`);
     record("dashboard", "spending outside budgeted categories is one line on the card, and it adds up to the Expenses figure", once.bridges === true, once.note || "no note");
     record("dashboard", "uncategorized queue is standard rows below the summary (when present)", !r.hasQueue || (r.rows > 0 && r.summaryFirst), r.hasQueue ? `${r.rows} rows, summary first=${r.summaryFirst}` : "no queue in the fixture");
@@ -457,11 +459,11 @@ async function partialMonthQualifiers(browser) {
         record("qualifiers", `${route} ${month} "${n}"`, present === expect, expect ? (present ? "present" : "MISSING") : (present ? "SHOWN on a past month" : "absent"));
       }
     };
-    await check("/", CUR, ["so far", "budget used so far"], true); // "expenses so far", or "expenses, projected" over "$X so far"
+    await check("/", CUR, ["so far"], true); // the eyebrow: "September, projected" over "$X so far" figures, or "September so far"
     await check("/categories", CUR, ["spent so far of", "left so far"], true);
     await check("/recurrings", CUR, ["paid so far of"], true);
     await check("/transactions", CUR, ["· net", "so far"], true);
-    await check("/", PAST, ["Expenses so far", "budget used so far"], false);
+    await check("/", PAST, ["so far", ", projected"], false);
     // A finished month's summary is plain actuals: no forward-looking word in the
     // card. (Scoped to the card: the chart's legend says "Projected" on any month.)
     const pastCard = (await page.evaluate(() => document.querySelector("[data-summary]")?.innerText ?? "")).toLowerCase();
@@ -812,7 +814,7 @@ async function phoneLayout(browser) {
     await page.setViewport({ width: 375, height: 812, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await page.goto(BASE + "/", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-figure-pair]");
-    const d = await page.evaluate(() => { const card = document.querySelector("[data-summary]"); const pair = card.querySelector("[data-figure-pair]"); const [a, b] = [...pair.children].map((e) => e.getBoundingClientRect()); const primary = card.firstElementChild.firstElementChild.getBoundingClientRect(); const cr = card.getBoundingClientRect(); return { tops: Math.abs(Math.round(a.top - b.top)), left: Math.abs(Math.round(a.left - primary.left)), inside: b.right <= cr.right + 0.5, scroll: document.documentElement.scrollWidth - innerWidth }; });
+    const d = await page.evaluate(() => { const card = document.querySelector("[data-summary]"); const pair = card.querySelector("[data-figure-pair]"); const [a, b] = [...pair.children].map((e) => e.getBoundingClientRect()); const primary = pair.parentElement.firstElementChild.getBoundingClientRect(); const cr = card.getBoundingClientRect(); return { tops: Math.abs(Math.round(a.top - b.top)), left: Math.abs(Math.round(a.left - primary.left)), inside: b.right <= cr.right + 0.5, scroll: document.documentElement.scrollWidth - innerWidth }; });
     record("phone layout", "the dashboard's income and expenses share one line on the net figure's left edge (they stair-stepped, right-aligned)", d.tops <= 1 && d.left <= 1 && d.inside && d.scroll <= 0, `tops Δ${d.tops}px, left Δ${d.left}px, inside=${d.inside}, page overflow ${d.scroll}px`);
     await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-drawer-row]");

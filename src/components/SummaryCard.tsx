@@ -35,6 +35,7 @@ function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" | "pai
   );
 }
 export function SummaryCard({
+  eyebrow,
   primary,
   secondary,
   progress,
@@ -45,6 +46,7 @@ export function SummaryCard({
   note,
   className = "",
 }: {
+  eyebrow?: string; // the card's frame, said once ("September, projected") so the labels needn't
   primary: Figure;
   secondary?: Figure | Figure[];
   progress: number; // 0..1
@@ -58,6 +60,11 @@ export function SummaryCard({
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
   return (
     <div className={`card p-6 ${className}`.trim()} data-summary>
+      {eyebrow && (
+        <div data-eyebrow className="stat-label mb-2">
+          {eyebrow}
+        </div>
+      )}
       {/* Figures share a top line. Bottom-aligned, a taller caption under one
           figure pushed its number up, and the three big numbers sat on three
           different lines. */}
@@ -87,7 +94,7 @@ export function SummaryCard({
         )}
       </div>
       {barCaption && (
-        <div data-bar-caption className="mt-4 text-xs text-[var(--muted)]">
+        <div data-bar-caption className="mt-4 text-right text-xs text-[var(--muted)]">
           {barCaption}
         </div>
       )}
