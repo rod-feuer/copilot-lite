@@ -505,6 +505,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               <MerchantBody
                 data={mData}
                 cats={cats}
+                onClose={close}
                 onAddCategory={addCat}
                 onRecategorize={recategorize}
                 onTxSetMembership={txSetMembership}
@@ -1138,6 +1139,7 @@ function CategoryHeader({ data, month }: { data: CatSummary | null; month: strin
 function MerchantBody({
   data,
   cats,
+  onClose,
   onAddCategory,
   onRecategorize,
   onTxSetMembership,
@@ -1159,6 +1161,7 @@ function MerchantBody({
   vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
   onRemoveSplit: (id: number, applied: number) => void;
+  onClose: () => void; // the statement link leaves the shelf behind
 }) {
   // "+ New category…" in the Category field: create it here and apply it.
   const newCat = useNewCategory<null>((cat) => {
@@ -1366,6 +1369,7 @@ function MerchantBody({
         {data.count > data.recent.length && (
           <Link
             href={`/transactions?vendor=${encodeURIComponent(data.merchant)}`}
+            onClick={onClose}
             className="btn-link mt-2 text-[11px]"
           >
             {data.series ? "All this vendor's charges →" : `Show all ${data.count} →`}
