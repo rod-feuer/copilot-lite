@@ -175,11 +175,18 @@ export default function DashboardPage() {
                 ? `${Math.round((b.spent / b.total) * 100)}% of budget used`
                 : `${Math.round(progress * 100)}% of income spent`;
             const prevLabel = prevPeriodLabel(data.prev);
+            // The month word: the picker carries the year.
+            const monthName = data.monthLabel.split(" ")[0];
             return (
               <SummaryCard
+                // The frame, once. Three labels each carried it ("net cash
+                // flow, projected", "income, expected", "expenses, projected")
+                // and the card read as a paragraph. Too early to project, the
+                // figures are the month so far, and the eyebrow says that.
+                eyebrow={projecting ? `${monthName}, projected` : current ? `${monthName} so far` : monthName}
                 primary={{
                   value: usd(net, { sign: true, cents: false }),
-                  label: projecting ? "net cash flow, projected" : "net cash flow",
+                  label: "net",
                   tone: net >= 0 ? "good" : "bad",
                   href: `/transactions?month=${month}`,
                   sub:
@@ -194,7 +201,7 @@ export default function DashboardPage() {
                 secondary={[
                   {
                     value: usd(projecting ? (data.projectedIncome as number) : data.income, { cents: false }),
-                    label: projecting ? "income, expected" : "income",
+                    label: "income",
                     href: `/transactions?month=${month}&type=income`,
                     sub:
                       projecting ? (
@@ -207,7 +214,7 @@ export default function DashboardPage() {
                   },
                   {
                     value: usd(projecting ? (data.pace.projectedMonthEnd as number) : data.expenses, { cents: false }),
-                    label: projecting ? "expenses, projected" : current ? "expenses so far" : "expenses",
+                    label: "expenses",
                     href: `/transactions?month=${month}&type=expense`,
                     sub: projecting ? (
                       // One comparison while the month runs, and it is the chart's
@@ -223,10 +230,12 @@ export default function DashboardPage() {
                 barLabel={barLabel}
                 // Say what the bar measures, as the other two tabs do: it sat
                 // under net, income and expenses and was about none of them.
+                // The share and the whole; the spent figure sits just above,
+                // under Expenses, and needn't be said twice.
                 barCaption={
                   b && b.total > 0
-                    ? `${usd(b.spent, { cents: false })} of ${usd(b.total, { cents: false })} budget${current ? " used so far" : " used"}`
-                    : `${usd(data.expenses, { cents: false })} of ${usd(data.income, { cents: false })} income spent${current ? " so far" : ""}`
+                    ? `${Math.round((b.spent / b.total) * 100)}% of ${usd(b.total, { cents: false })} budget`
+                    : `${Math.round(progress * 100)}% of ${usd(data.income, { cents: false })} income`
                 }
                 alarm={!!b && b.total > 0 && b.spent > b.total}
                 // The bar counts budgeted categories only. When spending outside

@@ -114,9 +114,11 @@ and §3 carry over unchanged.
   dropdowns only when the content is rich (the combine picker, the emoji grid).
   No disguised controls. *(One-pattern, Anchor)*
 - **Forward-looking figures are qualified — by a word, not a symbol.** Mid-month
-  net is shown projected with a "so far" actual; income reads "$X expected";
-  bills read "paid so far of $X expected"; projections are withheld until
-  enough of the month has elapsed. No ≈ or ~ in front of a figure. *(Honest)*
+  net is shown projected with a "so far" actual; bills read "paid so far of $X
+  expected"; projections are withheld until enough of the month has elapsed. The
+  qualifier is said once where figures share a frame: the dashboard card's
+  eyebrow reads "September, projected" over one-word labels, and each projected
+  figure carries its "$X so far". No ≈ or ~ in front of a figure. *(Honest)*
 - **A toast is for what you can't see.** A success message appears only when
   the outcome is off-screen (a vendor combined, a category deleted, a split
   applied), spans many things (Apply all, Overrides reset, dismissed vendors
