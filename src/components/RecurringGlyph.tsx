@@ -1,7 +1,10 @@
-// The ↻ glyph, with one meaning: this charge's vendor is a recurring series.
-//   "in"   — this charge is part of the series (accent)
-//   "out"  — the vendor recurs, but this charge was excluded from the series
-//            (muted and struck through)
+// The ↻ glyph, with one meaning: this charge is in a plan.
+//   "in"   — this charge is part of a plan (accent)
+//   "out"  — the vendor has a plan, but the user took this charge out. In a
+//            row this renders nothing: a charge outside a plan is outside it,
+//            whoever decided, and a struck ↻ read as a broken subscription
+//            beside the iPhone purchase that showed no glyph at all. The
+//            shelf's pill says "Not in plan · edited" for the record.
 //   "none" — not recurring: renders nothing, unless a toggle is offered, then a
 //            faint affordance (the shelf's row gutter)
 // With `onToggle` it is a button acting on the whole vendor; without, a passive
@@ -31,12 +34,7 @@ export function RecurringGlyph({
   muted?: boolean; // the row itself is muted (e.g. excluded from totals)
   className?: string;
 }) {
-  const tone =
-    state === "in" && !muted
-      ? "text-[var(--accent)]"
-      : state === "out"
-        ? "text-[var(--muted)] line-through"
-        : "text-[var(--muted)]";
+  const tone = state === "in" && !muted ? "text-[var(--accent)]" : "text-[var(--muted)]";
   if (onToggle) {
     const rest = state === "none" ? "opacity-60 focus-visible:opacity-100 group-hover:opacity-100" : "opacity-100";
     return (
@@ -54,7 +52,7 @@ export function RecurringGlyph({
       </button>
     );
   }
-  if (state === "none") return null;
+  if (state !== "in") return null;
   return (
     <span data-recurring={state} role="img" aria-label={RECURRING_LABEL[state]} className={`${tone} ${className}`.trim()}>
       ↻

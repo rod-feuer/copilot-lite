@@ -1082,9 +1082,10 @@ async function categoryBadge(browser) {
 }
 
 async function recurringGlyph(browser) {
-  // Exclude one Netflix charge from its series via the row menu; the glyph must
-  // read "out" (struck) on the transactions row AND on the dashboard's recent
-  // list — before, only the transactions row knew that state. Then restore.
+  // Take one Netflix charge out of its plan from the shelf; the row's glyph must
+  // go — on the transactions row AND on the dashboard's recent list. (It used to
+  // stay, struck through, which read as a broken subscription beside a
+  // never-in-a-plan purchase that showed nothing.) Then restore.
   await withPage(browser, async (page, errs) => {
     const glyphOn = (page, who) => page.evaluate((who) => {
       const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes(who));
@@ -1097,12 +1098,12 @@ async function recurringGlyph(browser) {
     await sleep(300);
     await page.click("[data-drawer-row][data-ui-target]"); await shelfIs(page, true); await shelfSettled(page);
     await page.click(`${shelfSel} button[data-membership='in']`);
-    await page.waitForFunction(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); const g = li && li.querySelector("[data-recurring]"); return g && g.getAttribute("data-recurring") === "out"; }, { timeout: 10000 });
-    record("recurring glyph", "transactions · a charge taken out of its plan reads out", true);
+    await page.waitForFunction(() => { const li = [...document.querySelectorAll("[data-drawer-row]")].find((el) => el.innerText.includes("Netflix")); return li && !li.querySelector("[data-recurring]"); }, { timeout: 8000 }).catch(() => {});
+    record("recurring glyph", "transactions · a charge taken out of its plan shows no glyph (not a struck one)", (await glyphOn(page, "Netflix")) === null, `glyph=${await glyphOn(page, "Netflix")}`);
     await page.keyboard.press("Escape"); await shelfIs(page, false);
     await page.goto(BASE + "/", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-drawer-row]");
-    record("recurring glyph", "dashboard · same charge reads out", (await glyphOn(page, "Netflix")) === "out");
+    record("recurring glyph", "dashboard · same charge shows no glyph", (await glyphOn(page, "Netflix")) === null);
     // restore
     await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
     await page.waitForSelector("[data-drawer-row]");
