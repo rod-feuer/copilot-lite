@@ -546,15 +546,19 @@ function partKey<T>(vendor: string, p: DayPart<T>, all: DayPart<T>[]): string {
 // not sequential: each part shares ≥2 months with the longest one (a bill
 // whose day moved shares none). And the parts must BE the vendor — ≥80% of
 // its charges — or this is a store visited every week, whose trips also land
-// in every day-bucket month after month.
-function concurrentParts<T extends { date: string; amount: number }>(parts: DayPart<T>[], total: number): DayPart<T>[] | null {
+// in every day-bucket month after month. Unless the user said the vendor IS
+// recurring (`forced`): then the day-parts are its subscriptions and the rest
+// are purchases, which stay unlinked. Apple carried four subscriptions among
+// seven one-off purchases (an iPhone among them): 65% coverage, so no split,
+// and forcing it made ONE weekly plan of all twenty charges.
+function concurrentParts<T extends { date: string; amount: number }>(parts: DayPart<T>[], total: number, forced = false): DayPart<T>[] | null {
   if (parts.length < 2) return null;
   const monthsOf = (p: DayPart<T>) => new Set(p.events.map((e) => e.date.slice(0, 7)));
   const anchor = monthsOf(parts.reduce((a, b) => (b.events.length > a.events.length ? b : a)));
   const overlapping = parts.filter((p) => [...monthsOf(p)].filter((m) => anchor.has(m)).length >= 2);
   if (overlapping.length < 2) return null;
   const covered = overlapping.reduce((n, p) => n + p.txs.length + p.held.length, 0);
-  return covered >= 0.8 * total ? overlapping : null;
+  return forced || covered >= 0.8 * total ? overlapping : null;
 }
 
 // The rebuild clears every plan and writes them again. As separate commits, a
@@ -726,7 +730,7 @@ function rebuildRecurrings(): Recurring[] {
         });
       }
     };
-    const concurrent = concurrentParts(allParts, txs.length);
+    const concurrent = concurrentParts(allParts, txs.length, status === "force");
     const split = concurrent?.filter(
       (p) => steady(p) && rawOverrides[partKey(merchant, p, concurrent)] !== "mute"
     );

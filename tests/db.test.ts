@@ -7,6 +7,7 @@ import {
   recurringsForMonth,
   linkMerchant,
   setRecurringSetting,
+  setRecurringOverride,
   deleteCategory,
   categoriesWithTotals,
 } from "../src/lib/queries";
@@ -216,4 +217,38 @@ test("migrateMerchants normalizes merchant and preserves the original", () => {
     .get() as { merchant: string; rawMerchant: string };
   assert.equal(row.merchant, "Alpha Beta");
   assert.equal(row.rawMerchant, "ALPHA BETA PPD ID: 999");
+});
+
+// WHY: a vendor that is both a store and a set of subscriptions (Apple: four
+// monthly bills among one-off purchases, an iPhone included) fails the 80%
+// rule that keeps a grocer from being split into "bills" — so it gets no plan.
+// "Make recurring" is the user saying it IS recurring; forced, the day-parts
+// are its subscriptions and the purchases stay unlinked. Before, forcing it
+// made ONE weekly plan of every charge, the iPhone among them.
+test("a forced vendor splits into its day-parts, leaving one-off purchases out, even below the store rule's 80%", () => {
+  const subs = [
+    ...months(6, 4, -9.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-02") })),
+    ...months(6, 4, -12.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-26") })),
+    ...months(6, 4, -26.74).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-27") })),
+  ];
+  const purchases = [
+    { date: "2025-06-21", amount: -5.34 },
+    { date: "2025-08-04", amount: -1.06 },
+    { date: "2025-08-15", amount: -22.44 },
+    { date: "2025-08-17", amount: -832.46 },
+    { date: "2025-08-25", amount: -21.39 },
+    { date: "2025-08-16", amount: -5.49 },
+    { date: "2025-09-16", amount: -5.49 },
+  ];
+  seed("Apple", [...subs, ...purchases]);
+  const names = () => detectRecurrings().filter((r) => /^Apple/.test(r.merchant)).map((r) => `${r.merchant} ${r.avgAmount}`).sort();
+  assert.deepEqual(names(), [], "12 of 19 charges in day-parts is a store, not bills: no plan on its own");
+
+  setRecurringOverride("Apple", "force");
+  assert.deepEqual(names(), ["Apple · 26th · $12.99 -12.99", "Apple · 26th · $26.74 -26.74", "Apple · 2nd -9.99"]);
+  // The 12 subscription charges are linked, and the iPhone and the other
+  // purchases are not — except the $21.39 of Aug 25, which the day-part rule
+  // (as for any vendor) holds beside the 26th's $26.74 as a same-day bill.
+  const linked = getDb().prepare("SELECT COUNT(*) AS n, ROUND(MIN(amount),2) AS biggest FROM transactions WHERE merchant = 'Apple' AND recurringId IS NOT NULL").get() as { n: number; biggest: number };
+  assert.deepEqual(linked, { n: 13, biggest: -26.74 });
 });
