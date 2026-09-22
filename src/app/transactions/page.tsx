@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  Suspense,
   memo,
   useCallback,
   useEffect,
@@ -12,6 +13,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import Shell, { Toolbar } from "@/components/Shell";
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
@@ -57,7 +59,17 @@ type Filters = {
 // a single month or a 10k-row all-history search both mount one page first.
 const PAGE = 60;
 
+// useSearchParams needs a Suspense boundary above it for a prerendered route
+// (see node_modules/next/dist/docs/.../use-search-params.md).
 export default function TransactionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <TransactionsView />
+    </Suspense>
+  );
+}
+
+function TransactionsView() {
   const [months, setMonths] = useState<string[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
@@ -154,6 +166,34 @@ export default function TransactionsPage() {
     apply("maxAmount", setMaxAmount);
     setReady(true);
   }, []);
+
+  // A vendor deep-link that lands on THIS page — the shelf's "Show all 17 →"
+  // opened from a Transactions charge — changes only the query string, so the
+  // page doesn't remount and loadStatic's one-time read never sees it. When
+  // the vendor param changes to a new value, apply it as a fresh load would:
+  // that vendor's whole statement, other filters cleared. The first value is
+  // loadStatic's; a vendor the page itself clears from the URL is left alone.
+  const vendorParam = useSearchParams().get("vendor") ?? "";
+  const appliedVendor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    if (appliedVendor.current === null || vendorParam === appliedVendor.current) {
+      appliedVendor.current = vendorParam;
+      return;
+    }
+    appliedVendor.current = vendorParam;
+    if (!vendorParam) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVendor(vendorParam);
+    setMonth("");
+    setQ("");
+    setCatFilter("");
+    setType("");
+    setAccount("");
+    setRecurring("");
+    setMinAmount("");
+    setMaxAmount("");
+  }, [ready, vendorParam]);
 
   // Query string for one page of the current filter set.
   const buildTxQuery = useCallback((f: Filters, offset: number) => {
