@@ -251,7 +251,7 @@ export default function DashboardPage() {
                 }
                 status={
                   <span
-                    className={`flex items-center gap-2 text-[13px] font-medium ${
+                    className={`flex items-center gap-2 ${
                       v.tone === "good" ? "text-[var(--good)]" : v.tone === "bad" ? "text-[var(--bad)]" : "text-[var(--muted)]"
                     }`}
                   >
