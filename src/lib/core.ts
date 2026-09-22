@@ -875,6 +875,35 @@ function rebuildRecurrings(): Recurring[] {
       }
     }
     if (chosen !== together) for (let i = 0; i < canons.length; i++) if (apart[i].length) created.add(canons[i]);
+    // Plans the user started by hand ("Start a plan" on a charge): a charge
+    // pinned to a plan key nothing above emitted. The detector could not see
+    // it — two amounts on one day, or too few charges yet — so the user's word
+    // makes the plan: the pinned charges, plus every charge of this vendor
+    // at the same amount that no other plan claimed, so next month's joins on
+    // its own. Monthly unless the plan's settings say otherwise.
+    // Once the detector catches up with a plan the user started (a fourth
+    // charge makes the 21st read as monthly), its own plan carries the user's
+    // key, so the plan — and the name the user gave it — stays the same plan.
+    let emitted = new Set(chosen.map((p) => p.key));
+    for (const p of chosen) {
+      const mine = [...new Set(p.txs.map((t) => included.get(t.hash)).filter((k): k is string => !!k && k !== p.key && !emitted.has(k)))];
+      if (mine.length === 1) p.key = mine[0];
+    }
+    emitted = new Set(chosen.map((p) => p.key));
+    const claimed = new Set(chosen.flatMap((p) => p.txs.map((t) => t.hash)));
+    const vendorRows = canons.flatMap((c) => byCanon.get(c)!);
+    const started = new Map<string, Tx[]>();
+    for (const t of vendorRows) {
+      const key = included.get(t.hash);
+      if (key && !emitted.has(key) && !claimed.has(t.hash)) started.set(key, [...(started.get(key) ?? []), t]);
+    }
+    for (const [key, pinned] of started) {
+      const amount = Math.abs(pinned[pinned.length - 1].amount);
+      const same = (t: Tx) => !claimed.has(t.hash) && !excluded.has(t.hash) && Math.abs(Math.abs(t.amount) - amount) <= Math.max(0.5, 0.01 * amount);
+      const txs = vendorRows.filter((t) => pinned.includes(t) || same(t)).sort((a, b) => a.date.localeCompare(b.date));
+      for (const t of txs) claimed.add(t.hash);
+      chosen.push({ key, txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })), cadence: settings[key]?.cadence ?? "monthly" });
+    }
     for (const p of chosen) commit(p);
   }
 

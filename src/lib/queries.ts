@@ -1,5 +1,5 @@
 import { splitDriftFor, splitRules, splitRulesFor, type SplitDrift } from "./splits";
-import { isSeriesKey, seriesVendor } from "./series";
+import { isSeriesKey, seriesVendor, seriesKey, amountLabel } from "./series";
 import { displayMerchant, merchantKey } from "./merchant";
 import {
   getDb,
@@ -591,6 +591,20 @@ export function setTransactionRecurringIncluded(id: number, plan: string | null)
     db.prepare("INSERT OR REPLACE INTO recurring_tx_inclusions (hash, plan) VALUES (?, ?)").run(row.hash, plan);
     db.prepare("DELETE FROM recurring_tx_exclusions WHERE hash = ?").run(row.hash);
   } else db.prepare("DELETE FROM recurring_tx_inclusions WHERE hash = ?").run(row.hash);
+}
+
+// The plan a charge would start: "<vendor> · $10.69", the vendor being the
+// charge's combined name. Null for a charge that can't be a bill: a split
+// parent (its parts are the charges), or one excluded from totals.
+export function startPlanKey(id: number): string | null {
+  const db = getDb();
+  const row = db.prepare("SELECT merchant, amount, excluded, hash FROM transactions WHERE id = ?").get(id) as
+    | { merchant: string; amount: number; excluded: 0 | 1; hash: string }
+    | undefined;
+  if (!row || row.excluded === 1) return null;
+  const parent = db.prepare("SELECT 1 FROM transactions WHERE hash LIKE ? || ':s%' LIMIT 1").get(row.hash);
+  if (parent) return null;
+  return seriesKey(canonicalMerchant(row.merchant, getMerchantLinks()), amountLabel(row.amount));
 }
 
 // Clear every per-charge "one-off" exclusion for a merchant. Used when a vendor

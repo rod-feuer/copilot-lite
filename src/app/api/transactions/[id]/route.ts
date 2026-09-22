@@ -4,6 +4,7 @@ import {
   setTransactionCategory,
   setTransactionEffectiveDate,
   setTransactionRecurringExcluded,
+  startPlanKey,
   setTransactionRecurringIncluded,
   setTransactionExcluded,
   setTransactionNote,
@@ -35,6 +36,18 @@ export async function PATCH(
     setTransactionRecurringExcluded(Number(id), !!body.recurringExcluded);
     detectRecurrings();
     return NextResponse.json({ ok: true });
+  }
+
+  // Start a plan from this charge: the user says it is a subscription the
+  // detector can't see (two amounts on one day, too few charges yet). The
+  // charge is pinned to a new plan keyed by its amount; the detector makes the
+  // plan and lets the vendor's other charges at that amount join it.
+  if (body.startPlan) {
+    const key = startPlanKey(Number(id));
+    if (!key) return NextResponse.json({ error: "This charge can't start a plan" }, { status: 400 });
+    setTransactionRecurringIncluded(Number(id), key);
+    detectRecurrings();
+    return NextResponse.json({ ok: true, plan: key });
   }
 
   // Put this single charge into a plan. First just lift any one-off flag and
