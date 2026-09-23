@@ -239,14 +239,12 @@ export default function DashboardPage() {
                 }
                 alarm={!!b && b.total > 0 && b.spent > b.total}
                 // The bar counts budgeted categories only. When spending outside
-                // them is material (2% of spend, or $250), one line bridges the
-                // bar's figure to the Expenses figure above it.
+                // them is material (2% of spend, or $250), one line says what
+                // the bar leaves out — a sentence, not an equation: its first
+                // term (the budgeted spend) is no longer printed on the card.
                 note={
                   b && b.total > 0 && unbudgeted > 0 && (unbudgeted >= 250 || unbudgeted / data.expenses >= 0.02) ? (
-                    <span data-unbudgeted>
-                      + {usd(unbudgeted, { cents: false })} in categories without a budget = {usd(data.expenses, { cents: false })} spent
-                      {current ? " so far" : ""}
-                    </span>
+                    <span data-unbudgeted>The bar leaves out {usd(unbudgeted, { cents: false })} spent in categories without a budget.</span>
                   ) : undefined
                 }
                 status={
