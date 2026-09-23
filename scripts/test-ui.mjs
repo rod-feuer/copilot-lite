@@ -90,8 +90,11 @@ async function loadFixture() {
     [day(-2, 28), "Spotify", "-9.99", "Credit"],
     [day(-1, 28), "Spotify", "-9.99", "Credit"],
     // A vendor with two subscriptions on different days (a two-plan vendor),
-    // for the vendor shelf's plan list.
+    // for the vendor shelf's plan list. The 4th is charged this month too: a
+    // monthly plan 50 days silent reads as stopped and leaves the Recurrings
+    // list, which made this fixture age out of the check on the 23rd.
     ...[3, 2, 1].flatMap((m) => [[day(-m, 4), "Streamly", "-9.99", "Credit"], [day(-m, 19), "Streamly", "-15.49", "Credit"]]),
+    [day(0, 4), "Streamly", "-9.99", "Credit"],
     // A bill paid this month at more than it usually is, so its recurrings row
     // carries a difference ("+$15.50") under the amount on a phone. More than 10% off,
     // or the detector reads it as the new price and there is no difference to show.
@@ -396,9 +399,9 @@ async function dashboardAnatomy(browser) {
     // repeated the same figures up to four times. What only the block said
     // survives as one line on the card: spending outside budgeted categories,
     // bridging the bar's figure to the Expenses figure.
-    const once = await page.evaluate(() => { const main = document.querySelector("main").innerText; const cap = document.querySelector("[data-bar-caption]")?.textContent ?? ""; const total = cap.match(/of (\$[\d,]+) budget/)?.[1] ?? null; const n = (t) => Number(t.replace(/[^0-9.]/g, "")); const note = document.querySelector("[data-unbudgeted]")?.textContent ?? ""; const [extra, all] = [...note.matchAll(/\$[\d,]+/g)].map((m) => n(m[0])); const pct = n(cap.match(/^\d+%/)?.[0] ?? "0"); const spent = Math.round((pct / 100) * n(total ?? "0")); return { total, totalCount: total ? main.split(`of ${total}`).length - 1 : 0, bars: document.querySelectorAll("[data-summary] [role=progressbar]").length, block: /Budgeted spend/i.test(main), strip: /avg \/ day/i.test(main), note, bridges: note ? Math.abs(spent + extra - all) <= 3 : null }; }); // ±$3: the bar's share is a whole percent of a $500 budget
+    const once = await page.evaluate(() => { const main = document.querySelector("main").innerText; const cap = document.querySelector("[data-bar-caption]")?.textContent ?? ""; const total = cap.match(/of (\$[\d,]+) budget/)?.[1] ?? null; const n = (t) => Number(t.replace(/[^0-9.]/g, "")); const note = document.querySelector("[data-unbudgeted]")?.textContent ?? ""; const extra = n(note.match(/\$[\d,]+/)?.[0] ?? "0"); const figs = [...document.querySelectorAll("[data-summary] .text-2xl")]; const sub = figs[2]?.nextElementSibling?.nextElementSibling?.textContent ?? ""; const all = n(/so far/.test(sub) ? sub : (figs[2]?.textContent ?? "0")); const pct = n(cap.match(/^\d+%/)?.[0] ?? "0"); const spent = Math.round((pct / 100) * n(total ?? "0")); return { total, totalCount: total ? main.split(`of ${total}`).length - 1 : 0, bars: document.querySelectorAll("[data-summary] [role=progressbar]").length, block: /Budgeted spend/i.test(main), strip: /avg \/ day/i.test(main), note, bridges: note ? Math.abs(spent + extra - all) <= 3 : null }; }); // ±$3: the bar's share is a whole percent of a $500 budget
     record("dashboard", "the budget is stated once: no second budget block, no figure strip under the chart", once.total !== null && once.totalCount === 1 && !once.block && !once.strip, `"of ${once.total}" appears ${once.totalCount}×, block=${once.block}, strip=${once.strip}`);
-    record("dashboard", "spending outside budgeted categories is one line on the card, and it adds up to the Expenses figure", once.bridges === true, once.note || "no note");
+    record("dashboard", "spending outside budgeted categories is one sentence on the card, and the bar's share plus it is the Expenses figure", once.bridges === true && /^The bar leaves out \$[\d,]+ spent in categories without a budget\.$/.test(once.note), once.note || "no note");
     record("dashboard", "uncategorized queue is standard rows below the summary (when present)", !r.hasQueue || (r.rows > 0 && r.summaryFirst), r.hasQueue ? `${r.rows} rows, summary first=${r.summaryFirst}` : "no queue in the fixture");
   });
 }
