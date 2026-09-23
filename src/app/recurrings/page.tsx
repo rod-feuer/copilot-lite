@@ -300,6 +300,7 @@ export default function RecurringsPage() {
               }}
               progress={paidSoFar / totalBills}
               barLabel={`${Math.round((paidSoFar / totalBills) * 100)}% of expected bills paid`}
+              barTitle="Bills"
               status={
                 <>
                   {overdueCount > 0 ? (

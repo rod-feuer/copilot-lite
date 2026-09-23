@@ -187,7 +187,10 @@ export default function DashboardPage() {
                 primary={{
                   value: usd(net, { sign: true, cents: false }),
                   label: "net",
-                  tone: net >= 0 ? "good" : "bad",
+                  // One colour signal per card, and it is the verdict's. A red
+                  // net beside a green "under budget" argued with it. A finished
+                  // month's net is a fact and takes its colour.
+                  tone: projecting ? undefined : net >= 0 ? "good" : "bad",
                   href: `/transactions?month=${month}`,
                   sub:
                     projecting ? (
@@ -228,6 +231,7 @@ export default function DashboardPage() {
                 ]}
                 progress={progress}
                 barLabel={barLabel}
+                barTitle="Budget"
                 // Say what the bar measures, as the other two tabs do: it sat
                 // under net, income and expenses and was about none of them.
                 // The share and the whole; the spent figure sits just above,
