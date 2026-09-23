@@ -306,6 +306,7 @@ function BudgetSummary({
       }}
       progress={pct / 100}
       barLabel={`${Math.round(pct)}% of the monthly budget spent`}
+      barTitle="Budget"
       alarm={over}
       status={
         <>
