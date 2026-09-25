@@ -382,14 +382,14 @@ async function dashboardAnatomy(browser) {
       return { figs, caption: card.querySelector("[data-bar-caption]")?.textContent ?? "", eyebrow: card.querySelector("[data-eyebrow]")?.textContent.toLowerCase() ?? "", frameWords: (card.innerText.match(/projected|expected/gi) ?? []).length };
     });
     const [net, income, expenses] = f.figs;
-    // The eyebrow is "Month" on every card; the labels are one word each (plus
+    // The eyebrow is the month's name on every card; the labels are one word each (plus
     // "so far" while a month is in progress but too early to project); a
     // projected figure's frame is the "$X so far" beneath it (the projection is
     // the whole month, the actual is what has posted). Three labels each carried
     // "projected" before, and the card read as a paragraph.
     const forward = f.figs.every((x) => x.sub.includes("so far"));
     record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && /^net( so far)?\|income( so far)?\|expenses( so far)?$/.test(f.figs.map((x) => x.label).join("|")) && Math.abs(income.value - expenses.value - net.value) <= 1, `${f.eyebrow || "(no eyebrow)"}: ` + f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
-    record("dashboard", "the eyebrow is Month, with no frame word; a projected figure carries its actual so far beneath it", f.eyebrow === "month" && f.frameWords === 0, `"${f.eyebrow}" · ${f.frameWords} frame word(s) · ` + (forward ? f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month"));
+    record("dashboard", "the eyebrow is the month's name, with no frame word; a projected figure carries its actual so far beneath it", /^(january|february|march|april|may|june|july|august|september|october|november|december)$/.test(f.eyebrow) && f.frameWords === 0, `"${f.eyebrow}" · ${f.frameWords} frame word(s) · ` + (forward ? f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month"));
     // The verdict is the card's sentence and reads first. Two panels: the
     // three figures as equal columns from the left, and the budget (its label,
     // its share, the bar, the note) to their right, level with them — one
