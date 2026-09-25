@@ -2,7 +2,7 @@
 
 import { buildVerdict } from "@/lib/verdict";
 import { withoutAmountQualifier } from "@/lib/series";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Area,
@@ -31,7 +31,8 @@ import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { useMutation } from "@/components/useMutation";
 // Aliased: `Tooltip` is already taken by recharts' chart tooltip above.
 import { Tooltip as HoverTip } from "@/components/Tooltip";
-import { getJson, patchJson } from "@/lib/http";
+import { getJson, patchJson, postJson } from "@/lib/http";
+import type { CategorySuggestion } from "@/lib/categorizeSuggest";
 
 // Shapes come from the library that produces them; the aliases keep the file's
 // existing names.
@@ -674,6 +675,11 @@ function UncategorizedResolver({
   const [rows, setRows] = useState<UncatTx[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [cats, setCats] = useState<Category[]>([]);
+  // The Suggested-categories queue's proposals, by vendor, so a row here shows
+  // what the app would file it under and one tap takes it. Without this the
+  // dashboard showed the work and hid the help, which sat on Transactions.
+  const [proposals, setProposals] = useState<Map<string, CategorySuggestion>>(new Map());
+  const askedFor = useRef("");
   const openTx = useTxDrawer();
   const [busy, setBusy] = useState<number | null>(null);
   // "always": onResolved refreshes the dashboard (count, totals) and re-syncs
@@ -700,6 +706,21 @@ function UncategorizedResolver({
         setCats(cs);
       })
       .catch(() => {});
+    // Proposals load free (rules, history, what the model already said). Vendors
+    // nobody has asked about yet are asked once per count, as the queue does,
+    // and the answers read back; a failure just leaves the plain picker.
+    type Suggested = { suggestions: CategorySuggestion[]; needsModelCount: number; modelEnabled: boolean };
+    const read = () => getJson<Suggested>("/api/category-suggestions");
+    read()
+      .then(async (d) => {
+        if (d.needsModelCount > 0 && d.modelEnabled && askedFor.current !== String(count)) {
+          askedFor.current = String(count);
+          await postJson("/api/category-suggestions", { action: "suggestAI" });
+          d = await read();
+        }
+        if (!cancelled) setProposals(new Map(d.suggestions.map((x) => [x.merchant, x])));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -718,6 +739,55 @@ function UncategorizedResolver({
     );
     setBusy(null);
   }
+
+  // Taking a proposal is the queue's Apply: the vendor's rule is learned and its
+  // other uncategorized charges fill with it, not only this row's.
+  async function applyProposal(t: UncatTx, s: CategorySuggestion) {
+    setBusy(t.id);
+    setRows((prev) => prev.filter((x) => x.merchant !== t.merchant)); // optimistic
+    await mutate(
+      () => postJson("/api/category-suggestions", { action: "apply", merchant: s.merchant, categoryId: s.categoryId }),
+      { error: "Couldn't categorize — please try again" },
+      { refresh: "always" }
+    );
+    setBusy(null);
+  }
+
+  // The picker on a row: the proposal preselected when there is one, so the row
+  // reads "Ben Franklin Plumbing → Carmel Home, Apply" instead of "Uncategorized".
+  // Choosing the proposed category is taking it; any other choice files this
+  // charge alone, as before.
+  const picker = (t: UncatTx, s: CategorySuggestion | undefined, className?: string) => (
+    <CategoryProperty
+      categoryId={s?.categoryId ?? null}
+      categoryName={s?.categoryName ?? null}
+      categoryIcon={s?.categoryIcon ?? null}
+      cats={cats}
+      likely={s?.alternatives}
+      onChange={(id) => id != null && (s && id === s.categoryId ? applyProposal(t, s) : assign(t, id))}
+      ariaLabel={`Category for ${t.displayName}`}
+      className={className}
+    />
+  );
+  const proposalTag = (s: CategorySuggestion) =>
+    s.possible || s.guess ? (
+      <span data-possible={s.guess ? "guess" : "possible"} className="shrink-0 rounded-full bg-[var(--warn)]/15 px-2 py-1 text-[11px] font-medium text-[var(--warn)]">
+        {s.guess ? "a guess" : "possible match"}
+      </span>
+    ) : null;
+  const applyButton = (t: UncatTx, s: CategorySuggestion) => (
+    <button
+      disabled={busy === t.id}
+      onClick={(e) => {
+        e.stopPropagation();
+        applyProposal(t, s);
+      }}
+      data-queue-accept
+      className="btn-ghost shrink-0 text-xs disabled:opacity-50"
+    >
+      Apply
+    </button>
+  );
 
   return (
     // A section like any other: a small-caps title above one card of standard
@@ -739,45 +809,42 @@ function UncategorizedResolver({
         )}
       </div>
       <ul className="card divide-y divide-[var(--border)] overflow-hidden">
-        {rows.map((t) => (
-          <li
-            key={t.id}
-            data-drawer-row
-            {...rowButtonProps(() => openTx(t.merchant))}
-            className={`group flex cursor-pointer items-center gap-3 px-4 py-2 text-[13px] hover:bg-[var(--hover)] ${ROW_FOCUS} ${
-              busy === t.id ? "opacity-50" : ""
-            }`}
-          >
-            <div className="w-12 shrink-0 text-xs tabular-nums text-[var(--muted)]">{shortDate(t.date)}</div>
-            {/* The property sits in its own column on desktop and under the
-                name on a phone, as on Transactions, so the name keeps its room. */}
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{t.displayName}</div>
-              <div className="sm:hidden">
-                <CategoryProperty
-                  categoryId={null}
-                  categoryName={null}
-                  categoryIcon={null}
-                  cats={cats}
-                  onChange={(id) => id != null && assign(t, id)}
-                  ariaLabel={`Category for ${t.displayName}`}
-                  className="-ml-2"
-                />
+        {rows.map((t) => {
+          const s = proposals.get(t.merchant);
+          return (
+            <li
+              key={t.id}
+              data-drawer-row
+              data-proposed={s ? s.categoryName : undefined}
+              {...rowButtonProps(() => openTx(t.merchant))}
+              className={`group flex cursor-pointer items-center gap-3 px-4 py-2 text-[13px] hover:bg-[var(--hover)] ${ROW_FOCUS} ${
+                busy === t.id ? "opacity-50" : ""
+              }`}
+            >
+              <div className="w-12 shrink-0 text-xs tabular-nums text-[var(--muted)]">{shortDate(t.date)}</div>
+              {/* The property sits in its own column on desktop and under the
+                  name on a phone, as on Transactions, so the name keeps its room. */}
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{t.displayName}</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
+                  {picker(t, s, "-ml-2")}
+                  {s && proposalTag(s)}
+                </div>
               </div>
-            </div>
-            <span className="hidden w-44 shrink-0 justify-end sm:flex">
-              <CategoryProperty
-                categoryId={null}
-                categoryName={null}
-                categoryIcon={null}
-                cats={cats}
-                onChange={(id) => id != null && assign(t, id)}
-                ariaLabel={`Category for ${t.displayName}`}
-              />
-            </span>
-            <AmountCell value={t.amount} excluded={!!t.excluded} className="w-24 shrink-0" />
-          </li>
-        ))}
+              <span className="hidden shrink-0 items-center justify-end gap-2 sm:flex">
+                {s && proposalTag(s)}
+                {picker(t, s)}
+                {s && applyButton(t, s)}
+              </span>
+              {/* On a phone the verb sits under the amount, so the name's column
+                  keeps the property and its tag and the row stays short. */}
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <AmountCell value={t.amount} excluded={!!t.excluded} className="w-24 shrink-0" />
+                {s && <span className="sm:hidden">{applyButton(t, s)}</span>}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
