@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { InfoHint } from "@/components/InfoHint";
 
 // The page-top summary: one big figure on the left with a small-caps label,
 // one or more counter-figures on the right, a thick progress bar, a status
@@ -59,15 +60,12 @@ export function SummaryCard({
   barTitle?: string; // the budget panel's label ("Budget", "Bills")
   alarm?: boolean; // the bar turns red (over budget)
   status?: ReactNode; // the line under the bar; the caller sets its colours
-  note?: ReactNode; // small helper sentence
+  note?: string; // a caveat on what the bar measures: a "?" beside the caption, so it costs no line
   className?: string;
 }) {
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
   return (
-    // One height on every page at desktop width (the tallest card's, the one
-    // with a note), the panels centred in the room. Cards of three heights
-    // read as three designs.
-    <div className={`card p-6 lg:flex lg:min-h-44 lg:flex-col ${className}`.trim()} data-summary>
+    <div className={`card p-6 ${className}`.trim()} data-summary>
       {eyebrow && (
         <div data-eyebrow className="stat-label mb-4">
           {eyebrow}
@@ -81,7 +79,7 @@ export function SummaryCard({
           card's edges (the negative margin undoes the padding), so the figures
           span the chart card's width and the budget panel the category card's.
           The hairline stands in the middle of the gutter between them. */}
-      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:flex-1 lg:grid-cols-5 lg:items-center">
+      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:grid-cols-5 lg:items-center">
         {/* Figures share a top line. On desktop they are three equal columns
             across the chart card's width below; on a tablet, columns at least
             128px wide (a long label such as Recurrings' "paid so far of
@@ -121,9 +119,12 @@ export function SummaryCard({
           {(barTitle || barCaption) && (
             <div className="mb-2 flex items-baseline justify-between gap-3">
               <div className="stat-label">{barTitle}</div>
-              {barCaption && (
-                <div data-bar-caption className="whitespace-nowrap text-xs text-[var(--muted)]">
-                  {barCaption}
+              {(barCaption || note) && (
+                <div className="flex items-center gap-1 whitespace-nowrap text-xs text-[var(--muted)]">
+                  {barCaption && <span data-bar-caption>{barCaption}</span>}
+                  {/* The caveat as a hint, not a line: a note line under one
+                      card's bar made that card taller than the others. */}
+                  {note && <InfoHint text={note} label="About this figure" />}
                 </div>
               )}
             </div>
@@ -147,7 +148,6 @@ export function SummaryCard({
               figures it claimed a headline role it didn't have, and on
               Recurrings read as a stray line of counts over the money. */}
           {status && <div data-status className="mt-3 flex flex-wrap items-center gap-x-2 text-[15px] font-semibold">{status}</div>}
-          {note && <p className="mt-2 text-[11px] text-[var(--muted)]">{note}</p>}
         </div>
       </div>
     </div>

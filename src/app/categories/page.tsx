@@ -324,7 +324,7 @@ function BudgetSummary({
               </button>
             </Tooltip>
           ) : (
-            <span className="text-[var(--muted)]">On track — nothing over budget</span>
+            <span className="text-[var(--muted)]">Nothing over budget</span>
           )}
           {unbudgeted.length > 0 && (
             <>
@@ -351,12 +351,9 @@ function BudgetSummary({
           )}
         </>
       }
-      note={
-        hasAnnual &&
-        // One line: why this budget isn't the sum of the ones you typed. That an
-        // annual category tracks its year is said on its own row, below.
-        "Annual budgets count here at 1⁄12 per month."
-      }
+      // Why this budget isn't the sum of the ones you typed. That an annual
+      // category tracks its year is said on its own row, below.
+      note={hasAnnual ? "Annual budgets count here at 1⁄12 per month." : undefined}
     />
   );
 }
