@@ -15,11 +15,9 @@ export function buildVerdict(
   const m = (n: number) => usd(Math.abs(n), { cents: false });
   const b = data.budget;
   if (b && b.total > 0) {
-    if (b.projected == null)
-      return {
-        tone: "neutral",
-        text: `${m(b.spent)} of your ${m(b.total)} budget used — too early to project the month`,
-      };
+    // Only the judgement: the card's own caption says how much of the budget is
+    // used, and the sentence with both wrapped to two lines.
+    if (b.projected == null) return { tone: "neutral", text: "Too early to project the month" };
     // budgetOutlook is the one rule for over / under / on budget, including
     // what counts as "on".
     const o = budgetOutlook(b.total, b.projected, isCurrentMonth);

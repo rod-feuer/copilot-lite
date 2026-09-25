@@ -179,17 +179,19 @@ horizontal (12 vertical for a one-line row on a phone: a 44px touch target,
 and room for a difference under the amount). One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
-**Summary card anatomy** — the frame as an eyebrow, said once ("September,
-projected", "September so far", "September"), over one- or two-word labels,
-with the whole the bar measures in the panel's caption ("78% of $42,530");
+**Summary card anatomy** — the eyebrow "Month" on every page (the picker
+names which), over one- or two-word labels that carry the qualifier where one
+is due ("spent so far"; a projected figure's "$X so far" beneath it), with the
+whole the bar measures in the panel's caption ("78% of $42,530"); one height
+on every page at desktop width;
 then two panels centred on one line on the page's own 3:2 grid, run to the card's edges: the figures as three equal
 columns across the chart card's width below, and the budget across the
 category card's (its text starting on that card's text), with the hairline
 in the middle of the gutter. The budget panel reads label, share, bar, then
 the verdict sentence at the card-title size — "on pace to finish under
 budget", "2 overdue · 20 upcoming · 60 paid" — since every verdict describes
-the bar, then the reconciling note. They stack below desktop width. One colour signal per card, the verdict's: a projected net is
-ink; a finished month's net takes its colour.
+the bar, then the reconciling note. They stack below desktop width. One colour signal per card, the verdict's: only a finished
+month's net takes its colour.
 
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
 in one slot on every page, page actions to its right (on a phone the title

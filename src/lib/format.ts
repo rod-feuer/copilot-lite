@@ -18,11 +18,6 @@ export function usd(
 // `months` is expected sorted descending, as /api/months returns it.
 // The viewed month is the calendar month in progress — its figures are partial
 // and every surface qualifies them ("so far", "≈") rather than stating them flat.
-// "September", for a card's eyebrow (the month picker carries the year).
-export function monthName(month: string): string {
-  return new Date(month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
-}
-
 export function isCurrentMonth(month: string): boolean {
   return month === new Date().toISOString().slice(0, 7);
 }

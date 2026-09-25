@@ -382,12 +382,14 @@ async function dashboardAnatomy(browser) {
       return { figs, caption: card.querySelector("[data-bar-caption]")?.textContent ?? "", eyebrow: card.querySelector("[data-eyebrow]")?.textContent.toLowerCase() ?? "", frameWords: (card.innerText.match(/projected|expected/gi) ?? []).length };
     });
     const [net, income, expenses] = f.figs;
-    // The frame is the card's eyebrow ("September, projected"), said once; the
-    // labels are one word each. Three labels each carried the frame before, and
-    // the card read as a paragraph.
-    const forward = /projected/.test(f.eyebrow);
-    record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && f.figs.map((x) => x.label).join("|") === "net|income|expenses" && Math.abs(income.value - expenses.value - net.value) <= 1, `${f.eyebrow || "(no eyebrow)"}: ` + f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
-    record("dashboard", "the frame is said once, in the eyebrow, and each projected figure carries its actual so far beneath it", !forward || (f.frameWords === 1 && f.figs.every((x) => x.sub.includes("so far"))), forward ? `"${f.eyebrow}" · ${f.frameWords} frame word(s) · ` + f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month");
+    // The eyebrow is "Month" on every card; the labels are one word each (plus
+    // "so far" while a month is in progress but too early to project); a
+    // projected figure's frame is the "$X so far" beneath it (the projection is
+    // the whole month, the actual is what has posted). Three labels each carried
+    // "projected" before, and the card read as a paragraph.
+    const forward = f.figs.every((x) => x.sub.includes("so far"));
+    record("dashboard", "the three big figures are in one frame and reconcile: income − expenses = net", f.figs.length === 3 && /^net( so far)?\|income( so far)?\|expenses( so far)?$/.test(f.figs.map((x) => x.label).join("|")) && Math.abs(income.value - expenses.value - net.value) <= 1, `${f.eyebrow || "(no eyebrow)"}: ` + f.figs.map((x) => `${x.label} ${x.value}`).join(" | "));
+    record("dashboard", "the eyebrow is Month, with no frame word; a projected figure carries its actual so far beneath it", f.eyebrow === "month" && f.frameWords === 0, `"${f.eyebrow}" · ${f.frameWords} frame word(s) · ` + (forward ? f.figs.map((x) => x.sub).join(" | ") : "not projecting in this fixture month"));
     // The verdict is the card's sentence and reads first. Two panels: the
     // three figures as equal columns from the left, and the budget (its label,
     // its share, the bar, the note) to their right, level with them — one
@@ -474,9 +476,9 @@ async function partialMonthQualifiers(browser) {
         record("qualifiers", `${route} ${month} "${n}"`, present === expect, expect ? (present ? "present" : "MISSING") : (present ? "SHOWN on a past month" : "absent"));
       }
     };
-    await check("/", CUR, ["so far"], true); // the eyebrow: "September, projected" over "$X so far" figures, or "September so far"
-    await check("/categories", CUR, ["so far"], true); // the eyebrow, "September so far"
-    await check("/recurrings", CUR, ["so far"], true); // the eyebrow
+    await check("/", CUR, ["so far"], true); // "$X so far" under each figure
+    await check("/categories", CUR, ["spent so far"], true); // the label
+    await check("/recurrings", CUR, ["paid so far"], true); // the label
     await check("/transactions", CUR, ["· net", "so far"], true);
     await check("/", PAST, ["so far", ", projected"], false);
     // A finished month's summary is plain actuals: no forward-looking word in the
@@ -819,6 +821,21 @@ async function multiPlanVendor(browser) {
     await page.evaluate(() => document.querySelector("[data-plan-list] [role=button]").click()); await shelfSettled(page);
     const opened = await page.$eval(`${shelfSel} header`, (h) => h.innerText.replace(/\s+/g, " "));
     record("vendor shelf", "tapping a listed plan opens that plan's shelf, with Back", /Back/.test(opened) && /One of 2 plans/.test(opened) && /per year expected|Per charge/i.test(planShelf), opened.slice(0, 80));
+  });
+}
+
+// One summary-card height on every page at desktop width: the cards differ
+// in content (a note line, sub-lines), and three heights read as three designs.
+async function cardHeights(browser) {
+  await withPage(browser, async (page) => {
+    await page.setViewport({ width: 1280, height: 900 });
+    const heights = [];
+    for (const path of ["/", "/categories", "/recurrings"]) {
+      await page.goto(BASE + path, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-summary]");
+      heights.push(Math.round(await page.$eval("[data-summary]", (e) => e.getBoundingClientRect().height)));
+    }
+    record("card heights", "the dashboard, Categories and Recurrings summary cards are one height at desktop width", new Set(heights).size === 1, heights.join(" / ") + "px");
   });
 }
 
@@ -1418,7 +1435,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
