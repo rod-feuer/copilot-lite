@@ -232,6 +232,14 @@ export default function DashboardPage() {
                   },
                 ]}
                 progress={progress}
+                // The projected month end on the budget bar, where the verdict
+                // can be checked against the gauge: short of the end when under
+                // budget, at the end when over.
+                mark={
+                  b && b.total > 0 && b.projected != null
+                    ? { at: b.projected / b.total, label: `Projected to finish at ${usd(b.projected, { cents: false })} of the ${usd(b.total, { cents: false })} budget` }
+                    : undefined
+                }
                 barLabel={barLabel}
                 barTitle={b && b.total > 0 ? "Budget" : "Income"}
                 // Say what the bar measures, as the other two tabs do: it sat

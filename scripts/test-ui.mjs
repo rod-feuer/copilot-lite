@@ -77,9 +77,12 @@ async function loadFixture() {
   const rows = [
     ["Date", "Name", "Amount", "Account"],
     [day(0, 1), "Acme Corp Paycheck", "5200", "Checking"],
+    // Last month's paycheck too: with a prior month's income the dashboard
+    // projects the month, and the summary card's tick and verdict are real.
+    [day(-1, 1), "Acme Corp Paycheck", "5200", "Checking"],
     [day(0, 2), "Whole Foods Market", "-54.20", "Credit"],
     [day(0, 3), "Chipotle", "-18.75", "Credit"],
-    [day(0, 4), "Shell Gas Station", "-48.10", "Credit"],
+    [day(0, 6), "Shell Gas Station", "-48.10", "Credit"], // a counted charge past day 5, so the month projects
     [day(0, 6), "Card Payment Received", "500", "Credit"], // goes into an excluded category below
     [day(-2, 3), "Netflix", "-15.49", "Credit"],
     [day(-1, 3), "Netflix", "-15.49", "Credit"],
@@ -401,6 +404,12 @@ async function dashboardAnatomy(browser) {
     // budget panel's text starts on the category card's text.
     const aligned = await page.evaluate(() => { const cards = [...document.querySelectorAll(".card")]; const chart = cards.find((c) => /Spending this month/.test(c.textContent))?.getBoundingClientRect(); const cat = cards.find((c) => /Spending by category/.test(c.textContent))?.getBoundingClientRect(); const title = [...document.querySelectorAll("h3")].find((h) => /Spending by category/.test(h.textContent))?.getBoundingClientRect(); const label = document.querySelector("[data-budget-panel] .stat-label")?.getBoundingClientRect(); const cell = document.querySelector("[data-summary] [data-figure-pair]")?.parentElement?.getBoundingClientRect(); const figs = [...document.querySelectorAll("[data-summary] .text-2xl")].map((e) => e.getBoundingClientRect()); if (!chart || !cat || !title || !label || !cell || figs.length !== 3) return null; return { line: Math.round(cell.right + 12 - (chart.right + cat.left) / 2), firstFig: Math.round(figs[0].left - (chart.left + 24)), lastFigInside: figs[2].right <= chart.right, text: Math.round(label.left - title.left) }; });
     record("dashboard", "the hairline is centred in the gutter below; the figures span the chart card and the budget panel's text starts on the category card's", !!aligned && Math.abs(aligned.line) <= 1 && Math.abs(aligned.firstFig) <= 1 && aligned.lastFigInside && Math.abs(aligned.text) <= 1, aligned ? `line Δ${aligned.line}px from gutter centre; first figure Δ${aligned.firstFig}px from the chart's text; last inside=${aligned.lastFigInside}; panel text Δ${aligned.text}px` : "cards not found");
+    // The projected month end is a tick on the budget bar, so the verdict can
+    // be checked against the gauge: under budget, the tick is short of the end
+    // by the amount the sentence names. The fixture is too early to project,
+    // so the tick is absent there and the check reads the sentence instead.
+    const tick = await page.evaluate(() => { const card = document.querySelector("[data-summary]"); const bar = card.querySelector("[role=progressbar]").getBoundingClientRect(); const mark = card.querySelector("[data-bar-mark]")?.getBoundingClientRect(); const verdict = card.querySelector("[data-status]")?.textContent ?? ""; const m = verdict.match(/finish \$([\d,]+) (under|over) budget/); const total = Number((card.querySelector("[data-bar-caption]")?.textContent.match(/of \$([\d,]+)/)?.[1] ?? "0").replace(/,/g, "")); if (!mark) return { absent: true, tooEarly: /too early/i.test(verdict) }; const at = ((mark.left + mark.right) / 2 - bar.left) / bar.width; const said = m ? Number(m[1].replace(/,/g, "")) : null; return { absent: false, at, expected: said != null && total ? (m[2] === "under" ? 1 - said / total : 1) : null }; });
+    record("dashboard", "the budget bar carries a tick at the projected month end, short of the end by what the verdict says", tick.absent ? tick.tooEarly : tick.expected != null && Math.abs(tick.at - tick.expected) <= 0.01, tick.absent ? `no tick: ${tick.tooEarly ? "too early to project, as the verdict says" : "but the month is projected"}` : `tick at ${(tick.at * 100).toFixed(1)}%, verdict implies ${(tick.expected * 100).toFixed(1)}%`);
     record("dashboard", "the verdict is the budget panel's conclusion, under its bar; the figures are equal columns; the panel sits to their right, level, its share above its bar", order.statusUnderBar && order.pitch.length === 2 && order.pitch[0] === order.pitch[1] && order.panelRight && order.panelLevel && order.capAboveBar === true, `verdict under bar=${order.statusUnderBar}; column pitch ${order.pitch.join("/")}px; panel right=${order.panelRight}, level=${order.panelLevel}; caption above bar=${order.capAboveBar}`);
     record("dashboard", "the figures share a top line, and the bar says its share of the whole without repeating the spent figure", new Set(f.figs.map((x) => x.top)).size === 1 && /^\d+% of \$[\d,]+$/.test(f.caption.trim()), `tops ${f.figs.map((x) => x.top).join(",")}; "${f.caption}"`);
     // The budget story is told once, in the summary card. A second copy of it
@@ -738,7 +747,8 @@ async function openVendorFromCharge(browser) {
       await page.click(`${shelfSel} [data-open-vendor]`);
       await page.waitForSelector(`${shelfSel} button::-p-text(Combine)`, { timeout: 8000 });
       const label = await page.evaluate((sel) => { const a = [...document.querySelectorAll(`${sel} a`)].find((a) => /^Show all \d+/.test(a.textContent)); a?.click(); return a?.textContent.trim() ?? null; }, shelfSel);
-      await page.waitForFunction((n) => !document.querySelector("[data-shelf]") && new RegExp(`\\b${n} shown`).test(document.querySelector("header")?.innerText ?? ""), { timeout: 8000 }, label?.match(/\d+/)?.[0] ?? "-").catch(() => {});
+      // Key on the URL, not the count: the unfiltered list may already show N rows.
+      await page.waitForFunction((n) => /vendor=Netflix/.test(location.search) && !document.querySelector("[data-shelf]") && new RegExp(`\\b${n} shown`).test(document.querySelector("header")?.innerText ?? ""), { timeout: 8000 }, label?.match(/\d+/)?.[0] ?? "-").catch(() => {});
       const after = await page.evaluate(() => ({ url: location.search, shelf: !!document.querySelector("[data-shelf]"), shown: document.querySelector("header")?.innerText.match(/(\d+) shown/)?.[1] ?? "" }));
       record("open vendor", "\"Show all N\" from a charge on the Transactions page shows that vendor's statement, shelf closed", !!label && after.url === "?vendor=Netflix" && !after.shelf && after.shown === label.match(/\d+/)?.[0] && after.shown !== shown, `clicked "${label}": ${after.url}, shelf=${after.shelf}, ${shown} shown → ${after.shown}`);
     }
