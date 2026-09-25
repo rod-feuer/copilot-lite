@@ -117,6 +117,13 @@ async function loadFixture() {
     [day(-3, 26), "Jimmy Johns", "-10.40", "Credit"],
     [day(-1, 7), "Zylo Widget Works", "-31.00", "Credit"],
     [day(-1, 8), "Quorra Bakehouse", "-12.40", "Credit"],
+    // A vendor with no category under two spellings: the rarer one is a
+    // duplicate candidate, so its category waits on the merge decision. Two
+    // months back, so the dashboard's four-row list for last month still
+    // reaches Pinewood (the history proposal) below Streamly, Quorra and Zylo.
+    [day(-3, 11), "Marlow's Deli", "-14.20", "Credit"],
+    [day(-3, 25), "Marlow's Deli", "-16.80", "Credit"],
+    [day(-2, 12), "Marlows Deli", "-15.10", "Credit"],
   ];
   const csv = rows.map((r) => r.join(",")).join("\n");
   const imp = await (await fetch(BASE + "/api/import", { method: "POST", body: csv })).json();
@@ -957,8 +964,8 @@ async function statementMode(browser) {
           // deliver focus, so press it.
           await page.evaluate(() => document.querySelector("[data-drawer-row] [data-category-property] select").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
           await page.waitForFunction(() => document.querySelector("[data-drawer-row] [data-category-property] select").options.length > 2, { timeout: 5000 });
-          await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] [data-category-property] select"); const opt = [...s.options].find((o) => o.value && o.value !== "none"); s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); });
-          await page.waitForFunction((n) => document.querySelectorAll("[data-drawer-row]").length < n, { timeout: 10000 }, before).then(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, `${before} → ${before - 1} rows`)).catch(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, `still ${before} rows`));
+          const who = await page.evaluate(() => { const s = document.querySelector("[data-drawer-row] [data-category-property] select"); const opt = [...s.options].find((o) => o.value && o.value !== "none"); s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); return s.closest("[data-drawer-row]").innerText.split("\n").find((t) => /[a-z]/i.test(t) && !/^\w{3} \d/.test(t)) ?? ""; });
+          await page.waitForFunction((n) => document.querySelectorAll("[data-drawer-row]").length < n, { timeout: 10000 }, before).then(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", true, `${before} → ${before - 1} rows (${who})`)).catch(() => record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, `still ${before} rows`));
         } else record("statement mode", "categorizing under the Uncategorized filter makes the row leave", false, applied ? "no uncategorized rows in the fixture" : "no queue link");
         await page.goto(BASE + url, { waitUntil: "networkidle2" });
       }
@@ -1467,6 +1474,42 @@ async function dashboardProposal(browser) {
   });
 }
 
+// One decision per vendor: an uncategorized duplicate candidate gets no category
+// proposal (and no model call) while its merge is pending — the category queue
+// and the dashboard row point at the merge card, whose Combine sets the category.
+// Before, the queue guessed at the same vendor the merge queue had already
+// decoded, and Apply-then-Combine left the guess in place and learned as a rule.
+async function deferToMerge(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-deferred]", { timeout: 8000 }).catch(() => {});
+    const q = await page.evaluate(() => ({
+      deferred: [...document.querySelectorAll("[data-deferred]")].map((el) => [el.getAttribute("data-deferred"), el.textContent.replace(/\s+/g, " ").trim().slice(0, 60)]),
+      proposed: [...document.querySelectorAll("[data-suggestion]")].some((li) => /Marlows Deli/.test(li.textContent)),
+      mergeNote: [...document.querySelectorAll("body *")].map((el) => el.textContent).find((t) => /Marlows Deli/.test(t) && /Combine/.test(t)) ? true : false,
+    }));
+    const line = q.deferred.find(([to]) => to === "Marlow's Deli");
+    record("defer to merge", "the category queue defers a duplicate candidate to its merge card instead of proposing", !!line && /^Marlows Deli \(1\) · possibly Marlow's Deli/.test(line[1]) && !q.proposed, JSON.stringify(q.deferred) + ` proposed=${q.proposed}`);
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    await pickMonth(page, day(-2, 1).slice(0, 7));
+    await page.waitForSelector("[data-uncategorized] [data-drawer-row]");
+    const d = await page.evaluate(() => {
+      const li = [...document.querySelectorAll("[data-uncategorized] [data-drawer-row]")].find((x) => x.innerText.includes("Marlows Deli"));
+      if (!li) return null;
+      const link = [...li.querySelectorAll("a[data-deferred]")].find((a) => a.getBoundingClientRect().width > 0);
+      const sel = li.querySelector("[data-category-property] select");
+      return { link: link?.textContent.trim() ?? null, href: link?.getAttribute("href"), picked: sel?.options[sel.selectedIndex]?.textContent.trim(), apply: [...li.querySelectorAll("[data-queue-accept]")].filter((b) => b.getBoundingClientRect().width > 0).length };
+    });
+    record("defer to merge", "the dashboard row points at the merge and keeps the plain picker, with no Apply", d?.link === "possibly Marlow's Deli →" && d.href === "/transactions" && /Uncategorized/.test(d.picked) && d.apply === 0, JSON.stringify(d));
+    // Dismiss the merge: the vendor is a category question again.
+    const merges = await (await fetch(BASE + "/api/merges")).json();
+    const g = merges.find((x) => x.variants?.some((v) => v.merchant === "Marlows Deli"));
+    if (g) await fetch(BASE + "/api/merges", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "dismiss", keys: g.dismissKeys?.length ? g.dismissKeys : [g.key] }) });
+    const after = await (await fetch(BASE + "/api/category-suggestions")).json();
+    record("defer to merge", "dismissing the merge brings the vendor back to the category queue", !!g && !after.deferred.some((x) => x.merchant === "Marlows Deli") && after.needsModelCount >= 1, `merge card=${!!g}; deferred after: ${after.deferred.map((x) => x.merchant).join(",") || "none"}; needs model: ${after.needsModelCount}`);
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -1477,7 +1520,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

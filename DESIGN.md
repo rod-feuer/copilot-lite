@@ -126,7 +126,10 @@ and §3 carry over unchanged.
   result — a row leaves a queue, a pill flips, a field shows its new value —
   it says nothing. Errors always speak. *(Honest, One-pattern)*
 - **Review queues** surface low-confidence work (uncategorized, merge / name-cleanup
-  candidates) for one-tap confirmation instead of auto-applying it. *(Correct-don't-configure)*
+  candidates) for one-tap confirmation instead of auto-applying it. One decision
+  per vendor: a vendor in two queues at once is answered in the one with the
+  evidence, and the other points at it (an uncategorized duplicate candidate
+  gets no category proposal; Combine sets its category). *(Correct-don't-configure)*
 - **Tokens & theme.** One accent, neutral grays, dark mode via `data-theme` + CSS
   variables. New surfaces use the tokens and the scales below — never a
   hard-coded color, never a size off the scale. *(One-pattern)*

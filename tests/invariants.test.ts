@@ -2501,3 +2501,42 @@ test("a finished month is never projected, however early its last charge fell", 
   assert.equal(d.net, 4500);
   assert.ok(d.pace.series.every((p) => p.projected == null), "and the chart draws no dashed forecast");
 });
+
+// WHY: a vendor with no category that is also a duplicate candidate ("Dga"
+// beside the monthly "Dgappcare Chicago" bill) has one decision, not two: is it
+// that vendor? Combine sets its category. The category queue used to guess at
+// it too ("Other, a guess"), and Apply-then-Combine left the charge under the
+// guess for good: the merge fills only still-uncategorized charges, and the
+// guess had been learned as the vendor's rule. So while a merge is pending the
+// vendor is deferred (no proposal, no model call) and the merge card names
+// what Combine sets; dismiss the merge and the proposal comes back.
+test("an uncategorized duplicate candidate is deferred to the merge, which names the category it sets", async () => {
+  const home = addCat("Carmel Home (defer)");
+  const last = daysAgo(28);
+  const rid = Number(
+    getDb()
+      .prepare("INSERT INTO recurrings (merchant, categoryId, avgAmount, cadence, lastDate, nextDate, count) VALUES (?,?,?,?,?,?,?)")
+      .run("Dgappcare Chicago", home, -29, "monthly", last, daysAgo(-2), 3).lastInsertRowid
+  );
+  for (const d of [daysAgo(88), daysAgo(58), last]) tx("Dgappcare Chicago", { amount: -29, date: d, categoryId: home, recurringId: rid });
+  tx("Dga", { amount: -29.41, date: daysAgo(0), categoryId: null });
+
+  const merge = allMergeSuggestions().find((g) => g.variants.some((v) => v.merchant === "Dga"));
+  assert.ok(merge && merge.canonical === "Dgappcare Chicago", "the merge queue holds Dga as a candidate for the bill");
+  assert.ok(merge!.lowConfidence, "a borderline name: the card is a possible match");
+  assert.match(merge!.note ?? "", /combining sets its category to Carmel Home \(defer\)/, "the possible-match card says what Combine sets");
+
+  const before = categorizeSuggestions();
+  assert.deepEqual(before.deferred, [{ merchant: "Dga", count: 1, to: "Dgappcare Chicago" }], "the category queue defers Dga to the merge");
+  assert.ok(!before.suggestions.some((s) => s.merchant === "Dga"), "no proposal of its own");
+  assert.equal(before.needsModelCount, 0, "and the model is not asked about it");
+  await withModelApis({ typesafe: true }, () => ({ choice: "Other", confidence: 0.5, probabilities: { Other: 0.5 } }), async (sent) => {
+    assert.deepEqual(await categorizeSuggestionsAI(), { asked: 0, answered: 0, provider: null });
+    assert.equal(sent.length, 0, "nothing leaves the machine for a deferred vendor");
+  });
+
+  for (const k of merge!.dismissKeys) dismissMerge(k);
+  const after = categorizeSuggestions();
+  assert.deepEqual(after.deferred, [], "the merge dismissed, Dga is no longer deferred");
+  assert.equal(after.needsModelCount, 1, "and is back in the queue, waiting on the model");
+});

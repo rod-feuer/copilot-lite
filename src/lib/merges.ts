@@ -123,15 +123,17 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
   const recs = (
     db
       .prepare(
-        `SELECT r.id, r.merchant, r.categoryId, r.cadence, r.lastDate, r.avgAmount,
+        `SELECT r.id, r.merchant, r.categoryId, c.name AS categoryName, r.cadence, r.lastDate, r.avgAmount,
                 MIN(ABS(t.amount)) lo, MAX(ABS(t.amount)) hi
          FROM recurrings r JOIN transactions t ON t.recurringId = r.id
+         LEFT JOIN categories c ON c.id = r.categoryId
          WHERE r.avgAmount < 0
          GROUP BY r.id`
       )
       .all() as {
       merchant: string;
       categoryId: number | null;
+      categoryName: string | null;
       cadence: string;
       lastDate: string;
       lo: number;
@@ -216,7 +218,9 @@ export function recurringMatchSuggestions(exclude: Set<string>): MergeSuggestion
       variants,
       total: variants.reduce((s, v) => s + v.count, 0),
       note: lowConfidence
-        ? `Possibly the same as your ${r.cadence} “${r.merchant}” bill — similar name, posts in the same slot at a similar amount. Combine only if it's the same vendor.`
+        ? `Possibly the same as your ${r.cadence} “${r.merchant}” bill — similar name, posts in the same slot at a similar amount. Combine only if it's the same vendor${
+            r.categoryName ? `; combining sets its category to ${r.categoryName}` : ""
+          }.`
         : `Lands in your ${r.cadence} “${r.merchant}” slot at a similar amount — likely the same vendor renamed. Combining makes ${
             orphans.length > 1 ? "them" : "it"
           } recurring${r.categoryId != null ? " and sets the category" : ""}.`,
