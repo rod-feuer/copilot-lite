@@ -253,18 +253,10 @@ export default function DashboardPage() {
                     <span data-unbudgeted>The bar leaves out {usd(unbudgeted, { cents: false })} spent in categories without a budget.</span>
                   ) : undefined
                 }
+                // The words carry the tone ("under budget") and the text its
+                // colour; a status dot beside them read as a bullet under the bar.
                 status={
-                  <span
-                    className={`flex items-center gap-2 ${
-                      v.tone === "good" ? "text-[var(--good)]" : v.tone === "bad" ? "text-[var(--bad)]" : "text-[var(--muted)]"
-                    }`}
-                  >
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        v.tone === "good" ? "bg-[var(--good)]" : v.tone === "bad" ? "bg-[var(--bad)]" : "bg-[var(--muted)]"
-                      }`}
-                      aria-hidden
-                    />
+                  <span className={v.tone === "good" ? "text-[var(--good)]" : v.tone === "bad" ? "text-[var(--bad)]" : "text-[var(--muted)]"}>
                     {v.text}
                   </span>
                 }

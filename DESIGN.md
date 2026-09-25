@@ -180,13 +180,14 @@ and room for a difference under the amount). One radius for cards and controls (
 pills and tags; nothing else.
 
 **Summary card anatomy** — the frame as an eyebrow where the figures share
-one ("September, projected"); the verdict sentence next, at the card-title
-size, since it is the judgement the figures serve; then two panels level with
-each other on the page's own 3:2 grid, run to the card's edges: the figures as
-three equal columns across the chart card's width below, and the budget
-(label, share, bar, note) across the category card's, its text starting on
-that card's text, with the hairline in the middle of the gutter. They stack
-below desktop width. One colour signal per card, the verdict's: a projected net is
+one ("September, projected"); then two panels level with each other on the
+page's own 3:2 grid, run to the card's edges: the figures as three equal
+columns across the chart card's width below, and the budget across the
+category card's (its text starting on that card's text), with the hairline
+in the middle of the gutter. The budget panel reads label, share, bar, then
+the verdict sentence at the card-title size — "on pace to finish under
+budget", "2 overdue · 20 upcoming · 60 paid" — since every verdict describes
+the bar, then the reconciling note. They stack below desktop width. One colour signal per card, the verdict's: a projected net is
 ink; a finished month's net takes its colour.
 
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
