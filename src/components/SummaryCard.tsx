@@ -64,7 +64,10 @@ export function SummaryCard({
 }) {
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
   return (
-    <div className={`card p-6 ${className}`.trim()} data-summary>
+    // One height on every page at desktop width (the tallest card's, the one
+    // with a note), the panels centred in the room. Cards of three heights
+    // read as three designs.
+    <div className={`card p-6 lg:flex lg:min-h-44 lg:flex-col ${className}`.trim()} data-summary>
       {eyebrow && (
         <div data-eyebrow className="stat-label mb-4">
           {eyebrow}
@@ -78,7 +81,7 @@ export function SummaryCard({
           card's edges (the negative margin undoes the padding), so the figures
           span the chart card's width and the budget panel the category card's.
           The hairline stands in the middle of the gutter between them. */}
-      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:grid-cols-5 lg:items-center">
+      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:flex-1 lg:grid-cols-5 lg:items-center">
         {/* Figures share a top line. On desktop they are three equal columns
             across the chart card's width below; on a tablet, columns at least
             128px wide (a long label such as Recurrings' "paid so far of

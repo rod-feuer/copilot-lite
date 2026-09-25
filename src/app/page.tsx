@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { usd, shortDate, defaultMonth, isCurrentMonth, monthName } from "@/lib/format";
+import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
 import type { DashboardData } from "@/lib/core";
 import type { TransactionRow } from "@/lib/queries";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
@@ -175,21 +175,24 @@ export default function DashboardPage() {
                 ? `${Math.round((b.spent / b.total) * 100)}% of budget used`
                 : `${Math.round(progress * 100)}% of income spent`;
             const prevLabel = prevPeriodLabel(data.prev);
-            const monthWord = monthName(month);
             return (
               <SummaryCard
                 // The frame, once. Three labels each carried it ("net cash
                 // flow, projected", "income, expected", "expenses, projected")
                 // and the card read as a paragraph. Too early to project, the
                 // figures are the month so far, and the eyebrow says that.
-                eyebrow={projecting ? `${monthWord}, projected` : current ? `${monthWord} so far` : monthWord}
+                eyebrow="Month"
                 primary={{
                   value: usd(net, { sign: true, cents: false }),
-                  label: "net",
+                  // In progress but too early to project, the figures are the
+                  // month so far and the label says so (with a projection, the
+                  // "$X so far" beneath each figure carries it).
+                  label: current && !projecting ? "net so far" : "net",
                   // One colour signal per card, and it is the verdict's. A red
-                  // net beside a green "under budget" argued with it. A finished
-                  // month's net is a fact and takes its colour.
-                  tone: projecting ? undefined : net >= 0 ? "good" : "bad",
+                  // net beside a green "under budget" argued with it. Only a
+                  // finished month's net is a fact, and only then does it take
+                  // its colour.
+                  tone: current ? undefined : net >= 0 ? "good" : "bad",
                   href: `/transactions?month=${month}`,
                   sub:
                     projecting ? (
@@ -203,7 +206,7 @@ export default function DashboardPage() {
                 secondary={[
                   {
                     value: usd(projecting ? (data.projectedIncome as number) : data.income, { cents: false }),
-                    label: "income",
+                    label: current && !projecting ? "income so far" : "income",
                     href: `/transactions?month=${month}&type=income`,
                     sub:
                       projecting ? (
@@ -216,7 +219,7 @@ export default function DashboardPage() {
                   },
                   {
                     value: usd(projecting ? (data.pace.projectedMonthEnd as number) : data.expenses, { cents: false }),
-                    label: "expenses",
+                    label: current && !projecting ? "expenses so far" : "expenses",
                     href: `/transactions?month=${month}&type=expense`,
                     sub: projecting ? (
                       // One comparison while the month runs, and it is the chart's

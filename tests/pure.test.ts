@@ -262,7 +262,7 @@ test("buildVerdict: withholds a projection it doesn't have, qualifies a forecast
   // too early: the budget is quoted, no month-end claim is made
   assert.deepEqual(buildVerdict({ ...base, budget: { total: 5000, spent: 800, projected: null } }, true), {
     tone: "neutral",
-    text: "$800 of your $5,000 budget used — too early to project the month",
+    text: "Too early to project the month",
   });
   // a forecast speaks in pace terms; a finished month in the past tense
   assert.equal(buildVerdict({ ...base, budget: { total: 5000, spent: 3100, projected: 4400 } }, true).text, "On pace to finish $600 under budget");
