@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { InfoHint } from "@/components/InfoHint";
+import { Tooltip } from "@/components/Tooltip";
 
 // The page-top summary: one big figure on the left with a small-caps label,
 // one or more counter-figures on the right, a thick progress bar, a status
@@ -41,6 +42,7 @@ function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" | "pai
 export function SummaryCard({
   eyebrow,
   barTitle,
+  mark,
   primary,
   secondary,
   progress,
@@ -59,6 +61,10 @@ export function SummaryCard({
   barCaption?: ReactNode; // the same, in sight — where the figures above don't already say it
   barTitle?: string; // the budget panel's label ("Budget", "Bills")
   alarm?: boolean; // the bar turns red (over budget)
+  // Where the month is projected to land, 0..1 of the whole: a tick on the bar,
+  // so the verdict ("on pace to finish $4,732 under budget") is visible on the
+  // gauge it is about. The category bars carry the same device.
+  mark?: { at: number; label: string };
   status?: ReactNode; // the line under the bar; the caller sets its colours
   note?: string; // a caveat on what the bar measures: a "?" beside the caption, so it costs no line
   className?: string;
@@ -129,18 +135,27 @@ export function SummaryCard({
               )}
             </div>
           )}
-          <div
-            className="h-2.5 w-full overflow-hidden rounded-full bg-[var(--background)]"
-            role="progressbar"
-            aria-label={barLabel}
-            aria-valuenow={Math.round(pct)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
+          <div className="relative">
             <div
-              className="h-full rounded-full"
-              style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
-            />
+              className="h-2.5 w-full overflow-hidden rounded-full bg-[var(--background)]"
+              role="progressbar"
+              aria-label={barLabel}
+              aria-valuenow={Math.round(pct)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
+              />
+            </div>
+            {mark && (
+              <div data-bar-mark className="absolute top-0 -translate-x-1/2" style={{ left: `${Math.max(0, Math.min(mark.at, 1)) * 100}%` }}>
+                <Tooltip label={mark.label} onlyIfTruncated={false} className="flex h-2.5 w-2 cursor-help justify-center">
+                  <span className="block h-2.5 w-0.5 rounded-full bg-[var(--foreground)]/40" />
+                </Tooltip>
+              </div>
+            )}
           </div>
           {/* The verdict describes the bar — "on pace to finish under
               budget", "2 overdue · 20 upcoming · 60 paid", "Lake Home over
