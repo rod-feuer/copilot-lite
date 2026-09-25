@@ -251,9 +251,9 @@ export default function DashboardPage() {
                 // the bar leaves out — a sentence, not an equation: its first
                 // term (the budgeted spend) is no longer printed on the card.
                 note={
-                  b && b.total > 0 && unbudgeted > 0 && (unbudgeted >= 250 || unbudgeted / data.expenses >= 0.02) ? (
-                    <span data-unbudgeted>The bar leaves out {usd(unbudgeted, { cents: false })} spent in categories without a budget.</span>
-                  ) : undefined
+                  b && b.total > 0 && unbudgeted > 0 && (unbudgeted >= 250 || unbudgeted / data.expenses >= 0.02)
+                    ? `The bar leaves out ${usd(unbudgeted, { cents: false })} spent in categories without a budget.`
+                    : undefined
                 }
                 // The words carry the tone ("under budget") and the text its
                 // colour; a status dot beside them read as a bullet under the bar.

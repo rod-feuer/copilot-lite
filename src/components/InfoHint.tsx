@@ -46,6 +46,7 @@ export function InfoHint({ text, label = "What's this?" }: { text: string; label
       <button
         ref={btnRef}
         type="button"
+        data-hint={text}
         aria-label={label}
         onClick={(e) => {
           e.stopPropagation();
