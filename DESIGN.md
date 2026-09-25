@@ -182,9 +182,11 @@ pills and tags; nothing else.
 **Summary card anatomy** — the frame as an eyebrow where the figures share
 one ("September, projected"); the verdict sentence next, at the card-title
 size, since it is the judgement the figures serve; then two panels level with
-each other: the figures as equal columns from the left, and the budget
-(label, share, bar, note) to their right behind a hairline. They stack below
-desktop width. One colour signal per card, the verdict's: a projected net is
+each other on the page's own 3:2 grid, run to the card's edges: the figures as
+three equal columns across the chart card's width below, and the budget
+(label, share, bar, note) across the category card's, its text starting on
+that card's text, with the hairline in the middle of the gutter. They stack
+below desktop width. One colour signal per card, the verdict's: a projected net is
 ink; a finished month's net takes its colour.
 
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
