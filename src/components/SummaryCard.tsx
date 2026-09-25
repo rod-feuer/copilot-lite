@@ -66,16 +66,10 @@ export function SummaryCard({
   return (
     <div className={`card p-6 ${className}`.trim()} data-summary>
       {eyebrow && (
-        <div data-eyebrow className="stat-label mb-1">
+        <div data-eyebrow className="stat-label mb-4">
           {eyebrow}
         </div>
       )}
-      {/* The verdict is the card's sentence, and it reads first: under the
-          frame, above the figures it judges. At the foot it lost to the big
-          red net figure, and the card's loudest thing disagreed with its verdict. */}
-      {/* The eyebrow and the verdict are one unit (4px apart); the figures
-          are the next (24px below). Three equal gaps grouped nothing. */}
-      {status && <div data-status className="mb-6 flex flex-wrap items-center gap-x-2 text-[15px] font-semibold">{status}</div>}
       {/* Two panels: the month's figures on the left, the budget on the right,
           level with them. One column in a full-width card left the right two
           thirds empty above a bar that ran the whole width. A hairline
@@ -143,6 +137,12 @@ export function SummaryCard({
               style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
             />
           </div>
+          {/* The verdict describes the bar — "on pace to finish under
+              budget", "2 overdue · 20 upcoming · 60 paid", "Lake Home over
+              budget" — so it sits under it, the panel's conclusion. Above the
+              figures it claimed a headline role it didn't have, and on
+              Recurrings read as a stray line of counts over the money. */}
+          {status && <div data-status className="mt-3 flex flex-wrap items-center gap-x-2 text-[15px] font-semibold">{status}</div>}
           {note && <p className="mt-2 text-[11px] text-[var(--muted)]">{note}</p>}
         </div>
       </div>
