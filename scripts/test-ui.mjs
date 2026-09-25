@@ -1436,6 +1436,37 @@ async function recurringsRow(browser) {
   });
 }
 
+// The dashboard's "need a category" rows carry the queue's proposal: the
+// category the app would file the vendor under sits in the picker with an
+// Apply beside it, and a vendor with no proposal keeps the plain picker. Apply
+// is the queue's Apply, so the vendor's rule is learned: the next charge from
+// that vendor arrives categorized. Before, the dashboard showed the work and
+// the help sat on Transactions; and its own picker filed one charge with no
+// rule, so the same vendor came back uncategorized next month.
+async function dashboardProposal(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    await pickMonth(page, day(-1, 1).slice(0, 7)); // Pinewood's third charge and Zylo's are last month
+    await page.waitForSelector("[data-uncategorized] [data-drawer-row]");
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("[data-uncategorized] [data-drawer-row]")];
+      const read = (name) => { const li = rows.find((x) => x.innerText.includes(name)); if (!li) return null; const sel = li.querySelector("[data-category-property] select"); return { proposed: li.getAttribute("data-proposed"), picked: sel?.options[sel.selectedIndex]?.textContent.trim() ?? "", apply: [...li.querySelectorAll("[data-queue-accept]")].filter((b) => b.getBoundingClientRect().width > 0).length }; };
+      return { pinewood: read("Pinewood Hardware"), zylo: read("Zylo Widget Works") };
+    });
+    record("dashboard proposal", "a vendor with history shows its proposed category in the picker, with Apply; one without keeps the plain picker", r.pinewood?.proposed === "Groceries" && /Groceries/.test(r.pinewood.picked) && r.pinewood.apply === 1 && r.zylo && r.zylo.proposed == null && /Uncategorized/.test(r.zylo.picked) && r.zylo.apply === 0, JSON.stringify(r));
+    if (!r.pinewood) return;
+    await page.evaluate(() => [...document.querySelectorAll("[data-uncategorized] [data-drawer-row]")].find((x) => x.innerText.includes("Pinewood Hardware")).querySelector("[data-queue-accept]").click());
+    const left = await page.waitForFunction(() => ![...document.querySelectorAll("[data-uncategorized] [data-drawer-row]")].some((x) => x.innerText.includes("Pinewood Hardware")), { timeout: 8000 }).then(() => true).catch(() => false);
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 });
+    // The rule: a fourth Pinewood charge, imported after Apply, is already Groceries.
+    const csv = [["Date", "Name", "Amount", "Account"], [day(0, 8), "Pinewood Hardware", "-27.50", "Credit"]].map((x) => x.join(",")).join("\n");
+    await fetch(BASE + "/api/import", { method: "POST", body: csv });
+    const rows = (await (await fetch(BASE + "/api/transactions?q=Pinewood&limit=10")).json()).rows ?? [];
+    const cats = rows.map((x) => x.categoryName ?? null);
+    record("dashboard proposal", "Apply files the charge and teaches the rule: the vendor's next charge arrives categorized", left && rows.length === 4 && cats.every((c) => c === "Groceries"), `row left=${left}; ${rows.length} Pinewood charges: ${cats.join(", ")}`);
+  });
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 let browser;
@@ -1446,7 +1477,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }
