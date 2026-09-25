@@ -32,7 +32,7 @@ import { useMutation } from "@/components/useMutation";
 // Aliased: `Tooltip` is already taken by recharts' chart tooltip above.
 import { Tooltip as HoverTip } from "@/components/Tooltip";
 import { getJson, patchJson, postJson } from "@/lib/http";
-import type { CategorySuggestion } from "@/lib/categorizeSuggest";
+import type { CategorySuggestion, DeferredToMerge } from "@/lib/categorizeSuggest";
 
 // Shapes come from the library that produces them; the aliases keep the file's
 // existing names.
@@ -679,6 +679,8 @@ function UncategorizedResolver({
   // what the app would file it under and one tap takes it. Without this the
   // dashboard showed the work and hid the help, which sat on Transactions.
   const [proposals, setProposals] = useState<Map<string, CategorySuggestion>>(new Map());
+  // Vendors whose category waits on a merge decision: the row points at it.
+  const [deferred, setDeferred] = useState<Map<string, DeferredToMerge>>(new Map());
   const askedFor = useRef("");
   const openTx = useTxDrawer();
   const [busy, setBusy] = useState<number | null>(null);
@@ -709,7 +711,7 @@ function UncategorizedResolver({
     // Proposals load free (rules, history, what the model already said). Vendors
     // nobody has asked about yet are asked once per count, as the queue does,
     // and the answers read back; a failure just leaves the plain picker.
-    type Suggested = { suggestions: CategorySuggestion[]; needsModelCount: number; modelEnabled: boolean };
+    type Suggested = { suggestions: CategorySuggestion[]; deferred: DeferredToMerge[]; needsModelCount: number; modelEnabled: boolean };
     const read = () => getJson<Suggested>("/api/category-suggestions");
     read()
       .then(async (d) => {
@@ -718,7 +720,9 @@ function UncategorizedResolver({
           await postJson("/api/category-suggestions", { action: "suggestAI" });
           d = await read();
         }
-        if (!cancelled) setProposals(new Map(d.suggestions.map((x) => [x.merchant, x])));
+        if (cancelled) return;
+        setProposals(new Map(d.suggestions.map((x) => [x.merchant, x])));
+        setDeferred(new Map((d.deferred ?? []).map((x) => [x.merchant, x])));
       })
       .catch(() => {});
     return () => {
@@ -775,6 +779,12 @@ function UncategorizedResolver({
         {s.guess ? "a guess" : "possible match"}
       </span>
     ) : null;
+  // The merge card and its evidence live on Transactions; the row only points.
+  const mergeLink = (d: DeferredToMerge) => (
+    <Link href="/transactions" data-deferred={d.to} onClick={(e) => e.stopPropagation()} className="btn-link shrink-0 text-xs">
+      possibly {d.to} →
+    </Link>
+  );
   const applyButton = (t: UncatTx, s: CategorySuggestion) => (
     <button
       disabled={busy === t.id}
@@ -811,6 +821,7 @@ function UncategorizedResolver({
       <ul className="card divide-y divide-[var(--border)] overflow-hidden">
         {rows.map((t) => {
           const s = proposals.get(t.merchant);
+          const d = deferred.get(t.merchant);
           return (
             <li
               key={t.id}
@@ -829,10 +840,12 @@ function UncategorizedResolver({
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
                   {picker(t, s, "-ml-2")}
                   {s && proposalTag(s)}
+                  {d && mergeLink(d)}
                 </div>
               </div>
               <span className="hidden shrink-0 items-center justify-end gap-2 sm:flex">
                 {s && proposalTag(s)}
+                {d && mergeLink(d)}
                 {picker(t, s)}
                 {s && applyButton(t, s)}
               </span>

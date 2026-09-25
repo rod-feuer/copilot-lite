@@ -1,6 +1,7 @@
 import { getDb } from "./db";
 import { categorizeByRules, categorizeByHistory, learnRule } from "./core";
 import { proposeCategories, CONFIDENCE } from "./categorize";
+import { allMergeSuggestions } from "./merges";
 import type { Category } from "./types";
 
 // A proposed category for an uncategorized vendor, with where it came from so the
@@ -49,6 +50,18 @@ function modelAnswers(db: ReturnType<typeof getDb>, cats: Category[]): Map<strin
   return new Map(rows.map((r) => [r.merchant, r]));
 }
 
+// A vendor with no category that is also a duplicate candidate ("Dga" beside
+// the monthly "Dgappcare Chicago" bill) has one decision, not two: is it that
+// vendor? Its category follows from the answer, and Combine sets it. So the
+// category queue proposes nothing for it and the model is not asked; it points
+// at the merge card instead. Dismiss the merge and the vendor is back here.
+export type DeferredToMerge = { merchant: string; count: number; to: string };
+function pendingMerges(): Map<string, string> {
+  const to = new Map<string, string>();
+  for (const g of allMergeSuggestions()) for (const v of g.variants) if (v.merchant !== g.canonical) to.set(v.merchant, g.canonical);
+  return to;
+}
+
 function context(db: ReturnType<typeof getDb>) {
   ensureDismissals(db);
   const dismissed = new Set(
@@ -61,7 +74,7 @@ function context(db: ReturnType<typeof getDb>) {
   const uncats = db
     .prepare("SELECT merchant, COUNT(*) AS count FROM transactions WHERE categoryId IS NULL GROUP BY merchant")
     .all() as { merchant: string; count: number }[];
-  return { dismissed, cats, byId, uncats };
+  return { dismissed, cats, byId, uncats, mergeTo: pendingMerges() };
 }
 
 // Proposals for every uncategorized vendor: rules and the vendor's own history
@@ -72,18 +85,25 @@ export function categorizeSuggestions(): {
   suggestions: CategorySuggestion[];
   needsModelCount: number;
   dismissedCount: number; // vendors still uncategorized that a Dismiss keeps out of the queue
+  deferred: DeferredToMerge[]; // vendors whose category waits on a merge decision
   modelEnabled: boolean;
 } {
   const db = getDb();
-  const { dismissed, cats, byId, uncats } = context(db);
+  const { dismissed, cats, byId, uncats, mergeTo } = context(db);
   const answers = modelAnswers(db, cats);
   const suggestions: CategorySuggestion[] = [];
+  const deferred: DeferredToMerge[] = [];
   let needsModelCount = 0;
   let dismissedCount = 0;
 
   for (const u of uncats) {
     if (dismissed.has(u.merchant)) {
       dismissedCount++;
+      continue;
+    }
+    const to = mergeTo.get(u.merchant);
+    if (to) {
+      deferred.push({ merchant: u.merchant, count: u.count, to });
       continue;
     }
     let categoryId = categorizeByRules(u.merchant);
@@ -124,7 +144,7 @@ export function categorizeSuggestions(): {
   // Sure ones first, then possible matches, then guesses; busiest vendor first within each.
   const tier = (s: CategorySuggestion) => (s.guess ? 2 : s.possible ? 1 : 0);
   suggestions.sort((a, b) => tier(a) - tier(b) || b.count - a.count || a.merchant.localeCompare(b.merchant));
-  return { suggestions, needsModelCount, dismissedCount, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
+  return { suggestions, needsModelCount, dismissedCount, deferred, modelEnabled: !!(process.env.TYPESAFE_API_KEY || process.env.ANTHROPIC_API_KEY) };
 }
 
 // Up to three merchants the user has already filed under each category (its
@@ -154,10 +174,10 @@ function categoryExamples(db: ReturnType<typeof getDb>, asking: Set<string>): Ma
 // next time; a low-confidence answer IS remembered, as "not sure".
 export async function categorizeSuggestionsAI(): Promise<{ asked: number; answered: number; provider: string | null }> {
   const db = getDb();
-  const { dismissed, cats, uncats } = context(db);
+  const { dismissed, cats, uncats, mergeTo } = context(db);
   const answers = modelAnswers(db, cats);
   const asking = uncats
-    .filter((u) => !dismissed.has(u.merchant) && !answers.has(u.merchant) && categorizeByRules(u.merchant) == null && categorizeByHistory(u.merchant) == null)
+    .filter((u) => !dismissed.has(u.merchant) && !mergeTo.has(u.merchant) && !answers.has(u.merchant) && categorizeByRules(u.merchant) == null && categorizeByHistory(u.merchant) == null)
     .map((u) => u.merchant);
   if (asking.length === 0) return { asked: 0, answered: 0, provider: null };
   const { provider, proposals } = await proposeCategories(asking, cats, categoryExamples(db, new Set(asking)));

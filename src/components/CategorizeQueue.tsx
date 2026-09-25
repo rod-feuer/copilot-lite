@@ -5,7 +5,7 @@ import { useMutation } from "@/components/useMutation";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
 import { postJson } from "@/lib/http";
 import { CategoryProperty } from "@/components/RowCells";
-import type { CategorySuggestion } from "@/lib/categorizeSuggest";
+import type { CategorySuggestion, DeferredToMerge } from "@/lib/categorizeSuggest";
 import type { Category } from "@/lib/types";
 
 // A proposal the user may have redirected: the category to apply is the
@@ -35,6 +35,7 @@ export function CategorizeQueue({
   const [ask, setAsk] = useState<"idle" | "asking" | "failed">("idle");
   const askedFor = useRef<string>("");
   const [dismissedCount, setDismissedCount] = useState(0);
+  const [deferred, setDeferred] = useState<DeferredToMerge[]>([]);
   const [modelEnabled, setModelEnabled] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -47,6 +48,7 @@ export function CategorizeQueue({
     setCats(cs);
     setNeedsModel(d.needsModelCount);
     setDismissedCount(d.dismissedCount ?? 0);
+    setDeferred(d.deferred ?? []);
     setModelEnabled(d.modelEnabled);
     return d as { needsModelCount: number; modelEnabled: boolean };
   }, []);
@@ -139,7 +141,7 @@ export function CategorizeQueue({
     setBusy(null);
   }
 
-  if (items.length === 0 && needsModel === 0 && dismissedCount === 0) return null;
+  if (items.length === 0 && needsModel === 0 && dismissedCount === 0 && deferred.length === 0) return null;
 
   return (
     <div className="card mb-4 p-4">
@@ -221,8 +223,19 @@ export function CategorizeQueue({
         </ul>
       )}
 
+      {deferred.length > 0 && (
+        // One decision per vendor: a duplicate candidate's category follows
+        // from Combine (which sets it), so no proposal here — only the pointer.
+        <ul className={`flex flex-col gap-1 text-xs text-[var(--muted)] ${items.length > 0 ? "mt-3" : ""}`}>
+          {deferred.map((d) => (
+            <li key={d.merchant} data-deferred={d.to}>
+              <span className="font-medium text-[var(--foreground)]">{d.merchant}</span> ({d.count}) · possibly {d.to} — decide that first, in Possible duplicate vendors below. Combining sets its category.
+            </li>
+          ))}
+        </ul>
+      )}
       {(needsModel > 0 || dismissedCount > 0) && (
-        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted)] ${items.length > 0 ? "mt-3" : ""}`}>
+        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted)] ${items.length > 0 || deferred.length > 0 ? "mt-3" : ""}`}>
           {/* One line says where the rest stand. The model is asked without a
               press, so there is no "Suggest" button: only what it is doing, what
               it could not say, and the way to the hand-work. */}
