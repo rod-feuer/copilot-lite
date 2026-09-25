@@ -10,7 +10,7 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
-import { usd, defaultMonth, isCurrentMonth } from "@/lib/format";
+import { usd, defaultMonth, isCurrentMonth, monthName } from "@/lib/format";
 import type { CategoryWithTotals } from "@/lib/queries";
 import { getJson, patchJson } from "@/lib/http";
 import { EmojiPicker } from "@/components/EmojiPicker";
@@ -295,18 +295,22 @@ function BudgetSummary({
   return (
     <SummaryCard
       className="mb-6"
+      // The frame once, in the eyebrow; the whole in the panel's caption; the
+      // labels one word. "Spent so far of $42,530 budgeted" wrapped under its figure.
+      eyebrow={partial ? `${monthName(month)} so far` : monthName(month)}
       primary={{
         value: usd(spent, { cents: false }),
-        label: `spent${partial ? " so far" : ""} of ${usd(budget, { cents: false })} budgeted`,
+        label: "spent",
       }}
       secondary={{
         value: usd(Math.abs(remaining), { cents: false }),
-        label: `${over ? "over budget" : "left"}${partial ? " so far" : ""}`,
+        label: over ? "over budget" : "left",
         alarm: over,
       }}
       progress={pct / 100}
       barLabel={`${Math.round(pct)}% of the monthly budget spent`}
       barTitle="Budget"
+      barCaption={`${Math.round(pct)}% of ${usd(budget, { cents: false })}`}
       alarm={over}
       status={
         <>

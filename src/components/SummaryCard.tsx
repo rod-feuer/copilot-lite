@@ -78,7 +78,7 @@ export function SummaryCard({
           card's edges (the negative margin undoes the padding), so the figures
           span the chart card's width and the budget panel the category card's.
           The hairline stands in the middle of the gutter between them. */}
-      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:grid-cols-5 lg:items-center">
         {/* Figures share a top line. On desktop they are three equal columns
             across the chart card's width below; on a tablet, columns at least
             128px wide (a long label such as Recurrings' "paid so far of
@@ -111,9 +111,10 @@ export function SummaryCard({
             )
           )}
         </div>
-        {/* The panel's label sits on the figures' top line and its bar on their
-            label line, so the two panels read as one row. */}
-        <div data-budget-panel className="min-w-0 lg:col-span-2 lg:pl-4 lg:pr-6 lg:pt-1">
+        {/* The two panels centre on one line: the figures' mass is the numbers,
+            the panel's is its bar and verdict, and top-aligned the numbers sat
+            level with the panel's small label over empty card. */}
+        <div data-budget-panel className="min-w-0 lg:col-span-2 lg:pl-4 lg:pr-6">
           {(barTitle || barCaption) && (
             <div className="mb-2 flex items-baseline justify-between gap-3">
               <div className="stat-label">{barTitle}</div>

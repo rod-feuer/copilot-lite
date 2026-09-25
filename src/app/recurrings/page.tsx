@@ -21,7 +21,7 @@ import { CADENCE_DAYS, CADENCE_LABEL } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
 import { billStatus, billDelta } from "@/lib/bills";
-import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
+import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf, monthName } from "@/lib/format";
 import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
 import type { Category } from "@/lib/types";
 
@@ -281,17 +281,12 @@ export default function RecurringsPage() {
         <div className="flex flex-col gap-6">
           {totalBills > 0 && (
             <SummaryCard
+              // The frame once, in the eyebrow; the whole in the panel's caption;
+              // the labels short. "Paid so far of $19,708 expected" wrapped under its figure.
+              eyebrow={isCurrentMonth ? `${monthName(month)} so far` : monthName(month)}
               primary={{
                 value: usd(paidSoFar, { cents: false }),
-                // "Expected" is the word that needs teaching; the hint sits on it.
-                // Inline, not inline-flex: when the label wraps on a narrow
-                // screen the hint must follow "expected", not float mid-height.
-                label: (
-                  <span>
-                    paid{isCurrentMonth ? " so far" : ""} of {usd(totalBills, { cents: false })} expected{" "}
-                    <InfoHint text="Expected amounts are each bill's latest charge. Change one, or its cadence, in the shelf." />
-                  </span>
-                ),
+                label: "paid",
               }}
               secondary={{
                 value: usd(leftToPay, { cents: false }),
@@ -301,6 +296,13 @@ export default function RecurringsPage() {
               progress={paidSoFar / totalBills}
               barLabel={`${Math.round((paidSoFar / totalBills) * 100)}% of expected bills paid`}
               barTitle="Bills"
+              // "Expected" is the word that needs teaching; the hint sits on it.
+              barCaption={
+                <span>
+                  {Math.round((paidSoFar / totalBills) * 100)}% of {usd(totalBills, { cents: false })} expected{" "}
+                  <InfoHint text="Expected amounts are each bill's latest charge. Change one, or its cadence, in the shelf." />
+                </span>
+              }
               status={
                 <>
                   {overdueCount > 0 ? (
