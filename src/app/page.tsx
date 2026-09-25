@@ -231,15 +231,17 @@ export default function DashboardPage() {
                 ]}
                 progress={progress}
                 barLabel={barLabel}
-                barTitle="Budget"
+                barTitle={b && b.total > 0 ? "Budget" : "Income"}
                 // Say what the bar measures, as the other two tabs do: it sat
                 // under net, income and expenses and was about none of them.
                 // The share and the whole; the spent figure sits just above,
                 // under Expenses, and needn't be said twice.
+                // The panel's label names the whole ("Budget", or "Income" when
+                // no budget is set), so the caption is the share and the figure.
                 barCaption={
                   b && b.total > 0
-                    ? `${Math.round((b.spent / b.total) * 100)}% of ${usd(b.total, { cents: false })} budget`
-                    : `${Math.round(progress * 100)}% of ${usd(data.income, { cents: false })} income`
+                    ? `${Math.round((b.spent / b.total) * 100)}% of ${usd(b.total, { cents: false })}`
+                    : `${Math.round(progress * 100)}% of ${usd(data.income, { cents: false })}`
                 }
                 alarm={!!b && b.total > 0 && b.spent > b.total}
                 // The bar counts budgeted categories only. When spending outside

@@ -66,41 +66,50 @@ export function SummaryCard({
   return (
     <div className={`card p-6 ${className}`.trim()} data-summary>
       {eyebrow && (
-        <div data-eyebrow className="stat-label mb-2">
+        <div data-eyebrow className="stat-label mb-1">
           {eyebrow}
         </div>
       )}
       {/* The verdict is the card's sentence, and it reads first: under the
           frame, above the figures it judges. At the foot it lost to the big
           red net figure, and the card's loudest thing disagreed with its verdict. */}
-      {status && <div data-status className="mb-4 flex flex-wrap items-center gap-x-2 text-[15px] font-semibold">{status}</div>}
+      {/* The eyebrow and the verdict are one unit (4px apart); the figures
+          are the next (24px below). Three equal gaps grouped nothing. */}
+      {status && <div data-status className="mb-6 flex flex-wrap items-center gap-x-2 text-[15px] font-semibold">{status}</div>}
       {/* Two panels: the month's figures on the left, the budget on the right,
           level with them. One column in a full-width card left the right two
           thirds empty above a bar that ran the whole width. A hairline
           separates the panels; on a phone and a tablet they stack. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr] lg:gap-8">
-        {/* Figures share a top line, and each column has the same width, so the
-            figures, labels and "so far" lines sit on one grid. */}
-        <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-          <div className="min-w-0 max-sm:flex-1 sm:w-44">
+      {/* The same 3:2 grid and 24px gap as the page's cards below, run to the
+          card's edges (the negative margin undoes the padding), so the figures
+          span the chart card's width and the budget panel the category card's.
+          The hairline stands in the middle of the gutter between them. */}
+      <div className="grid grid-cols-1 gap-6 lg:-mx-6 lg:grid-cols-5">
+        {/* Figures share a top line. On desktop they are three equal columns
+            across the chart card's width below; on a tablet, columns at least
+            128px wide (a long label such as Recurrings' "paid so far of
+            $19,688 expected" may widen its column to 192px rather than wrap
+            into three lines). */}
+        <div className="relative flex flex-wrap items-start gap-x-8 gap-y-4 lg:col-span-3 lg:grid lg:grid-cols-3 lg:gap-x-6 lg:pl-6 lg:after:absolute lg:after:-right-3 lg:after:top-0 lg:after:bottom-0 lg:after:border-l lg:after:border-[var(--border)] lg:after:content-['']">
+          <div className="min-w-0 max-sm:flex-1 sm:min-w-32 sm:max-w-48 lg:max-w-none">
             <Fig f={primary} />
           </div>
           {/* Two counter-figures don't fit beside the primary on a phone: they
               wrapped one under the other, right-aligned, a staircase. There they
               sit as a pair of columns on the primary's left edge instead. */}
           {Array.isArray(secondary) && secondary.length > 1 ? (
-            <div data-figure-pair className="grid w-full grid-cols-2 items-start gap-4 sm:flex sm:w-auto sm:flex-wrap sm:gap-8">
+            <div data-figure-pair className="grid w-full grid-cols-2 items-start gap-4 sm:flex sm:w-auto sm:flex-wrap sm:gap-8 lg:contents">
               {secondary.map((f, i) => (
-                <div key={i} className="min-w-0 sm:w-44">
+                <div key={i} className="min-w-0 sm:min-w-32 sm:max-w-48 lg:max-w-none">
                   <Fig f={f} align="pair" />
                 </div>
               ))}
             </div>
           ) : (
             secondary && (
-              <div className="flex flex-wrap items-start gap-8">
+              <div className="flex flex-wrap items-start gap-8 lg:contents">
                 {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
-                  <div key={i} className="min-w-0 sm:w-44">
+                  <div key={i} className="min-w-0 sm:min-w-32 sm:max-w-48 lg:max-w-none">
                     <Fig f={f} align="right" />
                   </div>
                 ))}
@@ -110,7 +119,7 @@ export function SummaryCard({
         </div>
         {/* The panel's label sits on the figures' top line and its bar on their
             label line, so the two panels read as one row. */}
-        <div data-budget-panel className="min-w-0 border-[var(--border)] lg:border-l lg:pl-8 lg:pt-1">
+        <div data-budget-panel className="min-w-0 lg:col-span-2 lg:pl-4 lg:pr-6 lg:pt-1">
           {(barTitle || barCaption) && (
             <div className="mb-2 flex items-baseline justify-between gap-3">
               <div className="stat-label">{barTitle}</div>
