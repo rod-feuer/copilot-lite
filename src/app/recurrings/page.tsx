@@ -21,7 +21,7 @@ import { CADENCE_DAYS, CADENCE_LABEL } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
 import { billStatus, billDelta } from "@/lib/bills";
-import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf } from "@/lib/format";
+import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf, monthName } from "@/lib/format";
 import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
 import type { Category } from "@/lib/types";
 
@@ -283,7 +283,7 @@ export default function RecurringsPage() {
             <SummaryCard
               // The frame once, in the eyebrow; the whole in the panel's caption;
               // the labels short. "Paid so far of $19,708 expected" wrapped under its figure.
-              eyebrow="Month"
+              eyebrow={monthName(month)}
               primary={{
                 value: usd(paidSoFar, { cents: false }),
                 label: isCurrentMonth ? "paid so far" : "paid",

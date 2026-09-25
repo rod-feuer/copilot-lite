@@ -10,7 +10,7 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
-import { usd, defaultMonth, isCurrentMonth } from "@/lib/format";
+import { usd, defaultMonth, isCurrentMonth, monthName } from "@/lib/format";
 import type { CategoryWithTotals } from "@/lib/queries";
 import { getJson, patchJson } from "@/lib/http";
 import { EmojiPicker } from "@/components/EmojiPicker";
@@ -297,7 +297,7 @@ function BudgetSummary({
       className="mb-6"
       // The frame once, in the eyebrow; the whole in the panel's caption; the
       // labels one word. "Spent so far of $42,530 budgeted" wrapped under its figure.
-      eyebrow="Month"
+      eyebrow={monthName(month)}
       primary={{
         value: usd(spent, { cents: false }),
         label: partial ? "spent so far" : "spent",

@@ -179,8 +179,8 @@ horizontal (12 vertical for a one-line row on a phone: a 44px touch target,
 and room for a difference under the amount). One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
-**Summary card anatomy** — the eyebrow "Month" on every page (the picker
-names which), over one- or two-word labels that carry the qualifier where one
+**Summary card anatomy** — the month's name as the eyebrow on every page, with
+no modifier ("September"), over one- or two-word labels that carry the qualifier where one
 is due ("spent so far"; a projected figure's "$X so far" beneath it), with the
 whole the bar measures in the panel's caption ("78% of $42,530"); one height
 on every page at desktop width;
