@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { usd, shortDate, defaultMonth, isCurrentMonth } from "@/lib/format";
+import { usd, shortDate, defaultMonth, isCurrentMonth, monthName } from "@/lib/format";
 import type { DashboardData } from "@/lib/core";
 import type { TransactionRow } from "@/lib/queries";
 import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/components/Actions";
@@ -175,15 +175,14 @@ export default function DashboardPage() {
                 ? `${Math.round((b.spent / b.total) * 100)}% of budget used`
                 : `${Math.round(progress * 100)}% of income spent`;
             const prevLabel = prevPeriodLabel(data.prev);
-            // The month word: the picker carries the year.
-            const monthName = data.monthLabel.split(" ")[0];
+            const monthWord = monthName(month);
             return (
               <SummaryCard
                 // The frame, once. Three labels each carried it ("net cash
                 // flow, projected", "income, expected", "expenses, projected")
                 // and the card read as a paragraph. Too early to project, the
                 // figures are the month so far, and the eyebrow says that.
-                eyebrow={projecting ? `${monthName}, projected` : current ? `${monthName} so far` : monthName}
+                eyebrow={projecting ? `${monthWord}, projected` : current ? `${monthWord} so far` : monthWord}
                 primary={{
                   value: usd(net, { sign: true, cents: false }),
                   label: "net",

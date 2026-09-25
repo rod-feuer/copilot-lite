@@ -392,7 +392,7 @@ async function dashboardAnatomy(browser) {
     // three figures as equal columns from the left, and the budget (its label,
     // its share, the bar, the note) to their right, level with them — one
     // column in a full-width card left the right two thirds empty.
-    const order = await page.evaluate(() => { const card = document.querySelector("[data-summary]"); const y = (sel) => Math.round(card.querySelector(sel)?.getBoundingClientRect().top ?? -1); const figs = [...card.querySelectorAll(".text-2xl")].map((e) => e.getBoundingClientRect()); const panel = card.querySelector("[data-budget-panel]").getBoundingClientRect(); const bar = card.querySelector("[role=progressbar]").getBoundingClientRect(); const cap = card.querySelector("[data-bar-caption]")?.getBoundingClientRect(); const pitch = figs.length === 3 ? [Math.round(figs[1].left - figs[0].left), Math.round(figs[2].left - figs[1].left)] : []; const barBottom = Math.round(bar.bottom); const inPanel = !!card.querySelector("[data-budget-panel] [data-status]"); return { statusUnderBar: inPanel && y("[data-status]") >= barBottom, pitch, panelRight: figs.length ? panel.left > figs[figs.length - 1].right : false, panelLevel: figs.length ? Math.abs(panel.top - figs[0].top) <= 12 : false, capAboveBar: cap ? cap.bottom <= bar.top + 1 && cap.right >= bar.right - 1 : null }; });
+    const order = await page.evaluate(() => { const card = document.querySelector("[data-summary]"); const y = (sel) => Math.round(card.querySelector(sel)?.getBoundingClientRect().top ?? -1); const figs = [...card.querySelectorAll(".text-2xl")].map((e) => e.getBoundingClientRect()); const panel = card.querySelector("[data-budget-panel]").getBoundingClientRect(); const bar = card.querySelector("[role=progressbar]").getBoundingClientRect(); const cap = card.querySelector("[data-bar-caption]")?.getBoundingClientRect(); const pitch = figs.length === 3 ? [Math.round(figs[1].left - figs[0].left), Math.round(figs[2].left - figs[1].left)] : []; const barBottom = Math.round(bar.bottom); const inPanel = !!card.querySelector("[data-budget-panel] [data-status]"); return { statusUnderBar: inPanel && y("[data-status]") >= barBottom, pitch, panelRight: figs.length ? panel.left > figs[figs.length - 1].right : false, panelLevel: figs.length ? Math.abs((panel.top + panel.bottom) / 2 - (figs[0].top + figs[0].bottom) / 2) <= 24 : false, capAboveBar: cap ? cap.bottom <= bar.top + 1 && cap.right >= bar.right - 1 : null }; });
     // The card's inner grid is the page grid (3:2, 24px gap) run to the
     // card's edges: the three figures span the chart card's width below and
     // start on its text; the hairline stands in the middle of the gutter; the
@@ -475,16 +475,16 @@ async function partialMonthQualifiers(browser) {
       }
     };
     await check("/", CUR, ["so far"], true); // the eyebrow: "September, projected" over "$X so far" figures, or "September so far"
-    await check("/categories", CUR, ["spent so far of", "left so far"], true);
-    await check("/recurrings", CUR, ["paid so far of"], true);
+    await check("/categories", CUR, ["so far"], true); // the eyebrow, "September so far"
+    await check("/recurrings", CUR, ["so far"], true); // the eyebrow
     await check("/transactions", CUR, ["· net", "so far"], true);
     await check("/", PAST, ["so far", ", projected"], false);
     // A finished month's summary is plain actuals: no forward-looking word in the
     // card. (Scoped to the card: the chart's legend says "Projected" on any month.)
     const pastCard = (await page.evaluate(() => document.querySelector("[data-summary]")?.innerText ?? "")).toLowerCase();
     record("qualifiers", `/ ${PAST} summary card is plain actuals`, pastCard.length > 0 && !/so far|projected|expected|on pace/.test(pastCard), pastCard.replace(/\s+/g, " ").slice(0, 120));
-    await check("/categories", PAST, ["spent so far of"], false);
-    await check("/recurrings", PAST, ["paid so far of"], false);
+    await check("/categories", PAST, ["so far"], false);
+    await check("/recurrings", PAST, ["so far"], false);
     await check("/transactions", PAST, ["so far"], false);
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);

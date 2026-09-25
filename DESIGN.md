@@ -179,9 +179,10 @@ horizontal (12 vertical for a one-line row on a phone: a 44px touch target,
 and room for a difference under the amount). One radius for cards and controls (8px, `rounded-lg`); `full` for
 pills and tags; nothing else.
 
-**Summary card anatomy** — the frame as an eyebrow where the figures share
-one ("September, projected"); then two panels level with each other on the
-page's own 3:2 grid, run to the card's edges: the figures as three equal
+**Summary card anatomy** — the frame as an eyebrow, said once ("September,
+projected", "September so far", "September"), over one- or two-word labels,
+with the whole the bar measures in the panel's caption ("78% of $42,530");
+then two panels centred on one line on the page's own 3:2 grid, run to the card's edges: the figures as three equal
 columns across the chart card's width below, and the budget across the
 category card's (its text starting on that card's text), with the hairline
 in the middle of the gutter. The budget panel reads label, share, bar, then
