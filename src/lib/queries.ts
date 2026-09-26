@@ -1169,6 +1169,11 @@ export function merchantSummary(merchant: string, series?: string | null) {
     categoryName: cat?.name ?? null,
     categoryColor: cat?.color ?? null,
     categoryIcon: cat?.icon ?? null,
+    // One plan's shelf, when the user set that plan's own category: its
+    // charges keep it as they arrive (auto vs. edited, on the category).
+    categoryEdited:
+      seriesRow != null &&
+      (db.prepare("SELECT categoryId FROM plans WHERE key = ?").get(seriesRow.merchant) as { categoryId: number | null } | undefined)?.categoryId != null,
     // The vendor's plans sit in different categories (houses). The vendor
     // shelf must not offer one category for all of them.
     categoryMixed: plansDisagree(variants),
@@ -1189,9 +1194,11 @@ export function distinctAccounts(): string[] {
   ).map((r) => r.account);
 }
 
+// The user's pick on one charge: marked, so a plan's category never
+// overwrites it.
 export function setTransactionCategory(id: number, categoryId: number | null) {
   getDb()
-    .prepare("UPDATE transactions SET categoryId = ? WHERE id = ?")
+    .prepare("UPDATE transactions SET categoryId = ?, categoryByHand = 1 WHERE id = ?")
     .run(categoryId, id);
 }
 
@@ -1263,13 +1270,17 @@ export function applyRecategorize(
   ).n;
   if (plans > 1 && recurringId != null) {
     setSeriesCategory(recurringId, categoryId);
-    // A category set on one plan is the user's word on it: confirm it.
+    // A category set on one plan is the user's word on it: confirm it, and
+    // keep the category on the plan so its next charges take it too.
     const key = db.prepare("SELECT merchant FROM recurrings WHERE id = ?").get(recurringId) as { merchant: string } | undefined;
-    if (key) confirmPlan(key.merchant);
+    if (key && confirmPlan(key.merchant))
+      db.prepare("UPDATE plans SET categoryId = ? WHERE key = ?").run(categoryId, key.merchant);
     return "plan";
   }
   if (!force && plansDisagree(variants)) return "refused";
   for (const v of variants) setMerchantCategory(v, categoryId);
+  // One category for the vendor: its plans follow the vendor again.
+  db.prepare("UPDATE plans SET categoryId = NULL WHERE vendor = ?").run(canonicalMerchant(merchant, getMerchantLinks()));
   if (recurringId != null)
     db.prepare("UPDATE recurrings SET categoryId = ? WHERE id = ?").run(categoryId, recurringId);
   return "vendor";

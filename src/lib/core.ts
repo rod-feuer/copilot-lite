@@ -664,6 +664,12 @@ function rebuildRecurrings(): Recurring[] {
   const backfillCategory = db.prepare(
     "UPDATE transactions SET categoryId = ? WHERE recurringId = ? AND categoryId IS NULL"
   );
+  // A confirmed plan with its own category sets it on every charge it holds
+  // (a new charge arrives with the vendor's rule: the other house's category),
+  // except one the user categorized by hand.
+  const planCategory = db.prepare(
+    "UPDATE transactions SET categoryId = ? WHERE recurringId = ? AND categoryByHand = 0 AND categoryId IS NOT ?"
+  );
 
   // Amount consistency — coefficient of variation (stdev / |mean|), see the
   // comment at its use below. Shared by the whole-descriptor path and the
@@ -681,6 +687,9 @@ function rebuildRecurrings(): Recurring[] {
     txs: Tx[];
     events: { date: string; amount: number }[];
     cadence: Recurring["cadence"];
+    // A confirmed plan's own category (the user set it on that plan): its
+    // charges take it, except one whose category the user picked by hand.
+    categoryId?: number | null;
     // Set on the established plan the first time a vendor splits: the vendor's
     // own settings (its name, an expected amount) move to that plan's key; the
     // new plan reads as the bare descriptor until it is named.
@@ -823,7 +832,7 @@ function rebuildRecurrings(): Recurring[] {
     }
     p.events.sort((a, b) => a.date.localeCompare(b.date));
     const lastDate = p.events[p.events.length - 1].date;
-    const categoryId = modalCategory(p.txs);
+    const categoryId = p.categoryId ?? modalCategory(p.txs);
     const rec = {
       merchant: p.key,
       categoryId,
@@ -835,7 +844,8 @@ function rebuildRecurrings(): Recurring[] {
     };
     const info = insert.run(rec);
     for (const t of p.txs) linkByHash.run(info.lastInsertRowid, t.hash);
-    if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
+    if (p.categoryId != null) planCategory.run(p.categoryId, info.lastInsertRowid, p.categoryId);
+    else if (categoryId != null) backfillCategory.run(categoryId, info.lastInsertRowid);
     out.push({ id: Number(info.lastInsertRowid), ...rec });
   };
   const linked = (plans: Plan[]) => plans.reduce((n, p) => n + p.txs.length, 0);
@@ -853,8 +863,8 @@ function rebuildRecurrings(): Recurring[] {
   // A cadence the user set on the plan is its rhythm for the day window too.
   const confirmed = (
     db
-      .prepare("SELECT key, vendor, amount, cadence, anchorDate FROM plans")
-      .all() as { key: string; vendor: string; amount: number; cadence: Recurring["cadence"]; anchorDate: string }[]
+      .prepare("SELECT key, vendor, amount, cadence, anchorDate, categoryId FROM plans")
+      .all() as { key: string; vendor: string; amount: number; cadence: Recurring["cadence"]; anchorDate: string; categoryId: number | null }[]
   ).map((p) => ({ ...p, cadence: (settings[p.key]?.cadence as Recurring["cadence"] | null | undefined) ?? p.cadence }));
   const members = new Map(
     (db.prepare("SELECT hash, key FROM plan_charges").all() as { hash: string; key: string }[]).map((m) => [m.hash, m.key])
@@ -923,7 +933,7 @@ function rebuildRecurrings(): Recurring[] {
           keepCharge.run(t.hash, key);
         }
         const plan = mine.find((p) => p.key === key)!;
-        firm.push({ key, txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })), cadence: plan.cadence });
+        firm.push({ key, txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })), cadence: plan.cadence, categoryId: plan.categoryId });
         const newest = txs[txs.length - 1].date;
         followPlan.run(Number(newest.slice(8, 10)), newest, key);
       }

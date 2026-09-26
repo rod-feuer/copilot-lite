@@ -207,14 +207,17 @@ export function CategoryCaption({
   cats,
   onChange,
   onNew,
+  edited = false,
 }: {
   data: { categoryId: number | null; categoryName: string | null; categoryIcon: string | null };
   cats: Cat[];
   onChange: (categoryId: number | null) => void;
   onNew: (anchor: HTMLSelectElement) => void;
+  edited?: boolean; // a plan's own category, which its next charges take
 }) {
   return (
     <CaptionSelect
+      tag={edited ? <StateTag edited /> : undefined}
       label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
       value={data.categoryId ?? ""}
       aria-label="Category"

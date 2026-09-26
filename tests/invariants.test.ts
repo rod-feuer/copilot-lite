@@ -18,6 +18,7 @@ import {
   unconfirmPlan,
   unconfirmPlansFor,
   planTookCharge,
+  setTransactionCategory,
   categoriesWithTotals,
   setRecurringSetting,
   setTransactionRecurringExcluded,
@@ -2986,4 +2987,44 @@ test("a per-plan category confirms it; its day and its row stay its own", () => 
   assert.equal(faces(), 1, "fixture: unconfirmed, they fold into one face");
   getDb().prepare("INSERT INTO plans (key, vendor, amount, day, cadence, anchorDate) VALUES ('Clone Co', 'Clone Co', -30, 10, 'monthly', '2026-06-10')").run();
   assert.equal(faces(), 2, "a confirmed plan is a bill of its own");
+});
+
+// WHY: Ben Franklin bills two houses under one bank name, so the vendor's
+// rule gives every new charge one house's category. Recategorizing the
+// Carmel plan moved its past charges but not the next one: the charge
+// arrived as Lake Home and stayed there. A plan's own category now sticks to
+// the charges it takes, except one the owner categorized by hand.
+test("a plan's own category sticks to its next charges, but never over a hand-set one", () => {
+  const lake = addCat("Lake Home (sticky)");
+  const carmel = addCat("Carmel Home (sticky)");
+  const gifts = addCat("Gifts (sticky)");
+  const v = "Ben Sticky";
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx(v, { amount: -11.99, date: `2026-${m}-08`, categoryId: lake });
+    tx(v, { amount: -11.99, date: `2026-${m}-25`, categoryId: lake });
+  }
+  detectRecurrings();
+  const planId = (key: string) => (getDb().prepare("SELECT id FROM recurrings WHERE merchant = ?").get(key) as { id: number }).id;
+  assert.equal(applyRecategorize(v, carmel, planId(`${v} · 25th`)), "plan");
+  detectRecurrings();
+  assert.equal(merchantSummary(v, `${v} · 25th`).categoryEdited, true, "the plan's category is the owner's");
+  assert.equal(merchantSummary(v, `${v} · 8th`).categoryEdited, false);
+
+  // July arrives with the vendor's rule: both charges as Lake Home.
+  tx(v, { amount: -11.99, date: "2026-07-08", categoryId: lake });
+  tx(v, { amount: -11.99, date: "2026-07-25", categoryId: lake });
+  tx(v, { amount: -11.99, date: "2026-08-25", categoryId: lake });
+  setTransactionCategory(idOn(v, "2026-08-25"), gifts); // the owner's pick on one charge
+  detectRecurrings();
+  const catOn = (date: string) => (getDb().prepare("SELECT categoryId FROM transactions WHERE merchant = ? AND date = ?").get(v, date) as { categoryId: number }).categoryId;
+  assert.equal(catOn("2026-07-25"), carmel, "Carmel's new charge takes Carmel's category");
+  assert.equal(catOn("2026-07-08"), lake, "the other house keeps its own");
+  assert.equal(catOn("2026-08-25"), gifts, "a category picked by hand stays");
+
+  // One category for the whole vendor: its plans follow the vendor again.
+  assert.equal(applyRecategorize(v, lake, null, true), "vendor");
+  tx(v, { amount: -11.99, date: "2026-09-25", categoryId: gifts });
+  detectRecurrings();
+  assert.equal(merchantSummary(v, `${v} · 25th`).categoryEdited, false);
+  assert.equal(catOn("2026-09-25"), gifts, "no plan category to impose");
 });
