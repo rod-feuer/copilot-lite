@@ -8,7 +8,13 @@ const DATA_DIR = path.join(process.cwd(), "data");
 // The DB path is resolved at call time so tests (and seed tooling) can point at
 // a throwaway file via COPILOT_DB_PATH and never touch the real data/copilot.db.
 function dbPath(): string {
-  return process.env.COPILOT_DB_PATH || path.join(DATA_DIR, "copilot.db");
+  const p = process.env.COPILOT_DB_PATH || path.join(DATA_DIR, "copilot.db");
+  // Under `node --test`, a file that imports the DB before tests/helpers sets
+  // COPILOT_DB_PATH would otherwise open the real finances. Refuse instead.
+  if (process.env.NODE_TEST_CONTEXT && path.resolve(p) === path.join(DATA_DIR, "copilot.db")) {
+    throw new Error("Refusing to open data/copilot.db under the test runner — import tests/helpers first.");
+  }
+  return p;
 }
 
 declare global {

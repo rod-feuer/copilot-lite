@@ -28,6 +28,10 @@ must only ever run against a temp DB.
   check it off + one-line the diff → next.
 - **Stop** when: rubric complete, OR token budget reached, OR a money-semantics decision is
   the user's (ask, don't guess), OR a change can't pass the gate after a reasonable attempt.
+- A change to behaviour covered by a map in `docs/feature-maps/` updates that map in the
+  same commit. A bug report on a mapped feature starts by driving the map's steps.
+- A correction that comes back twice is encoded where it can fail: in a type, an ESLint rule,
+  `lint:design`, a test, or a `test:ui` check. A note in memory or docs is the last resort.
 - No speculative features — only items below. New ideas go under "Backlog (needs user OK)".
 - Anything only verifiable by eye goes on the **Human-review list**, not silently passed.
 

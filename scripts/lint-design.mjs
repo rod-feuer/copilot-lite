@@ -32,6 +32,18 @@ const RULES = {
     re: /(?<![\w-])(?:[a-z-]+:)*(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y|space-x|space-y)-(\d+(?:\.\d+)?)(?![\w-])/g,
     bad: (m) => !SPACE_OK.has(m.match(/-(\d+(?:\.\d+)?)$/)[1]),
   },
+  // A tuned pixel offset (`pr-[41px]`) to line things up: alignment must come
+  // from shared structure, never a nudge (memory: structural-alignment).
+  "tuned px offset": {
+    re: /(?<![\w-])(?:[a-z-]+:)*-?(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|left|right|top|bottom|inset|translate-x|translate-y)-\[\d+(?:\.\d+)?px\](?![\w-])/g,
+    bad: () => true,
+  },
+  // Pale light-only surfaces break dark mode; use tokens or opacity tints
+  // (`bg-amber-500/10`) instead (memory: ui-conventions).
+  "light-only surface": {
+    re: /(?<![\w-])(?:[a-z-]+:)*(?:bg-white|bg-[a-z]+-(?:50|100)|text-[a-z]+-(?:800|900|950))(?![\w/-])/g,
+    bad: (m) => !/^(?:[a-z-]+:)*dark:/.test(m),
+  },
 };
 
 function walk(dir, out = []) {

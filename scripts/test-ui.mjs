@@ -1231,6 +1231,22 @@ async function inlineEdit(browser) {
     await typeIntoFocused(page, "Netflix HD"); await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.body.innerText.includes("Netflix HD"), { timeout: 8000 });
     record("inline edit", "recurrings · Enter commits a rename", true, `${rec} → Netflix HD`);
+    // The shelf closes on a mousedown outside it, which unmounts the name input
+    // before its blur lands. The edit must still be saved (flush on unmount),
+    // or a rename typed in the shelf is silently lost.
+    await page.click("[data-drawer-row]");
+    await page.waitForSelector("aside.fixed button[aria-label^='Rename ']", { timeout: 8000 });
+    await page.click("aside.fixed button[aria-label^='Rename ']");
+    await typeIntoFocused(page, "Streaming Plan");
+    const outside = await page.evaluate(() => {
+      const h = [...document.querySelectorAll("h1, h2")].find((e) => !e.closest("aside"));
+      const r = h?.getBoundingClientRect();
+      return r ? { x: r.left + 4, y: r.top + r.height / 2 } : null;
+    });
+    if (outside) await page.mouse.click(outside.x, outside.y);
+    const closed = await page.waitForFunction(() => !document.querySelector("aside.fixed"), { timeout: 5000 }).then(() => true).catch(() => false);
+    const saved = await page.waitForFunction(() => [...document.querySelectorAll("[data-drawer-row]")].some((r) => r.innerText.includes("Streaming Plan")), { timeout: 8000 }).then(() => true).catch(() => false);
+    record("inline edit", "shelf · clicking outside closes the shelf and still saves the rename", !!outside && closed && saved, `outside target=${!!outside} closed=${closed} saved=${saved}`);
     if (errs.length) record("inline edit", "page errors", false, errs[0]);
   });
 }

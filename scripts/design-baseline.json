@@ -10,5 +10,15 @@
   "spacing off the scale": {
     "total": 0,
     "files": {}
+  },
+  "tuned px offset": {
+    "total": 1,
+    "files": {
+      "src/app/page.tsx": 1
+    }
+  },
+  "light-only surface": {
+    "total": 0,
+    "files": {}
   }
 }
