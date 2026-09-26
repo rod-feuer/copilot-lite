@@ -20,6 +20,7 @@ import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
 import { useMonthBoot } from "@/components/useMonthBoot";
 import { budgetSpent, isOverBudget } from "@/lib/budgetOutlook";
+import { BudgetBar, paceOf } from "@/components/BudgetBar";
 
 type Cat = CategoryWithTotals;
 
@@ -392,9 +393,10 @@ function Group({
           // compare against an annual budget.
           const spentNow = annual ? c.ytdSpent : c.total;
           const recur = annual ? c.recurringBaseline * 12 : c.recurringBaseline;
-          // The row's one colour signal. Over budget turns the bar and the
-          // verdict line red; nothing else on the row takes a colour. A flat
-          // "90% spent" amber fired late in every month, when 90% is on pace.
+          // The row's one colour signal. Over budget, the bar's overage and
+          // the verdict line are red; nothing else on the row takes a colour.
+          // Pace is the bar's marker, not a colour: a flat "90% spent" amber
+          // fired late in every month, when 90% is on pace.
           const over = budgeted && spentNow > budget;
           const remaining = budget - spentNow;
           return (
@@ -462,29 +464,8 @@ function Group({
                 </div>
 
                 {budgeted && (
-                  <div className="relative mt-2 h-2 overflow-hidden rounded-full bg-[var(--muted)]/15">
-                    {/* Neutral fill: the category's colour is on its badge. */}
-                    <div
-                      data-budget-fill
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.min((spentNow / budget) * 100, 100)}%`,
-                        background: over ? "var(--bad)" : "var(--muted)",
-                      }}
-                    />
-                    {recur > 0 && (
-                      <div
-                        className="absolute top-0 h-2"
-                        style={{ left: `${Math.min((recur / budget) * 100, 100)}%` }}
-                      >
-                        <Tooltip
-                          label={`${usd(recur, { cents: false })} recurring${annual ? "/yr" : ""}`}
-                          onlyIfTruncated={false}
-                        >
-                          <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)]/40" />
-                        </Tooltip>
-                      </div>
-                    )}
+                  <div className="mt-2">
+                    <BudgetBar spent={spentNow} budget={budget} pace={paceOf(month, annual ? "annual" : "monthly")} />
                   </div>
                 )}
 

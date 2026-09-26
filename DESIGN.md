@@ -180,8 +180,12 @@ figures wherever numbers align.
 three semantic ones, `--good`, `--warn`, `--bad`, each with a dark value one
 step lighter; tints are the token at 10–25%. Semantic colour is never the
 accent and the accent is never semantic. Category colours are data, not chrome.
-A budget bar's fill is neutral and takes `--bad` only when over; a category's
-colour is on its badge, never its bar.
+A budget bar is its category's own budget, full width (`BudgetBar`, the same
+on the dashboard and the Categories page): the spend fills in the accent at
+60%, past the budget the overage is `--bad`, and one marker says how far
+through the budget's period we are (pace). A category's colour is on its
+badge, never its bar; the recurring amount is in the row's caption and the
+shelf, not on the bar.
 
 **Space and shape** — spacing steps 4 · 8 · 12 · 16 · 24 · 32 (Tailwind 1 2 3
 4 6 8). Card padding 16; the summary card 24. Rows 8 vertical × 16

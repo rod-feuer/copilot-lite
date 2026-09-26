@@ -1159,11 +1159,12 @@ async function shelfSettings(browser) {
   });
 }
 
-// A budget row carries one colour signal: red, on its bar and its verdict,
-// when it is over. The bar was the category's colour on one row and amber or
-// red on the next, and a flat "90% spent" amber fired late in every month,
-// when 90% is on pace. The category's colour is on its badge.
-async function budgetBarColour(browser) {
+// One budget bar on both pages (DESIGN.md §2): the category's own budget is
+// the full width, the spend fills in the soft accent, only the overage is
+// red, and one marker says how far through the month we are. The bars used
+// to be a category colour, a neutral grey, or a share of the card's biggest
+// figure (a category at 93% of its budget looked a third used).
+async function budgetBars(browser) {
   await withPage(browser, async (page) => {
     await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
     const month = day(0, 1).slice(0, 7);
@@ -1171,100 +1172,53 @@ async function budgetBarColour(browser) {
       const cats = await (await fetch(`/api/categories?month=${month}`)).json();
       const spent = cats.filter((c) => c.kind === "expense" && c.budget == null && !c.excludeFromTotals && c.total > 0).sort((a, b) => b.total - a.total);
       if (spent.length < 2) return { error: `need two unbudgeted expense categories with spend this month, have ${spent.length}` };
-      const [over, near] = spent;
+      const [over, half] = spent;
       const patch = (id, budget) => fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget, period: "monthly" }) });
-      await patch(over.id, Math.max(1, Math.floor(over.total / 2))); // over
-      await patch(near.id, Math.ceil(near.total / 0.95)); // 95% spent: the old amber
-      return { over: over.name, near: near.name, ids: [over.id, near.id] };
+      await patch(over.id, Math.max(1, Math.floor(over.total / 2)));
+      await patch(half.id, Math.round(half.total * 2 * 100) / 100);
+      return { over: over.name, half: half.name, ids: [over.id, half.id], colours: cats.map((c) => c.color) };
     }, month);
-    if (set.error) { record("budget colour", "fixture", false, set.error); return; }
-    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
-    await page.waitForSelector("[data-budget-fill]");
-    const rows = await page.evaluate(() => {
-      const probe = (v) => { const e = document.createElement("span"); e.style.color = `var(${v})`; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; };
-      const bad = probe("--bad"), fg = probe("--foreground");
-      const probeBg = (v) => { const e = document.createElement("span"); e.style.background = v; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
-      const [mutedBg, badBg] = [probeBg("var(--muted)"), probeBg("var(--bad)")];
-      return [...document.querySelectorAll("[data-drawer-row]")].filter((r) => r.querySelector("[data-budget-fill]")).map((r) => {
-        const fill = getComputedStyle(r.querySelector("[data-budget-fill]")).backgroundColor;
-        const spentEl = [...r.querySelectorAll("span.tabular-nums")].find((e) => /^\$[\d,]+$/.test(e.textContent.trim()));
-        return {
-          text: r.innerText,
-          fill: fill === mutedBg ? "muted" : fill === badBg ? "bad" : fill,
-          spent: spentEl ? (getComputedStyle(spentEl).color === fg ? "foreground" : getComputedStyle(spentEl).color === bad ? "bad" : getComputedStyle(spentEl).color) : "none",
-        };
-      });
-    });
+    if (set.error) { record("budget bars", "fixture", false, set.error); return; }
+    const now = new Date();
+    const paceToday = now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    for (const route of ["/categories", "/"]) {
+      await page.goto(BASE + route, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-budget-bar]");
+      const rows = await page.evaluate((colours) => {
+        const probe = (cls, style) => { const e = document.createElement("div"); if (cls) e.className = cls; if (style) e.style.background = style; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
+        const soft = probe("bg-[var(--accent)]/60"), bad = probe("bg-[var(--bad)]");
+        const catBg = new Set(colours.map((c) => probe(null, c)));
+        return [...document.querySelectorAll("[data-budget-bar]")].map((bar) => {
+          const row = bar.closest("[data-drawer-row]");
+          const track = bar.firstElementChild.getBoundingClientRect();
+          const seg = (k) => bar.querySelector(`[data-seg=${k}]`);
+          const paceEl = bar.querySelector("[data-pace]");
+          const segs = [...bar.firstElementChild.children].map((c) => getComputedStyle(c).backgroundColor);
+          return {
+            text: row?.innerText ?? "",
+            soft: getComputedStyle(seg("spent")).backgroundColor === soft,
+            catColour: segs.some((c) => catBg.has(c)),
+            over: !!seg("over") && getComputedStyle(seg("over")).backgroundColor === bad,
+            share: seg("spent").getBoundingClientRect().width / track.width,
+            pace: paceEl ? (paceEl.getBoundingClientRect().left + paceEl.getBoundingClientRect().width / 2 - track.left) / track.width : null,
+            badFigure: !!row?.querySelector(".text-\\[var\\(--bad\\)\\]"),
+          };
+        });
+      }, set.colours);
+      const find = (n) => rows.find((r) => r.text.includes(n));
+      const over = find(set.over), half = find(set.half);
+      const where = route === "/" ? "dashboard" : "categories";
+      record("budget bars", `${where} · every bar fills in the soft accent, never a category colour`, rows.length >= 2 && rows.every((r) => r.soft && !r.catColour), `${rows.length} bars; off-style: ${rows.filter((r) => !r.soft || r.catColour).map((r) => r.text.split("\n").find((l) => /[A-Za-z]/.test(l))).join(", ") || "none"}`);
+      record("budget bars", `${where} · red only for the overage, on the row whose figure is red`, !!over && over.over && rows.every((r) => r.over === r.badFigure), over ? `${set.over}: over=${over.over}` : `${set.over} not shown`);
+      record("budget bars", `${where} · a category at half its budget fills half its bar`, !!half && Math.abs(half.share - 0.5) <= 0.03, half ? `${set.half}: ${(half.share * 100).toFixed(1)}%` : `${set.half} not shown`);
+      record("budget bars", `${where} · the pace line is where today is in the month`, !!half && half.pace != null && Math.abs(half.pace - paceToday) <= 0.03, half ? `line at ${half.pace == null ? "none" : (half.pace * 100).toFixed(1) + "%"}, today ${(paceToday * 100).toFixed(1)}%` : "no bar");
+    }
     await page.evaluate(async (ids) => {
       for (const id of ids) await fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget: null }) });
     }, set.ids);
-    const find = (n) => rows.find((r) => r.text.includes(n));
-    const over = find(set.over), near = find(set.near);
-    const wrong = rows.filter((r) => r.fill !== (/ over\b/.test(r.text) ? "bad" : "muted"));
-    record("budget colour", "every budget bar is neutral, and red exactly when its row says over",
-      rows.length >= 2 && wrong.length === 0,
-      `${rows.length} bars: ${rows.map((r) => `${r.text.split("\n")[0]}=${r.fill}`).join(", ")}`);
-    record("budget colour", "a category at 95% of its budget is not flagged: neutral bar, spent figure in the text colour",
-      !!near && near.fill === "muted" && near.spent === "foreground",
-      near ? `${set.near}: bar ${near.fill}, spent ${near.spent}` : `${set.near} not listed`);
-    record("budget colour", "an over-budget category is red on its bar and its verdict, not on its spent figure",
-      !!over && over.fill === "bad" && / over\b/.test(over.text) && over.spent === "foreground",
-      over ? `${set.over}: bar ${over.fill}, spent ${over.spent}` : `${set.over} not listed`);
   });
 }
 
-// The dashboard's category bars share one scale, so length compares
-// categories. They were filled with each category's colour, seven hues for
-// seven rows, and the budget wasn't drawn, so a category at 93% of its budget
-// looked a third used. Spend is neutral, the budget left is a lighter track,
-// and only the dollars over are red.
-async function dashboardBars(browser) {
-  await withPage(browser, async (page) => {
-    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
-    const month = day(0, 1).slice(0, 7);
-    const set = await page.evaluate(async (month) => {
-      const cats = await (await fetch(`/api/categories?month=${month}`)).json();
-      const spent = cats.filter((c) => c.kind === "expense" && c.budget == null && !c.excludeFromTotals && c.total > 0).sort((a, b) => b.total - a.total);
-      if (spent.length < 2) return { error: `need two unbudgeted expense categories with spend this month, have ${spent.length}` };
-      const [over, under] = spent;
-      const patch = (id, budget) => fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget, period: "monthly" }) });
-      await patch(over.id, Math.max(1, Math.floor(over.total / 2)));
-      await patch(under.id, Math.ceil(under.total * 2));
-      return { over: over.name, under: under.name, ids: [over.id, under.id], colours: cats.map((c) => c.color) };
-    }, month);
-    if (set.error) { record("dashboard bars", "fixture", false, set.error); return; }
-    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
-    await page.waitForFunction(() => [...document.querySelectorAll("h3")].some((h) => /Spending by category/.test(h.textContent)));
-    // Found by the card's structure and read by colour, so the check means
-    // the same on any version of the bar.
-    const rows = await page.evaluate((colours) => {
-      const probe = (v) => { const e = document.createElement("span"); e.style.background = v; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
-      const catBg = new Set(colours.map(probe));
-      const bad = probe("var(--bad)");
-      const card = [...document.querySelectorAll(".card")].find((c) => [...c.querySelectorAll("h3")].some((h) => /Spending by category/.test(h.textContent)));
-      return [...card.querySelectorAll("[data-drawer-row]")].map((row) => {
-        const bar = row.querySelector(".h-2.overflow-hidden.rounded-full");
-        const segs = [...bar.children].map((c) => ({ bg: getComputedStyle(c).backgroundColor, w: c.getBoundingClientRect().width }));
-        const fill = segs[0]?.bg;
-        return {
-          text: row.innerText,
-          catColour: segs.some((g) => catBg.has(g.bg) && g.bg !== bad),
-          over: segs.some((g) => g.bg === bad && g.w > 0),
-          left: segs.slice(1).filter((g) => g.bg !== bad && g.bg !== fill).reduce((a, g) => a + g.w, 0),
-          badFigure: !!row.querySelector(".text-\\[var\\(--bad\\)\\]"),
-        };
-      });
-    }, set.colours);
-    await page.evaluate(async (ids) => {
-      for (const id of ids) await fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget: null }) });
-    }, set.ids);
-    const find = (n) => rows.find((r) => r.text.includes(n));
-    const over = find(set.over), under = find(set.under);
-    record("dashboard bars", "no category bar is filled with a category's colour", rows.length >= 2 && rows.every((r) => !r.catColour), `${rows.length} bars; coloured: ${rows.filter((r) => r.catColour).map((r) => r.text).join(", ") || "none"}`);
-    record("dashboard bars", "red only for the dollars over, on the row whose figure says over", !!over && over.over && rows.every((r) => r.over === r.badFigure), over ? `${set.over}: over segment=${over.over}; ${rows.filter((r) => r.over).length} rows with red` : `${set.over} not shown`);
-    record("dashboard bars", "an under-budget category shows the budget it has left", !!under && !under.over && under.left > 0, under ? `${set.under}: left ${Math.round(under.left)}px` : `${set.under} not shown`);
-  });
-}
 
 // Durable plans: naming a plan confirms it through the real routes, and a
 // re-scan keeps its key, its name and its charges. (That the key survives
@@ -1740,9 +1694,9 @@ try {
   await loadFixture();
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
-    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["dashboard bars", dashboardBars], ["resting actions", restingActions],
+    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["budget bars", budgetBars], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["vendor header category", vendorHeaderCategory], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["budget colour", budgetBarColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans], ["named plan", namedPlanStays],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans], ["named plan", namedPlanStays],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }
