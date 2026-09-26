@@ -8,8 +8,6 @@ import { Tooltip } from "@/components/Tooltip";
 import { usd, shortDate, shortDatePad } from "@/lib/format";
 import type { Cat } from "@/components/shelf/types";
 
-// Auto vs. edited legibility: shows whether a field holds the system's detected
-// value or one the user changed — so corrections are visible and trusted.
 export function StateTag({ edited }: { edited?: boolean }) {
   return edited ? (
     <span className="rounded-full bg-[var(--accent)]/15 px-2 text-[11px] font-medium text-[var(--accent)]">
@@ -20,11 +18,6 @@ export function StateTag({ edited }: { edited?: boolean }) {
   );
 }
 
-// One two-state pill: "In plan" / "Not in plan" for a charge, "Recurring" /
-// "Not recurring" for a vendor. Clicking always flips the state; an "edited"
-// tag says the user decided it. Quiet for the default (in) — every row would
-// say it; a charge the user took out wears amber, the one state they chose
-// to notice; what the detector left out on its own is plain grey.
 export function MembershipPill({
   kind,
   inPlan,
@@ -42,7 +35,7 @@ export function MembershipPill({
       ? inPlan ? "Take this charge out of the plan" : "Put this charge in the plan"
       : inPlan ? "Mark vendor not recurring" : "Mark vendor recurring";
   const tone = inPlan
-    ? "border border-[var(--border)] text-[var(--muted)] opacity-40 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+    ? "border border-[var(--border)] text-[var(--muted)] opacity-60 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
     : edited && kind === "charge"
       ? "bg-[var(--warn)]/15 text-[var(--warn)] hover:bg-[var(--warn)]/25"
       : "bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]";
@@ -94,14 +87,8 @@ export function ByYear({ rows, title }: { rows: { year: string; spent: number }[
   );
 }
 
-// Shared shelf row: a fixed-width date column, gap, then the name; amount
-// right. Used by the Upcoming and Transactions lists so they line up. No row
-// menu: recategorizing a single charge is the Transactions tab's job.
-// The row's membership control: a labelled pill that says its state and
-// toggles it. "charge": this charge in or out of its plan (the vendor shelf).
-// "vendor": the whole vendor recurring or not (the category shelf).
-export type Membership = { kind: "charge" | "vendor"; onToggle: () => void; edited?: boolean };
 
+export type Membership = { kind: "charge" | "vendor"; onToggle: () => void; edited?: boolean };
 export function ShelfRow({
   date,
   name,
@@ -113,6 +100,7 @@ export function ShelfRow({
   onClick,
   membership,
   flush = false,
+  showGlyph = false,
   unsignedDebits = false,
   note,
   active = false,
@@ -127,6 +115,7 @@ export function ShelfRow({
   onClick?: () => void;
   membership?: Membership;
   flush?: boolean; // no horizontal padding: the list sits on the panel's edges
+  showGlyph?: boolean; // keep the ↻ gutter on a flush list (a category's vendors)
   unsignedDebits?: boolean; // a plan's charges are debits by definition — no minus on every row
   note?: string; // quiet text in the pill's slot when there is no control (e.g. "not counted")
   active?: boolean; // the row the shelf is about (a charge in its own vendor history)
@@ -144,10 +133,9 @@ export function ShelfRow({
         } ${active ? "rounded-lg bg-[var(--accent)]/10" : ""}`}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          {/* The glyph gutter belongs to lists without a membership pill (the
-              shelf's Upcoming list); a flush list never renders it, or its
-              rows would indent by the gutter when a row has no pill. */}
-          {flush || membership ? null : recurring !== "none" ? (
+          {/* The glyph gutter belongs to lists without a membership pill. A flush
+              charge list omits it; a category's flush list keeps it (showGlyph). */}
+          {membership || (flush && !showGlyph) ? null : recurring !== "none" ? (
             <Tooltip label={RECURRING_LABEL[recurring]} onlyIfTruncated={false} className="w-3.5 shrink-0">
               <RecurringGlyph state={recurring} muted={muted} className="block w-full text-center" />
             </Tooltip>
@@ -187,10 +175,6 @@ export function ShelfRow({
   );
 }
 
-// A select on a caption line: a visible label with its caret right beside it
-// (a native select sizes to its widest option, which strands the caret), and
-// the real <select> laid transparently over the label — still native, still
-// keyboard, caret visible. The same pattern the recurrings row uses.
 export function CaptionSelect({ label, tag, className = "", children, ...select }: { label: string; tag?: ReactNode; className?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <span className={`relative inline-flex max-w-[11rem] items-center gap-1 rounded-lg py-1 pl-1 pr-1 text-[11px] font-medium text-[var(--foreground)] hover:bg-[var(--hover)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--accent)]/40 ${className}`.trim()}>

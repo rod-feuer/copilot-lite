@@ -167,7 +167,7 @@ function TransactionsView() {
     setReady(true);
   }, []);
 
-  // A vendor deep-link that lands on THIS page — the shelf's "Show all 17 →"
+  // A vendor deep-link that lands on THIS page — the shelf's "View all 17 transactions →"
   // opened from a Transactions charge — changes only the query string, so the
   // page doesn't remount and loadStatic's one-time read never sees it. When
   // the vendor param changes to a new value, apply it as a fresh load would:
@@ -1137,7 +1137,7 @@ function Chip({
       {children}
       <button
         onClick={onRemove}
-        className="rounded-lg px-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
+        className="tap rounded-lg px-1 text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--foreground)]"
         aria-label="Remove filter"
       >
         ✕

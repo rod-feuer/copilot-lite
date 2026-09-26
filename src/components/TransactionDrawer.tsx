@@ -456,7 +456,7 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
           </header>
             </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-4">
             {loadError ? (
               <LoadError
                 what={target.kind === "merchant" ? "this vendor" : target.kind === "category" ? "this category" : "this charge"}
@@ -478,7 +478,6 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
               <MerchantBody
                 data={mData}
                 cats={cats}
-                onClose={close}
                 onOpenPlan={(series) => drillToMerchant(target.merchant, series)}
                 onAddCategory={addCat}
                 onRecategorize={recategorize}
@@ -555,7 +554,11 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
                 onClick={close}
                 className="btn-link mt-4 w-full justify-center rounded-lg px-2 py-2 text-[13px] hover:bg-[var(--hover)] hover:no-underline"
               >
-                View all transactions →
+                {target.kind === "merchant"
+                  ? mData?.series
+                    ? "All this vendor's charges →"
+                    : `View all ${mData?.count ?? 0} transactions →`
+                  : "View all transactions →"}
               </Link>
             )}
           </div>
@@ -565,3 +568,4 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
     </Ctx.Provider>
   );
 }
+

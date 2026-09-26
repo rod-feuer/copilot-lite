@@ -363,4 +363,18 @@ test("merchantSummary lists a multi-plan vendor's plans with their monthly total
   assert.equal(merchantSummary("Apple").monthly, 9.99, "an ended plan is listed but not counted");
 
   assert.deepEqual(merchantSummary("Apple", "Apple · 2nd").planList, [], "a plan's own shelf is about that plan");
+
+  // A one-off older than the plan charges falls out of the mixed last-8.
+  // The vendor shelf still has to show it, and a plan charge has to say which plan.
+  seed("Apple", [{ date: "2024-01-02", amount: -1299 }]);
+  const withStray = merchantSummary("Apple");
+  assert.ok(
+    withStray.otherCharges.some((c) => c.amount === -1299),
+    "a one-off crowded out of Recent is listed on its own, not dropped"
+  );
+  assert.ok(
+    withStray.recent.every((c) => c.recurringId == null || c.planName),
+    "a charge in a plan is named with that plan"
+  );
+  assert.equal(merchantSummary("Apple", "Apple · 2nd").otherCharges.length, 0, "a plan's shelf pulls one-offs into its own list");
 });

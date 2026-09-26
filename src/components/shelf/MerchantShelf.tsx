@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import Link from "next/link";
 import { InlineEdit, CommitInput } from "@/components/InlineEdit";
 import { recurringState } from "@/components/RecurringGlyph";
 import { Tooltip } from "@/components/Tooltip";
@@ -22,10 +21,6 @@ import {
   StateTag,
 } from "@/components/shelf/parts";
 
-// The shelf's heading name, click-to-edit in place (no separate Name field).
-// Typing the underlying bank name clears the override. Commits on Enter/blur,
-// reverts on Escape, and flushes on unmount so closing the shelf mid-edit keeps
-// the change (same teardown guard as the property cards' CommitInput).
 export function EditableName({
   value,
   underlying,
@@ -139,8 +134,11 @@ export function MerchantHeader({
   );
 }
 
-// Calendar months from firstSeen through today (inclusive), clamped to [1, 12]
-// — the denominator for the trailing-12 "per month" average.
+// One two-state pill: "In plan" / "Not in plan" for a charge, "Recurring" /
+// "Not recurring" for a vendor. Clicking always flips the state; an "edited"
+// tag says the user decided it. Quiet for the default (in) — every row would
+// say it; a charge the user took out wears amber, the one state they chose
+
 export function monthsSince(firstSeen: string | null): number {
   if (!firstSeen) return 12;
   const fs = new Date(firstSeen + "T00:00:00");
@@ -149,6 +147,12 @@ export function monthsSince(firstSeen: string | null): number {
     (now.getFullYear() - fs.getFullYear()) * 12 + (now.getMonth() - fs.getMonth()) + 1;
   return Math.min(12, Math.max(1, span));
 }
+
+// Shared shelf row: a fixed-width date column, gap, then the name; amount
+// right. Used by the Upcoming and Transactions lists so they line up. No row
+// menu: recategorizing a single charge is the Transactions tab's job.
+// The row's membership control: a labelled pill that says its state and
+// toggles it. "charge": this charge in or out of its plan (the vendor shelf).
 
 // Merge this vendor with another. The only decision surfaced is the resulting
 // NAME — which silently determines the survivor (canonical), so the user never
@@ -371,6 +375,8 @@ export function CombineControl({
   );
 }
 
+// Auto vs. edited legibility: shows whether a field holds the system's detected
+
 // The vendor's split rules. A rule was invisible unless you found a charge it
 // had split; here it can be read and removed. Remove means what "Undo split"
 // means on a charge — the rule and everything it did — so it is a two-step
@@ -484,7 +490,6 @@ export function MatchCorrection({
 export function MerchantBody({
   data,
   cats,
-  onClose,
   onOpenPlan,
   onAddCategory,
   onRecategorize,
@@ -507,7 +512,6 @@ export function MerchantBody({
   vendors: Vendor[];
   onCombine: (loser: string, primary: string, alias?: string, categoryId?: number | null) => void;
   onRemoveSplit: (id: number, applied: number) => void;
-  onClose: () => void; // the statement link leaves the shelf behind
   onOpenPlan: (series: string) => void; // one of this vendor's plans, with Back
 }) {
   // "+ New category…" in the Category field: create it here and apply it.
@@ -516,6 +520,9 @@ export function MerchantBody({
     onRecategorize(cat.id);
   });
   const [combining, setCombining] = useState(false);
+  // On a vendor with several plans, "In plan" has to name which one. The pill
+  // opens this picker instead of joining whichever plan charged last.
+  const [assigning, setAssigning] = useState<number | null>(null);
   // A vendor with several plans is not a plan: its shelf lists them, with what
   // they add up to, and each opens its own shelf. The single-plan cards below
   // borrowed the most recently charged plan's figures, which for Apple's six
@@ -533,17 +540,91 @@ export function MerchantBody({
   // What varies across the Recent rows, if anything: the descriptor (shown as
   // the part after the names' shared prefix, so three "Healthy Paws Pet Ins…"
   // don't all truncate alike), else the category.
-  const rowText = (() => {
-    // Descriptors count as different only when their vendor keys differ —
-    // genuinely different labels ("Central In Academy" / "Central Indiana
-    // Academ"), not one label with and without a trailing "Payment". Shown
-    // whole; a trimmed tail ("…Il Payment") read as junk.
-    const keys = new Set(data.recent.map((r) => merchantKey(r.merchant)));
-    const categories = new Set(data.recent.map((r) => r.categoryName ?? "Uncategorized"));
+  // Descriptors count as different only when their vendor keys differ —
+  // genuinely different labels, not one label with and without a trailing
+  // "Payment". Shown whole; a trimmed tail read as junk. What varies is judged
+  // per list, so Other charges doesn't inherit Recent's labels.
+  function varyLabel(rows: { merchant: string; categoryName: string | null }[]) {
+    const keys = new Set(rows.map((r) => merchantKey(r.merchant)));
+    const categories = new Set(rows.map((r) => r.categoryName ?? "Uncategorized"));
     if (keys.size > 1) return (r: { merchant: string }) => r.merchant;
     if (categories.size > 1) return (r: { categoryName: string | null }) => r.categoryName ?? "Uncategorized";
-    return () => undefined;
-  })();
+    return () => undefined as string | undefined;
+  }
+  type ChargeRow = Summary["recent"][number];
+  function rowName(rows: ChargeRow[], r: ChargeRow) {
+    const vary = varyLabel(rows)(r);
+    if (multi && r.planName) return vary ? `${vary} · ${r.planName}` : r.planName;
+    return vary;
+  }
+  function membershipFor(r: ChargeRow) {
+    if (r.excluded === 1) return undefined;
+    return {
+      kind: "charge" as const,
+      edited: r.recurringExcluded === 1 || r.recurringIncluded === 1,
+      onToggle: () => {
+        if (r.recurringId != null) {
+          onTxSetMembership(r.id, "out", null);
+          return;
+        }
+        // Several plans: don't guess. The pill asks which one.
+        if (multi) {
+          setAssigning(r.id);
+          return;
+        }
+        onTxSetMembership(r.id, "in", data.planKey);
+      },
+    };
+  }
+  function planPicker(rows: ChargeRow[]) {
+    if (assigning == null || !rows.some((r) => r.id === assigning)) return null;
+    const live = data.planList.filter((p) => !p.ended);
+    return (
+      <div data-plan-picker className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-[var(--muted)]">Put in</span>
+        {live.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className="btn-ghost text-xs"
+            onClick={() => {
+              onTxSetMembership(assigning, "in", p.key);
+              setAssigning(null);
+            }}
+          >
+            {p.name}
+          </button>
+        ))}
+        <button type="button" className="text-[var(--muted)] hover:text-[var(--foreground)]" onClick={() => setAssigning(null)}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  function chargeList(rows: ChargeRow[]) {
+    return (
+      <>
+        <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list>
+          {rows.map((r) => (
+            <ShelfRow
+              key={r.id}
+              date={r.date}
+              name={rowName(rows, r)}
+              amount={r.amount}
+              muted={r.excluded === 1}
+              excluded={!!r.excluded || !!r.categoryExcluded}
+              recurring={recurringState(r)}
+              membership={membershipFor(r)}
+              note={r.excluded === 1 ? "not counted" : undefined}
+              flush
+              unsignedDebits
+            />
+          ))}
+        </ul>
+        {planPicker(rows)}
+      </>
+    );
+  }
   return (
     <div className="flex flex-col gap-4">
       {d ? (
@@ -715,44 +796,16 @@ export function MerchantBody({
         {/* No box: the list sits on the panel's edges like the titles and the
             by-year figures, so dates and amounts share one edge all the way
             down. Only the property cards are boxes. */}
-        <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list>
-          {data.recent.map((r) => (
-            <ShelfRow
-              key={r.id}
-              date={r.date}
-              name={rowText(r)}
-              amount={r.amount}
-              muted={r.excluded === 1}
-              excluded={!!r.excluded || !!r.categoryExcluded}
-              recurring={recurringState(r)}
-              // A charge excluded from totals was never eligible for a plan;
-              // it carries no membership control, just what it is.
-              membership={
-                r.excluded === 1
-                  ? undefined
-                  : {
-                      kind: "charge",
-                      edited: r.recurringExcluded === 1 || r.recurringIncluded === 1,
-                      onToggle: () => onTxSetMembership(r.id, r.recurringId != null ? "out" : "in", data.planKey),
-                    }
-              }
-              note={r.excluded === 1 ? "not counted" : undefined}
-              flush
-              unsignedDebits
-            />
-          ))}
-        </ul>
-        {/* The continuation sits where the list ends, not at the panel's foot. */}
-        {data.count > data.recent.length && (
-          <Link
-            href={`/transactions?vendor=${encodeURIComponent(data.merchant)}`}
-            onClick={onClose}
-            className="btn-link mt-2 text-[11px]"
-          >
-            {data.series ? "All this vendor's charges →" : `Show all ${data.count} →`}
-          </Link>
-        )}
+        {chargeList(data.recent)}
       </div>
+
+      {multi && data.otherCharges.length > 0 && (
+        <div>
+          <div className="stat-label mb-2">Other charges</div>
+          <p className="mb-2 text-[11px] text-[var(--muted)]">Not in a plan. Put one in a plan, or open the plan and pull it in there.</p>
+          {chargeList(data.otherCharges)}
+        </div>
+      )}
 
       <ByYear rows={data.byYear} title="By year" />
 
@@ -762,7 +815,7 @@ export function MerchantBody({
 
       <div className="flex flex-col gap-3">
         {/* One labelled row for the rare control, with Reset on its line. */}
-        {data.recurring ? (
+        {data.recurring && !multi ? (
           <MatchCorrection
             key={JSON.stringify(data.matchRule)}
             rule={data.matchRule}
@@ -786,7 +839,7 @@ export function MerchantBody({
             }
           />
         ) : (
-          data.hasSettings && (
+          !multi && data.hasSettings && (
             <button
               type="button"
               onClick={() => onSaveSettings({ clear: true }, "Overrides reset")}
@@ -797,7 +850,7 @@ export function MerchantBody({
           )
         )}
 
-        {data.recurring && data.ended && (
+        {data.recurring && !multi && data.ended && (
           <Tooltip
             label="Marked ended — no longer counts as upcoming or expected"
             onlyIfTruncated={false}
@@ -813,7 +866,7 @@ export function MerchantBody({
           <button onClick={onToggleRecurring} className="btn-ghost flex-1 text-xs">
             {data.recurring ? "Not recurring" : "Make recurring"}
           </button>
-          {data.recurring &&
+          {data.recurring && !multi &&
             (data.ended ? (
               <button
                 onClick={() => onSaveSettings({ endedDate: null })}
@@ -826,7 +879,7 @@ export function MerchantBody({
                 onClick={() => onSaveSettings({ endedDate: new Date().toISOString().slice(0, 10) })}
                 className="btn-ghost flex-1 text-xs"
               >
-                Mark as ended
+                Mark ended
               </button>
             ))}
           <button

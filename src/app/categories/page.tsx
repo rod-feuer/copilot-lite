@@ -10,7 +10,7 @@ import Shell from "@/components/Shell";
 import { MonthPicker } from "@/components/Actions";
 import { useToast } from "@/components/Toast";
 import { useMutation } from "@/components/useMutation";
-import { usd, defaultMonth, isCurrentMonth, monthName } from "@/lib/format";
+import { usd, isCurrentMonth, monthName } from "@/lib/format";
 import type { CategoryWithTotals } from "@/lib/queries";
 import { getJson, patchJson } from "@/lib/http";
 import { EmojiPicker } from "@/components/EmojiPicker";
@@ -18,14 +18,14 @@ import { NewCategoryForm, PALETTE } from "@/components/NewCategoryForm";
 import { Tooltip } from "@/components/Tooltip";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
+import { useMonthBoot } from "@/components/useMonthBoot";
 import { budgetSpent, isOverBudget } from "@/lib/budgetOutlook";
 
 type Cat = CategoryWithTotals;
 
 
 export default function CategoriesPage() {
-  const [months, setMonths] = useState<string[]>([]);
-  const [month, setMonth] = useState("");
+  const { months, month, setMonth, status, setStatus, boot } = useMonthBoot();
   const [cats, setCats] = useState<Cat[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   // Default to budget pressure so the categories nearest/over their budget rise
@@ -37,10 +37,6 @@ export default function CategoriesPage() {
   const [filter, setFilter] = useState<"over" | "unbudgeted" | null>(null);
   const toast = useToast();
 
-  // "loading" until the first read lands; a failed read is "error", never the
-  // "No categories." empty state.
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-
   const load = useCallback(async (m: string) => {
     try {
       setCats(await getJson<Cat[]>(`/api/categories${m ? `?month=${m}` : ""}`));
@@ -48,28 +44,16 @@ export default function CategoriesPage() {
     } catch {
       setStatus("error");
     }
-  }, []);
+  }, [setStatus]);
   const mutate = useMutation(useCallback(() => load(month), [load, month]));
   useSyncedRefresh(() => load(month));
 
   // Months, then the month's categories. Also the Retry path.
-  const boot = useCallback(async () => {
-    setStatus("loading");
-    try {
-      const ms = await getJson<string[]>("/api/months");
-      setMonths(ms);
-      const def = defaultMonth(ms);
-      setMonth(def);
-      await load(def);
-    } catch {
-      setStatus("error");
-    }
-  }, [load]);
+  const start = useCallback(() => boot(load), [boot, load]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void boot();
-  }, [boot]);
+    void start();
+  }, [start]);
 
   function changeMonth(m: string) {
     setMonth(m);
@@ -176,7 +160,7 @@ export default function CategoriesPage() {
       {status === "loading" ? (
         <LoadingRows />
       ) : status === "error" ? (
-        <LoadError what="categories" onRetry={boot} />
+        <LoadError what="categories" onRetry={start} />
       ) : (
         <>
       <Group
@@ -267,15 +251,19 @@ function BudgetSummary({
   if (budget === 0) {
     const totalSpent = expense.reduce((s, c) => s + c.total, 0);
     return (
-      <div className="card mb-6 p-4">
-        <div className="text-2xl font-semibold tracking-tight">
-          {usd(totalSpent, { cents: false })}
-        </div>
-        <div className="stat-label">spent this month</div>
-        <p className="mt-2 text-xs text-[var(--muted)]">
-          Set a budget on any category below to track spending against it.
-        </p>
-      </div>
+      <SummaryCard
+        className="mb-6"
+        eyebrow={monthName(month)}
+        primary={{
+          value: usd(totalSpent, { cents: false }),
+          label: partial ? "spent so far" : "spent",
+        }}
+        progress={0}
+        barLabel="No budget set"
+        barTitle="Budget"
+        barCaption={`0% of ${usd(0, { cents: false })}`}
+        status={<span className="text-[var(--muted)]">Set a budget on a category below</span>}
+      />
     );
   }
 
@@ -305,7 +293,6 @@ function BudgetSummary({
       secondary={{
         value: usd(Math.abs(remaining), { cents: false }),
         label: over ? "over budget" : "left",
-        alarm: over,
       }}
       progress={pct / 100}
       barLabel={`${Math.round(pct)}% of the monthly budget spent`}
@@ -485,7 +472,7 @@ function Group({
                       className="h-full rounded-full"
                       style={{
                         width: `${Math.min((spentNow / budget) * 100, 100)}%`,
-                        background: over ? "#e11d48" : atRisk ? "#f59e0b" : c.color,
+                        background: over ? "var(--bad)" : atRisk ? "var(--warn)" : c.color,
                       }}
                     />
                     {recur > 0 && (

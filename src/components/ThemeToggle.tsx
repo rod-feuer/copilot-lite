@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 // Toggles light/dark by setting data-theme on <html> and persisting to
 // localStorage. The initial theme is applied pre-paint by an inline script in
 // the layout (no flash); this just keeps the button label in sync and flips it.
-export default function ThemeToggle() {
+export default function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
@@ -26,10 +26,18 @@ export default function ThemeToggle() {
     setTheme(next);
   }
 
+  const label = theme === "dark" ? "Light mode" : "Dark mode";
+  if (compact) {
+    return (
+      <button type="button" onClick={toggle} className="btn-ghost tap" aria-label={label}>
+        <span aria-hidden className="text-[15px]">{theme === "dark" ? "☀️" : "🌙"}</span>
+      </button>
+    );
+  }
   return (
     <button onClick={toggle} className="nav-link w-full" aria-label="Toggle theme">
       <span className="text-[15px]">{theme === "dark" ? "☀️" : "🌙"}</span>
-      <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+      <span>{label}</span>
     </button>
   );
 }

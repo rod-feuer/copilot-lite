@@ -17,7 +17,7 @@ export type Figure = {
   tone?: "good" | "bad";
   alarm?: boolean; // = tone "bad"
 };
-function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" | "pair" }) {
+function Fig({ f }: { f: Figure }) {
   const colour =
     f.alarm || f.tone === "bad" ? "text-[var(--bad)]" : f.tone === "good" ? "text-[var(--good)]" : "";
   const inner = (
@@ -27,16 +27,12 @@ function Fig({ f, align = "left" }: { f: Figure; align?: "left" | "right" | "pai
       {f.sub && <div className="text-xs text-[var(--muted)]">{f.sub}</div>}
     </>
   );
-  // Every figure is left-aligned: the three read as one row of columns. Pinned
-  // to the card's edges, Net and the pair had 600px of nothing between them on
-  // a wide screen. `align` is kept for callers; it no longer moves text.
-  const cls = align === "right" || align === "pair" ? "" : "";
   return f.href ? (
-    <Link href={f.href} className={`${cls} block rounded-lg hover:underline`}>
+    <Link href={f.href} className="block rounded-lg hover:underline">
       {inner}
     </Link>
   ) : (
-    <div className={cls}>{inner}</div>
+    <div>{inner}</div>
   );
 }
 export function SummaryCard({
@@ -70,6 +66,10 @@ export function SummaryCard({
   className?: string;
 }) {
   const pct = Math.max(0, Math.min(progress, 1)) * 100;
+  const secondaries = secondary == null ? [] : Array.isArray(secondary) ? secondary : [secondary];
+  // Three columns when the page has three figures (the dashboard). Two figures
+  // don't leave an empty third column.
+  const figureCols = secondaries.length >= 2 ? "lg:grid-cols-3" : "lg:grid-cols-2";
   return (
     <div className={`card p-6 ${className}`.trim()} data-summary>
       {eyebrow && (
@@ -91,7 +91,7 @@ export function SummaryCard({
             128px wide (a long label such as Recurrings' "paid so far of
             $19,688 expected" may widen its column to 192px rather than wrap
             into three lines). */}
-        <div className="relative flex flex-wrap items-start gap-x-8 gap-y-4 lg:col-span-3 lg:grid lg:grid-cols-3 lg:gap-x-6 lg:pl-6 lg:after:absolute lg:after:-right-3 lg:after:top-0 lg:after:bottom-0 lg:after:border-l lg:after:border-[var(--border)] lg:after:content-['']">
+        <div className={`relative flex flex-wrap items-start gap-x-8 gap-y-4 lg:col-span-3 lg:grid ${figureCols} lg:gap-x-6 lg:pl-6 lg:after:absolute lg:after:-right-3 lg:after:top-0 lg:after:bottom-0 lg:after:border-l lg:after:border-[var(--border)] lg:after:content-['']`}>
           <div className="min-w-0 max-sm:flex-1 sm:min-w-32 sm:max-w-48 lg:max-w-none">
             <Fig f={primary} />
           </div>
@@ -102,7 +102,7 @@ export function SummaryCard({
             <div data-figure-pair className="grid w-full grid-cols-2 items-start gap-4 sm:flex sm:w-auto sm:flex-wrap sm:gap-8 lg:contents">
               {secondary.map((f, i) => (
                 <div key={i} className="min-w-0 sm:min-w-32 sm:max-w-48 lg:max-w-none">
-                  <Fig f={f} align="pair" />
+                  <Fig f={f} />
                 </div>
               ))}
             </div>
@@ -111,7 +111,7 @@ export function SummaryCard({
               <div className="flex flex-wrap items-start gap-8 lg:contents">
                 {(Array.isArray(secondary) ? secondary : [secondary]).map((f, i) => (
                   <div key={i} className="min-w-0 sm:min-w-32 sm:max-w-48 lg:max-w-none">
-                    <Fig f={f} align="right" />
+                    <Fig f={f} />
                   </div>
                 ))}
               </div>
@@ -146,7 +146,7 @@ export function SummaryCard({
             >
               <div
                 className="h-full rounded-full"
-                style={{ width: `${pct}%`, background: alarm ? "#e11d48" : "var(--accent)" }}
+                style={{ width: `${pct}%`, background: alarm ? "var(--bad)" : "var(--accent)" }}
               />
             </div>
             {mark && (

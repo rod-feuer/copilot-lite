@@ -20,8 +20,9 @@ import { getJson, postJson } from "@/lib/http";
 import { CADENCE_DAYS, CADENCE_LABEL } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
+import { useMonthBoot } from "@/components/useMonthBoot";
 import { billStatus, billDelta } from "@/lib/bills";
-import { usd, shortDate, defaultMonth, isCurrentMonth as isCurrentMonthOf, monthName } from "@/lib/format";
+import { usd, shortDate, isCurrentMonth as isCurrentMonthOf, monthName } from "@/lib/format";
 import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
 import type { Category } from "@/lib/types";
 
@@ -43,8 +44,7 @@ function isActive(r: Rec): boolean {
 }
 
 export default function RecurringsPage() {
-  const [months, setMonths] = useState<string[]>([]);
-  const [month, setMonth] = useState("");
+  const { months, month, setMonth, status, setStatus, boot } = useMonthBoot();
   const [recs, setRecs] = useState<Rec[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [busy, setBusy] = useState(false);
@@ -56,10 +56,6 @@ export default function RecurringsPage() {
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
 
-  // "loading" until the first bills read lands; a failed read is "error",
-  // never the "No recurring patterns detected yet" empty state.
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-
   const load = useCallback(async (m: string) => {
     try {
       setRecs(await getJson<Rec[]>(`/api/recurrings?month=${m}`));
@@ -67,7 +63,7 @@ export default function RecurringsPage() {
     } catch {
       setStatus("error");
     }
-  }, []);
+  }, [setStatus]);
 
   const mutate = useMutation(useCallback(() => load(month), [load, month]));
 
@@ -84,18 +80,7 @@ export default function RecurringsPage() {
   });
 
   // Months, then the month's bills. Also the Retry path.
-  const boot = useCallback(async () => {
-    setStatus("loading");
-    try {
-      const ms = await getJson<string[]>("/api/months");
-      setMonths(ms);
-      const def = defaultMonth(ms);
-      setMonth(def);
-      await load(def);
-    } catch {
-      setStatus("error");
-    }
-  }, [load]);
+  const start = useCallback(() => boot(load), [boot, load]);
 
   useEffect(() => {
     // Category and vendor pickers are secondary: a failed read leaves them
@@ -103,8 +88,8 @@ export default function RecurringsPage() {
     getJson<Cat[]>("/api/categories").then(setCats).catch(() => {});
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSuggestions();
-    void boot();
-  }, [boot, loadSuggestions]);
+    void start();
+  }, [start, loadSuggestions]);
 
 
   // Add a suggested recurring: fold in any clustered aliases (so the vendor's
@@ -261,19 +246,28 @@ export default function RecurringsPage() {
       title="Recurrings"
       month={<MonthPicker months={months} value={month} onChange={changeMonth} />}
       actions={
-        // The rare action (Re-scan) is in the header's ⋯, not a peer of the
-        // month picker.
-        <HeaderMenu>
-          <button className="btn-ghost" disabled={busy} onClick={recompute}>
-            {busy ? "Scanning…" : "Re-scan"}
-          </button>
-        </HeaderMenu>
+        <>
+          {/* Re-scan is rare: inline on desktop, behind ⋯ on a phone, same as
+              Sync and Import on the other pages. */}
+          <span className="hidden sm:inline-flex">
+            <button className="btn-ghost" disabled={busy} onClick={recompute}>
+              {busy ? "Scanning…" : "Re-scan"}
+            </button>
+          </span>
+          <span className="sm:hidden">
+            <HeaderMenu>
+              <button className="btn-ghost" disabled={busy} onClick={recompute}>
+                {busy ? "Scanning…" : "Re-scan"}
+              </button>
+            </HeaderMenu>
+          </span>
+        </>
       }
     >
       {status === "loading" ? (
         <LoadingRows />
       ) : status === "error" ? (
-        <LoadError what="recurring bills" onRetry={boot} />
+        <LoadError what="recurring bills" onRetry={start} />
       ) : recs.length === 0 ? (
         <div className="card p-8 text-center">
           <div className="mb-2 text-2xl">↻</div>
@@ -302,12 +296,8 @@ export default function RecurringsPage() {
               barLabel={`${Math.round((paidSoFar / totalBills) * 100)}% of expected bills paid`}
               barTitle="Bills"
               // "Expected" is the word that needs teaching; the hint sits on it.
-              barCaption={
-                <span>
-                  {Math.round((paidSoFar / totalBills) * 100)}% of {usd(totalBills, { cents: false })} expected{" "}
-                  <InfoHint text="Expected amounts are each bill's latest charge. Change one, or its cadence, in the shelf." />
-                </span>
-              }
+              barCaption={`${Math.round((paidSoFar / totalBills) * 100)}% of ${usd(totalBills, { cents: false })} expected`}
+              note="Expected amounts are each bill's latest charge. Change one, or its cadence, in the shelf."
               status={
                 <>
                   {overdueCount > 0 ? (
@@ -641,10 +631,9 @@ function BillList({
                 )}
               </div>
               {/* The category as a quiet property (a shared cell). It needs
-                  ~176px; with the sidebar up, the content column is only ~330px
-                  wide until the lg breakpoint, so the property waits for lg;
-                  below that the shelf carries it. */}
-              <div className="hidden w-44 shrink-0 justify-end lg:flex">
+                  ~176px, which fits once the content column is a tablet width;
+                  on a phone the shelf carries it. */}
+              <div className="hidden w-44 shrink-0 justify-end md:flex">
                 {editable && cats && onRecategorize ? (
                   <CategoryProperty
                     categoryId={r.categoryId}
