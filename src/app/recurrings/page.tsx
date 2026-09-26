@@ -5,7 +5,7 @@ import Shell, { Toolbar } from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useNewCategory } from "@/components/NewCategoryOption";
 import { AmountCell, CategoryProperty } from "@/components/RowCells";
-import { withoutAmountQualifier, isSeriesKey } from "@/lib/series";
+import { withoutAmountQualifier, isSeriesKey, seriesVendor } from "@/lib/series";
 import { InlineEdit } from "@/components/InlineEdit";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
@@ -92,11 +92,13 @@ export default function RecurringsPage() {
   }, [start, loadSuggestions]);
 
 
-  // Add a suggested recurring: fold in any clustered aliases (so the vendor's
-  // descriptor variants become one recurring), then force it.
+  // Add a suggested recurring. One the detector found is confirmed as it is;
+  // one it couldn't claim folds in any clustered aliases (so the vendor's
+  // descriptor variants become one recurring), then is forced.
   async function addSuggestion(s: Suggestion) {
     setSuggestions((arr) => arr.filter((x) => x.merchant !== s.merchant));
     const write = async () => {
+      if (s.reason === "detected") return postJson("/api/recurrings/confirm", { key: s.merchant });
       for (const alias of s.aliases)
         await postJson("/api/recurrings/link", { alias, primary: s.merchant });
       await postJson("/api/recurrings/override", { merchant: s.merchant, status: "force" });
@@ -400,9 +402,11 @@ export default function RecurringsPage() {
                       <div
                         data-drawer-row
                         {...rowButtonProps(() =>
-                          openTx(s.merchant, {
+                          // A detected plan split off a vendor opens that plan's shelf.
+                          openTx(isSeriesKey(s.merchant) ? seriesVendor(s.merchant) : s.merchant, {
                             onChange: loadSuggestions,
                             amountHint: Math.abs(s.avgAmount),
+                            series: isSeriesKey(s.merchant) ? s.merchant : undefined,
                           })
                         )}
                         className={`group flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors ${ROW_FOCUS} ${
@@ -415,7 +419,9 @@ export default function RecurringsPage() {
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[13px] font-medium">{s.displayName}</div>
                           <div className="text-xs text-[var(--muted)]">
-                            {s.reason === "variable"
+                            {s.reason === "detected"
+                              ? `found in your charges · ${s.cadence ?? ""}`
+                              : s.reason === "variable"
                               ? `regular ${s.cadence ?? ""} bill · variable amount`
                               : `looks like a subscription · ${s.count} charge${
                                   s.count === 1 ? "" : "s"

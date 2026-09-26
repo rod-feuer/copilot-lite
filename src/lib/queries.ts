@@ -234,6 +234,15 @@ export function resetRecurringOverrides(merchant: string) {
   });
 }
 
+// A plan counts (a bill or a deposit, in the totals, the forecast and the
+// digest) only once the user has confirmed it. The detector still groups
+// every charge; a plan it found and nobody confirmed waits in the
+// suggestions queue (Pies & Pints read as a bill because the detector said so).
+export const confirmedKey = (col: string) => `${col} IN (SELECT key FROM plans)`;
+// The plan a charge is in, when that plan counts; else null (variable spend).
+export const countedPlanId = (t: string) =>
+  `(CASE WHEN ${t}.recurringId IN (SELECT rc.id FROM recurrings rc JOIN plans pc ON pc.key = rc.merchant) THEN ${t}.recurringId END)`;
+
 // Confirm a plan: freeze it as it stands now, from its live recurrings row.
 // Any plan: a single-plan vendor is keyed by its own name today, but when it
 // gains a second plan ("Chase Ach" drawing a second payment) the detector
@@ -270,6 +279,15 @@ export function unconfirmPlan(key: string) {
   const db = getDb();
   db.prepare("DELETE FROM plans WHERE key = ?").run(key);
   db.prepare("DELETE FROM plan_charges WHERE key = ?").run(key);
+}
+
+// Add on a suggestion the detector couldn't claim (a variable bill, a new
+// subscription) forces the vendor; its plans then count, so confirm them.
+export function confirmPlansFor(merchant: string) {
+  const links = getMerchantLinks();
+  const vendor = canonicalMerchant(merchant, links);
+  for (const r of getDb().prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[])
+    if (canonicalMerchant(seriesVendor(r.merchant), links) === vendor) confirmPlan(r.merchant);
 }
 
 // "Not recurring" on a plan un-confirms that plan; on a vendor, every plan of
@@ -395,8 +413,8 @@ function buildTxFilter(opts: TxFilter): { whereSql: string; params: Record<strin
     where.push("ABS(t.amount) <= @maxA");
     params.maxA = opts.maxAmount;
   }
-  if (opts.recurring === true) where.push("t.recurringId IS NOT NULL");
-  else if (opts.recurring === false) where.push("t.recurringId IS NULL");
+  if (opts.recurring === true) where.push(`${countedPlanId("t")} IS NOT NULL`);
+  else if (opts.recurring === false) where.push(`${countedPlanId("t")} IS NULL`);
   return { whereSql: where.length ? "WHERE " + where.join(" AND ") : "", params };
 }
 
@@ -1301,6 +1319,7 @@ export function listRecurrings(): (Recurring & {
       `SELECT r.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon,
               COALESCE(c.excludeFromTotals, 0) AS categoryExcluded
        FROM recurrings r LEFT JOIN categories c ON r.categoryId = c.id
+       WHERE ${confirmedKey("r.merchant")}
        ORDER BY r.nextDate`
     )
     .all() as never;
@@ -1593,7 +1612,7 @@ export function upcomingRecurringExpenses(
     .prepare(
       `SELECT r.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon
        FROM recurrings r LEFT JOIN categories c ON r.categoryId = c.id
-       WHERE r.avgAmount < 0 AND COALESCE(c.excludeFromTotals, 0) = 0`
+       WHERE r.avgAmount < 0 AND COALESCE(c.excludeFromTotals, 0) = 0 AND ${confirmedKey("r.merchant")}`
     )
     .all() as (Recurring & {
     categoryName: string | null;
@@ -1690,7 +1709,7 @@ export function isRecurringActive(
 export function recurringMonthlyByCategory(): Record<number, number> {
   const rows = getDb()
     .prepare(
-      "SELECT merchant, categoryId, cadence, avgAmount, lastDate FROM recurrings WHERE avgAmount < 0 AND categoryId IS NOT NULL"
+      `SELECT merchant, categoryId, cadence, avgAmount, lastDate FROM recurrings WHERE avgAmount < 0 AND categoryId IS NOT NULL AND ${confirmedKey("merchant")}`
     )
     .all() as {
     merchant: string;
@@ -1890,7 +1909,7 @@ const SUBSCRIPTION_HINT =
 export type RecurringSuggestion = {
   merchant: string; // the canonical descriptor — the key for settings / Add
   displayName: string; // alias override if set, else merchant
-  reason: "variable" | "new";
+  reason: "variable" | "new" | "detected";
   cadence: string | null;
   avgAmount: number; // expected-amount override if set, else stable current price / median if variable
   count: number;
@@ -2028,14 +2047,39 @@ export function suggestedRecurrings(): RecurringSuggestion[] {
     }
   }
 
+  // Plans the detector found that the user hasn't added: they count once
+  // added. Still active ones only, and a dismissed (muted) key stays gone.
+  const detected = (
+    db
+      .prepare(
+        `SELECT merchant, avgAmount, cadence, count, lastDate, categoryId FROM recurrings WHERE NOT ${confirmedKey("merchant")}`
+      )
+      .all() as { merchant: string; avgAmount: number; cadence: string; count: number; lastDate: string; categoryId: number | null }[]
+  )
+    .filter((r) => isRecurringActive(r.lastDate, r.cadence) && overrides[r.merchant] !== "mute")
+    .map((r): Omit<RecurringSuggestion, "displayName"> => {
+      const category = (r.categoryId != null && cats.get(r.categoryId)) || null;
+      return {
+        merchant: r.merchant,
+        reason: "detected",
+        cadence: r.cadence,
+        avgAmount: Number(r.avgAmount.toFixed(2)),
+        count: r.count,
+        lastDate: r.lastDate,
+        category: category ? { name: category.name, color: category.color, icon: category.icon } : null,
+        aliases: [],
+      };
+    })
+    .sort((a, b) => b.lastDate.localeCompare(a.lastDate));
+
   // Apply per-merchant overrides: a user-set name (alias) and/or expected amount,
   // editable from the suggestion row before it's even Added.
-  return clustered.map((s): RecurringSuggestion => {
+  return [...detected, ...clustered].map((s): RecurringSuggestion => {
     const st = settings[s.merchant];
     return {
       ...s,
       displayName: st?.alias ?? displayMerchant(s.merchant),
-      avgAmount: st?.expectedAmount != null ? -Math.abs(st.expectedAmount) : s.avgAmount,
+      avgAmount: st?.expectedAmount != null ? Math.sign(s.avgAmount || -1) * Math.abs(st.expectedAmount) : s.avgAmount,
     };
   });
 }

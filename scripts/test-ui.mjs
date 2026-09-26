@@ -6,7 +6,7 @@
 //
 // Run: `npm run test:ui` (Chrome via PUPPETEER_EXECUTABLE_PATH, default: Mac
 // Google Chrome). Stop `next dev` first — both write to `.next`.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -165,6 +165,12 @@ async function loadFixture() {
   if (cps.length === 0) throw new Error("fixture row 'Card Payment Received' not found");
   for (const cp of cps) await fetch(`${BASE}/api/transactions/${cp.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: transfers.id }) });
   await fetch(BASE + "/api/recompute", { method: "POST" }); // the plan takes its category
+  // Plans count once confirmed. Like the real data before step 8b, the
+  // fixture's plans are confirmed by the one-time migration (every plan
+  // there is); a plan found after it waits in the queue ("added plan" check).
+  const mig = spawnSync(process.execPath, ["--import", "tsx", "scripts/confirm-plans.ts", "--all", "--apply"], { env: { ...process.env, COPILOT_DB_PATH: DB }, encoding: "utf8" });
+  if (mig.status !== 0) throw new Error(`plans:confirm failed: ${mig.stderr || mig.stdout}`);
+  for (const f of fs.readdirSync(path.dirname(DB))) if (f.startsWith("copilot-before-plans-")) fs.rmSync(path.join(path.dirname(DB), f), { force: true });
 }
 
 // A plan in a category that is not counted (Transfers) is neither a bill nor
@@ -1243,6 +1249,27 @@ async function namedPlanStays(browser) {
   });
 }
 
+// Step 8b: a plan the detector finds after the migration is not a bill on
+// its own (Pies & Pints read as one because the detector said so). It waits
+// under Suggested, "found in your charges", and Add makes it a bill.
+async function addedPlan(browser) {
+  await withPage(browser, async (page) => {
+    const rows = ["Date,Name,Amount,Account", ...[3, 2, 1, 0].map((m) => `${day(-m, 12)},Brightline Fitness,-29.00,Credit`)].join("\n");
+    await fetch(BASE + "/api/import", { method: "POST", body: rows });
+    await fetch(BASE + "/api/recompute", { method: "POST" });
+    const isBill = async () => (await (await fetch(`${BASE}/api/recurrings?month=${day(0, 1).slice(0, 7)}`)).json()).some((r) => r.vendor === "Brightline Fitness");
+    const before = await isBill();
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    // Open the Suggested list if it is folded (it starts open).
+    await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find((x) => /Suggested \(/.test(x.textContent)); if (b && b.textContent.includes("▸")) b.click(); });
+    const row = await page.waitForFunction(() => [...document.querySelectorAll("[data-drawer-row]")].find((r) => /Brightline Fitness/.test(r.textContent) && /found in your charges/.test(r.textContent)) ? true : null, { timeout: 8000 }).then(() => true).catch(() => false);
+    await page.evaluate(() => { const r = [...document.querySelectorAll("[data-drawer-row]")].find((x) => /Brightline Fitness/.test(x.textContent)); [...(r?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Add")?.click(); });
+    const after = await (async () => { for (let i = 0; i < 20; i++) { if (await isBill()) return true; await new Promise((r) => setTimeout(r, 300)); } return false; })();
+    record("added plan", "a newly detected plan waits under Suggested, not as a bill, and Add makes it a bill",
+      !before && row && after, `bill before=${before}; suggested row=${row}; bill after Add=${after}`);
+  });
+}
+
 async function moneyColour(browser) {
   // The colour of the amount in the row that names `who`, on the current page.
   const colourOf = (page, who) => page.evaluate((who) => {
@@ -1381,6 +1408,13 @@ async function inlineEdit(browser) {
     const closed = await page.waitForFunction(() => !document.querySelector("aside.fixed"), { timeout: 5000 }).then(() => true).catch(() => false);
     const saved = await page.waitForFunction(() => [...document.querySelectorAll("[data-drawer-row]")].some((r) => r.innerText.includes("Streaming Plan")), { timeout: 8000 }).then(() => true).catch(() => false);
     record("inline edit", "shelf · clicking outside closes the shelf and still saves the rename", !!outside && closed && saved, `outside target=${!!outside} closed=${closed} saved=${saved}`);
+    // Put the name back, so later checks find the row they look for by name.
+    await page.evaluate(async () => {
+      const month = new Date().toISOString().slice(0, 7);
+      const lists = [await (await fetch(`/api/recurrings?month=${month}`)).json(), await (await fetch("/api/recurrings/suggested")).json()];
+      for (const r of lists.flat().filter((x) => x.displayName === "Streaming Plan"))
+        await fetch("/api/recurrings/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ merchant: r.merchant, alias: null }) });
+    });
     if (errs.length) record("inline edit", "page errors", false, errs[0]);
   });
 }
@@ -1696,7 +1730,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["budget bars", budgetBars], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["vendor header category", vendorHeaderCategory], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans], ["named plan", namedPlanStays],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans], ["named plan", namedPlanStays], ["added plan", addedPlan],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

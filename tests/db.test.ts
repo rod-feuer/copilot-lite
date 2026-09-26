@@ -1,4 +1,4 @@
-import { cleanDbBeforeEach, seed, months } from "./helpers"; // first: points the DB at a throwaway file
+import { detectAndConfirm, cleanDbBeforeEach, seed, months } from "./helpers"; // first: points the DB at a throwaway file
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb, migrateMerchants } from "../src/lib/db";
@@ -161,7 +161,7 @@ test("name-cleanup: suggests a stale name → its re-normalized form, applies ju
 
 test("correcting a recurring's cadence re-anchors which months it's due (no second field to fix)", () => {
   seed("Gym", months(1, 6, -40, 2026)); // monthly Jan–Jun 2026, last charge June
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Gym", { cadence: "quarterly" }); // user corrects the rhythm only
   const due = (m: string) => recurringsForMonth(m).find((r) => r.merchant === "Gym")!;
   assert.equal(due("2026-06").cadence, "quarterly", "override applies");
@@ -196,7 +196,7 @@ test("rejects wildly-variable amounts (high CV) even if monthly", () => {
 
 test("recurringsForMonth marks the month's charge paid", () => {
   seed("Acme Sub", months(1, 6, -12.5));
-  detectRecurrings();
+  detectAndConfirm();
   const r = recurringsForMonth("2025-06").find((x) => x.merchant === "Acme Sub");
   assert.ok(r);
   assert.equal(r!.paid, true);

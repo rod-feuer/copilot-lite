@@ -15,6 +15,7 @@ import {
   linkedAliases,
   getRecurringSettings,
   setRecurringSetting,
+  countedPlanId,
 } from "./queries";
 import type { Recurring } from "./types";
 import { CADENCE_DAYS, medianGap } from "./cadence";
@@ -1146,7 +1147,7 @@ export function dashboard(month?: string): DashboardData {
 
   const rows = db
     .prepare(
-      `SELECT t.amount, COALESCE(t.effectiveDate, t.date) AS date, t.recurringId, t.categoryId AS cid, c.name AS cname, c.color AS ccolor, c.icon AS cicon, c.kind AS ckind
+      `SELECT t.amount, COALESCE(t.effectiveDate, t.date) AS date, ${countedPlanId("t")} AS recurringId, t.categoryId AS cid, c.name AS cname, c.color AS ccolor, c.icon AS cicon, c.kind AS ckind
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
        WHERE substr(COALESCE(t.effectiveDate, t.date),1,7) = ? AND t.excluded = 0
          AND COALESCE(c.excludeFromTotals, 0) = 0
@@ -1260,7 +1261,7 @@ export function dashboard(month?: string): DashboardData {
       .prepare(
         `SELECT substr(COALESCE(t.effectiveDate, t.date),1,7) AS ym, t.categoryId AS cid, -t.amount AS mag
          FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
-         WHERE t.excluded = 0 AND COALESCE(c.excludeFromTotals, 0) = 0 AND t.recurringId IS NULL
+         WHERE t.excluded = 0 AND COALESCE(c.excludeFromTotals, 0) = 0 AND ${countedPlanId("t")} IS NULL
            AND -t.amount > ? AND -t.amount <= ? AND substr(COALESCE(t.effectiveDate, t.date),1,7) IN (${prior.map(() => "?").join(",")})`
       )
       .all(LARGE_CHARGE, EXTRAORDINARY, ...prior) as { ym: string; cid: number | null; mag: number }[];

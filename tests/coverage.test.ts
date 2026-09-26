@@ -1,4 +1,4 @@
-import { cleanDbBeforeEach, seed, months, addCat } from "./helpers"; // first: points the DB at a throwaway file
+import { detectAndConfirm, cleanDbBeforeEach, seed, months, addCat } from "./helpers"; // first: points the DB at a throwaway file
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb } from "../src/lib/db";
@@ -17,7 +17,7 @@ cleanDbBeforeEach();
 
 test("match rule (contains) claims a differently-named charge as paid", () => {
   seed("Acme", months(1, 5, -10)); // Jan–May → detected monthly
-  detectRecurrings();
+  detectAndConfirm();
   // June charge: different string AND different amount, so neither the exact pass
   // nor the category+amount fallback claims it — only a contains/any-amount rule can.
   seed("ACME PAYMENT 12", [{ date: "2025-06-15", amount: -50 }]);
@@ -28,7 +28,7 @@ test("match rule (contains) claims a differently-named charge as paid", () => {
 
 test("alias + expected-amount overrides flow into recurringsForMonth", () => {
   seed("Sub", months(1, 6, -10));
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Sub", { alias: "My Sub", expectedAmount: 25 });
   const r = recurringsForMonth("2025-07").find((x) => x.merchant === "Sub")!;
   assert.equal(r.displayName, "My Sub");
@@ -38,7 +38,7 @@ test("alias + expected-amount overrides flow into recurringsForMonth", () => {
 
 test("cadence override changes which months a bill is expected", () => {
   seed("Annual Thing", months(1, 6, -10)); // detected monthly, lastDate June
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Annual Thing", { cadence: "yearly" });
   assert.equal(recurringsForMonth("2025-06").find((r) => r.merchant === "Annual Thing")!.expectedThisMonth, true);
   assert.equal(recurringsForMonth("2025-08").find((r) => r.merchant === "Annual Thing")!.expectedThisMonth, false);
@@ -82,7 +82,7 @@ test("match rule amount tolerance admits a near-miss charge and rejects a far on
   // fraction, or ignored entirely, would pass. ±5% of a $10 bill is 50¢:
   // $10.40 is inside, $12.00 is not.
   seed("Acme", months(1, 5, -10)); // Jan–May → detected monthly at $10
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Acme", { matchMode: "contains", matchText: "acme", amountTolerance: 0.05 });
   seed("ACME PAYMENT 12", [{ date: "2025-06-15", amount: -10.4 }]);
   assert.equal(recurringsForMonth("2025-06").find((r) => r.merchant === "Acme")!.paid, true, "4% over: paid");
@@ -137,7 +137,7 @@ test("categorySummary upcoming shows ACTIVE recurrings only (not stale/inactive)
   seed("Power Co", [-5, -4, -3, -2, -1].map((o) => ({ date: day15(o), amount: -100 })), { categoryId: cat });
   // Inactive: monthly charges that stopped over a year ago.
   seed("Old Gym", [-18, -17, -16, -15, -14].map((o) => ({ date: day15(o), amount: -50 })), { categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   const names = categorySummary(cat, thisMonth)!.upcoming.map((u) => u.merchant);
   assert.ok(names.includes("Power Co"), "active recurring should be upcoming");
   assert.ok(!names.includes("Old Gym"), "inactive recurring must not be upcoming");

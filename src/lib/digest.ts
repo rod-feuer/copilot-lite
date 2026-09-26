@@ -2,6 +2,7 @@ import { getDb } from "./db";
 import { dashboard } from "./core";
 import {
   recurringsForMonth,
+  countedPlanId,
   upcomingRecurringExpenses,
   categoriesWithTotals,
   isRecurringActive,
@@ -101,7 +102,7 @@ export type UnusualCharge = {
 export function unusualCharges(sinceIso: string): UnusualCharge[] {
   const rows = getDb()
     .prepare(
-      `SELECT t.hash, t.merchant, t.amount, COALESCE(t.effectiveDate, t.date) AS date, t.pending, t.recurringId,
+      `SELECT t.hash, t.merchant, t.amount, COALESCE(t.effectiveDate, t.date) AS date, t.pending, ${countedPlanId("t")} AS recurringId,
               t.excluded, COALESCE(c.excludeFromTotals, 0) AS catExcluded
        FROM transactions t LEFT JOIN categories c ON c.id = t.categoryId
        WHERE t.amount < 0 ORDER BY COALESCE(t.effectiveDate, t.date), t.id`
@@ -329,7 +330,7 @@ function variableSpend(fromExclusive: string, toInclusive: string): Spend[] {
     .prepare(
       `SELECT t.merchant, t.amount, COALESCE(t.effectiveDate, t.date) AS date
        FROM transactions t LEFT JOIN categories c ON c.id = t.categoryId
-       WHERE t.amount < 0 AND t.amount >= @floor AND t.excluded = 0 AND t.recurringId IS NULL AND COALESCE(c.excludeFromTotals, 0) = 0
+       WHERE t.amount < 0 AND t.amount >= @floor AND t.excluded = 0 AND ${countedPlanId("t")} IS NULL AND COALESCE(c.excludeFromTotals, 0) = 0
          AND COALESCE(t.effectiveDate, t.date) > @from AND COALESCE(t.effectiveDate, t.date) <= @to`
     )
     .all({ from: fromExclusive, to: toInclusive, floor: -EXTRAORDINARY }) as Spend[];
