@@ -432,6 +432,7 @@ export type ChargeDetail = TransactionRow & {
   recurringIncluded: 0 | 1;
   planKey: string | null;
   planName: string | null;
+  planAmount: number | null; // the linked plan's detected per-charge amount (null when not in one)
   // The vendor's last few charges (all its descriptors, split parents left
   // out): the evidence for the charge's verbs — is this amount the usual one?
   recent: { id: number; date: string; amount: number; excluded: 0 | 1; recurringId: number | null }[];
@@ -464,15 +465,15 @@ export function transactionById(id: number): ChargeDetail | null {
   const ph = variants.map(() => "?").join(",");
   const plan =
     (row.recurringId != null
-      ? (db.prepare("SELECT merchant FROM recurrings WHERE id = ?").get(row.recurringId) as { merchant: string } | undefined)
+      ? (db.prepare("SELECT merchant, avgAmount FROM recurrings WHERE id = ?").get(row.recurringId) as { merchant: string; avgAmount: number } | undefined)
       : undefined) ??
     (db
       .prepare(
-        `SELECT merchant FROM recurrings
+        `SELECT merchant, avgAmount FROM recurrings
          WHERE id IN (SELECT DISTINCT recurringId FROM transactions WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
          ORDER BY lastDate DESC LIMIT 1`
       )
-      .get(...variants) as { merchant: string } | undefined);
+      .get(...variants) as { merchant: string; avgAmount: number } | undefined);
   const notParent = "NOT EXISTS (SELECT 1 FROM transactions s WHERE s.hash LIKE t.hash || ':s%')";
   const recent = db
     .prepare(
@@ -489,6 +490,7 @@ export function transactionById(id: number): ChargeDetail | null {
     displayName: chargeDisplayName(row, settings, links, planNames(settings)),
     planKey: plan?.merchant ?? null,
     planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
+    planAmount: row.recurringId != null && plan ? plan.avgAmount : null,
     recent,
     vendorCount,
     byYear: spendByYear(`merchant IN (${ph})`, variants),
@@ -780,10 +782,11 @@ export function merchantSummary(merchant: string, series?: string | null) {
     .prepare(
       `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.merchant, t.amount, t.account, t.excluded,
          COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName,
-         t.categoryId, t.recurringId,
+         t.categoryId, t.recurringId, r.avgAmount AS planAmount,
          (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded,
          (t.hash IN (SELECT hash FROM recurring_tx_inclusions)) AS recurringIncluded
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
+         LEFT JOIN recurrings r ON r.id = t.recurringId
        WHERE ${
          seriesId != null
            ? // A plan's list: its own charges plus the vendor's charges in no
@@ -810,6 +813,7 @@ export function merchantSummary(merchant: string, series?: string | null) {
     categoryName: string | null;
     categoryId: number | null;
     recurringId: number | null;
+    planAmount: number | null; // the plan's detected per-charge amount, when the charge is in one
     recurringExcluded: 0 | 1; // the user took it out of its plan
     recurringIncluded: 0 | 1; // the user put it into a plan the detector left out
   }[];
@@ -948,7 +952,10 @@ export function merchantSummary(merchant: string, series?: string | null) {
           nextDate: nextDueFromToday(s?.nextDate ?? nextAfter(r.lastDate, cadence), cadence),
           ended: recurringEnded(s?.endedDate, r.lastDate),
         };
-      });
+      })
+      // The list shows next due, so it is in that order (it read by last charge:
+      // "Oct 25" above "Oct 8"); ended plans last.
+      .sort((a, b) => Number(a.ended) - Number(b.ended) || a.nextDate.localeCompare(b.nextDate) || a.name.localeCompare(b.name));
   const monthly = Number(planList.filter((p) => !p.ended).reduce((a, p) => a + (p.amount * (PER_YEAR[p.cadence as Cadence] ?? 12)) / 12, 0).toFixed(2));
   return {
     merchant,

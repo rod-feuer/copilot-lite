@@ -7,7 +7,7 @@ import { seriesKey, seriesVendor, isSeriesKey } from "../src/lib/series";
 import { parseCsv } from "../src/lib/import";
 import { budgetOutlook, BUDGET_TOLERANCE, budgetSpent, isOverBudget } from "../src/lib/budgetOutlook";
 import { buildVerdict } from "../src/lib/verdict";
-import { billStatus, billDelta, BILL_DELTA_MIN } from "../src/lib/bills";
+import { billStatus, billDelta, BILL_DELTA_MIN, placementEdited } from "../src/lib/bills";
 import { variableStillToCome, LARGE_CHARGE } from "../src/lib/forecast";
 import { canonicalMerchant } from "../src/lib/queries";
 import { CATEGORY_EMOJIS } from "../src/lib/emoji";
@@ -295,4 +295,16 @@ test("isOverBudget: an annual budget is judged on the year so far, a monthly one
   assert.equal(isOverBudget({ budget: 500, budgetPeriod: "monthly", ytdSpent: 9000, total: 499 }), false);
   assert.equal(isOverBudget({ budget: 500, budgetPeriod: "monthly", ytdSpent: 9000, total: 501 }), true);
   assert.equal(isOverBudget({ budget: null, budgetPeriod: "monthly", ytdSpent: 0, total: 999 }), false, "no budget, never over");
+});
+
+// WHY: the "edited" tag on an in-plan charge is for a placement the plan's
+// amount doesn't explain. In a plan the user started every charge is pinned
+// or gathered by amount, and tagging them all read as a fault (Benjamin
+// Franklin's Carmel plan: two charges, two tags, "something is fucked").
+test("placementEdited: a pinned charge at its plan's amount is not edited; off the amount, or in no plan, it is", () => {
+  assert.equal(placementEdited(false, -95, -80), false, "not pinned: nothing to say");
+  assert.equal(placementEdited(true, -11.99, -11.99), false, "pinned at the plan's amount");
+  assert.equal(placementEdited(true, -12.05, -11.99), false, "within 50 cents");
+  assert.equal(placementEdited(true, -95.49, -79.99), true, "a $95 pinned into an $80 plan");
+  assert.equal(placementEdited(true, -11.99, null), true, "pinned, but the plan is not known: say so");
 });

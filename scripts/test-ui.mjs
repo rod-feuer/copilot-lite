@@ -836,6 +836,10 @@ async function startAPlan(browser) {
     await shelfSettled(page);
     const after = await page.evaluate((sel) => document.querySelector(sel).innerText.replace(/\s+/g, " "), shelfSel);
     record("start a plan", "a charge outside any plan can start one, and then reads as in it", /Not recurring/.test(before) && /In plan/.test(after) && /Zylo Widget Works · \$31/.test(after), `before: ${/Not recurring/.test(before)}; after: ${after.match(/In plan.{0,40}/)?.[0]}`);
+    // The charge is pinned, but at the plan's own amount: no "edited" tag. A
+    // plan the user started had every charge tagged, which read as a fault.
+    const tagged = await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button[data-membership="in"]`)].map((b) => b.getAttribute("data-edited") === "1"), shelfSel);
+    record("start a plan", "a charge at its plan's amount wears no edited tag, pinned or not", tagged.length >= 1 && tagged.every((t) => !t), `${tagged.length} in-plan pill(s), edited: ${tagged.join(",")}`);
   });
 }
 
@@ -858,6 +862,18 @@ async function multiPlanVendor(browser) {
     await page.click(`${shelfSel} [data-open-vendor]`); await page.waitForSelector(`${shelfSel} [data-plan-list]`, { timeout: 8000 }).catch(() => {});
     const v = await page.evaluate((sel) => { const a = document.querySelector(sel); const list = a.querySelector("[data-plan-list]"); return { plans: list ? list.querySelectorAll("li").length : 0, head: a.querySelector("[data-plan-list]")?.previousElementSibling?.innerText.replace(/\s+/g, " ") ?? "", perYear: /per year expected/.test(a.innerText) }; }, shelfSel);
     record("vendor shelf", "a two-plan vendor's shelf lists both plans with their monthly total, not one plan's cards", n === 2 && v.plans === 2 && /2 plans\s*\$25 per month/i.test(v.head) && !v.perYear, `${n} rows on Recurrings; shelf: "${v.head}", ${v.plans} listed, per-year card=${v.perYear}`);
+    // The plans are listed in next-due order (the column they show), and each
+    // recent charge names its plan: "In plan" alone read the same on the
+    // vendor's two memberships.
+    const rows = await page.evaluate((sel) => {
+      const shelf = document.querySelector(sel);
+      const plans = [...shelf.querySelectorAll("[data-plan-list] li")].map((li) => li.innerText.replace(/\s+/g, " ").trim());
+      const recent = [...shelf.querySelectorAll("[data-edge-list]:not([data-plan-list]) li")].map((li) => li.innerText.replace(/\s+/g, " ").trim());
+      return { plans, recent };
+    }, shelfSel);
+    const due = rows.plans.map((t) => t.match(/^([A-Z][a-z]{2}) (\d+)/)).map((m) => (m ? Date.parse(`${m[1]} ${m[2]} 2000`) : null));
+    const named = rows.recent.filter((t) => /In plan/.test(t));
+    record("vendor shelf", "the plans are listed by next due, and each recent charge in a plan names which", due.every((d) => d != null) && due.every((d, i) => i === 0 || d >= due[i - 1]) && named.length >= 2 && named.every((t) => /\b(4th|19th)\b/.test(t)), `plans: ${rows.plans.join(" | ")}; recent: ${named.slice(0, 2).join(" | ")}`);
     await page.evaluate(() => document.querySelector("[data-plan-list] [role=button]").click()); await shelfSettled(page);
     const opened = await page.$eval(`${shelfSel} header`, (h) => h.innerText.replace(/\s+/g, " "));
     record("vendor shelf", "tapping a listed plan opens that plan's shelf, with Back", /Back/.test(opened) && /One of 2 plans/.test(opened) && /per year expected|Per charge/i.test(planShelf), opened.slice(0, 80));
