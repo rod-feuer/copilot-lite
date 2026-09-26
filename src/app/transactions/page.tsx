@@ -78,6 +78,9 @@ function TransactionsView() {
   const [txs, setTxs] = useState<Tx[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [netTotal, setNetTotal] = useState(0);
+  // The vendor statement's heading. A charge's own name can be its plan
+  // ("Benjamin Franklin (Carmel)"); the statement is every charge of the vendor.
+  const [vendorName, setVendorName] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false); // synchronous guard against double-fetch
   // Review-queue widgets are deferred to after first paint so their fetches
@@ -251,6 +254,7 @@ function TransactionsView() {
           setTxs(data.rows ?? []);
           setTotalCount(data.count ?? data.rows?.length ?? 0);
           setNetTotal(data.net ?? 0);
+          setVendorName(typeof data.vendorName === "string" ? data.vendorName : null);
           setStatus("ready");
         } catch {
           // Transient failure (cold dev route / blip) → retry, so the first load
@@ -445,10 +449,11 @@ function TransactionsView() {
   }, [txs, grouping]);
 
   // Statement mode: when the vendor filter is active, every row is the same
-  // merchant — and usually the same category/account. Collapse that constant
+  // vendor — and usually the same category/account. Collapse that constant
   // identity into one header and let the rows read like a statement (date ·
   // amount), surfacing category/account only on the charges that break the
-  // pattern. `modal` holds the vendor's most-common values (null = normal mode).
+  // pattern. The heading is the vendor's name, not the newest charge's plan.
+  // `modal` holds the vendor's most-common values (null = normal mode).
   const modal = useMemo(() => {
     if (vendor === "" || txs.length === 0) return null;
     const catCount = new Map<string, number>();
@@ -463,7 +468,7 @@ function TransactionsView() {
     const rep = txs.find((t) => String(t.categoryId ?? "none") === topCat) ?? txs[0];
     const counted = txs.filter((t) => !(t.excluded || t.categoryExcluded));
     return {
-      displayName: txs[0].displayName,
+      displayName: vendorName ?? txs[0].displayName,
       categoryId: rep.categoryId,
       categoryName: rep.categoryName,
       categoryColor: rep.categoryColor,
@@ -476,7 +481,7 @@ function TransactionsView() {
       notCounted: txs.length - counted.length,
       total: counted.reduce((a, t) => a + t.amount, 0),
     };
-  }, [vendor, txs]);
+  }, [vendor, vendorName, txs]);
 
   // Linear-style filters: a filter shows as a chip only when active (has a
   // value) or explicitly added from the "+ Filter" menu. The menu lists the rest.

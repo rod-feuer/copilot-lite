@@ -280,7 +280,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
   function recategorize(categoryId: number | null) {
     if (target?.kind !== "merchant") return;
     const merchant = target.merchant;
-    // One plan of several recategorizes only its own charges.
+    // One plan of several recategorizes only its own charges. The vendor
+    // shelf does not set a category when its charges already disagree.
+    if (!mData?.seriesId && mData?.categoryMixed) return;
     return write(
       () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId: mData?.seriesId ?? undefined }),
       { error: "Couldn't recategorize — please try again" }

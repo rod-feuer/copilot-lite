@@ -528,6 +528,9 @@ export function MerchantBody({
   // borrowed the most recently charged plan's figures, which for Apple's six
   // subscriptions read "$128 per year" on a vendor that costs $790.
   const multi = !data.series && data.planList.length > 1;
+  // The vendor is not one category. The control that would rewrite every
+  // charge stays off this shelf; a plan's shelf, or a charge, sets its own.
+  const mixedVendor = !data.series && data.categoryMixed;
   const d = multi ? null : data.recurringDetail;
   const monthsActive = monthsSince(data.firstSeen);
   // Placeholder for the expected-amount editor. Priority: a caller-supplied hint
@@ -553,10 +556,9 @@ export function MerchantBody({
   }
   type ChargeRow = Summary["recent"][number];
   function rowName(rows: ChargeRow[], r: ChargeRow) {
-    // On a vendor with several plans, the row's name is the plan — the same
-    // words as the plan list. The bank descriptor starts with the vendor, so
-    // gluing it on truncated the plan ("Benjamin Franklin Pl · B…").
-    if (multi && r.planName) return r.planName;
+    // A charge in a plan wears that plan's day pill, not a second copy of
+    // the vendor's name. A charge in no plan still says what varies.
+    if (multi && r.planDay) return undefined;
     return varyLabel(rows)(r);
   }
   function membershipFor(r: ChargeRow) {
@@ -594,7 +596,7 @@ export function MerchantBody({
               setAssigning(null);
             }}
           >
-            {p.name}
+            {p.day}
           </button>
         ))}
         <button type="button" className="text-[var(--muted)] hover:text-[var(--foreground)]" onClick={() => setAssigning(null)}>
@@ -612,6 +614,7 @@ export function MerchantBody({
               key={r.id}
               date={r.date}
               name={rowName(rows, r)}
+              pill={multi ? (r.planDay ?? undefined) : undefined}
               amount={r.amount}
               muted={r.excluded === 1}
               excluded={!!r.excluded || !!r.categoryExcluded}
@@ -675,8 +678,12 @@ export function MerchantBody({
               value first, its auto/edited state beside it, like the cards), and
               the per-year figure the cadence drives. */}
           <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
-            <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
-            {newCat.popover}
+            {mixedVendor ? (
+              <span>Charges use more than one category. Set one on a plan, or on a charge.</span>
+            ) : (
+              <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
+            )}
+            {mixedVendor ? null : newCat.popover}
             {/* Items are separated by space, not dots: a wrap can then never
                 strand a separator at either end of a line. */}
             <span className="inline-flex items-center whitespace-nowrap">
@@ -714,7 +721,7 @@ export function MerchantBody({
               <ShelfRow
                 key={p.id}
                 date={p.nextDate}
-                name={p.name}
+                pill={p.day}
                 amount={-p.amount}
                 muted={p.ended}
                 note={p.ended ? "ended" : cadenceLabel(p.cadence)}
@@ -724,7 +731,7 @@ export function MerchantBody({
               />
             ))}
           </ul>
-          <div className="mt-2 text-[11px] text-[var(--muted)]">Next due, name, amount. A plan&rsquo;s own shelf edits it.</div>
+          <div className="mt-2 text-[11px] text-[var(--muted)]">Next due, the day it bills, amount. A plan&rsquo;s own shelf edits it.</div>
         </div>
       )}
 
@@ -762,7 +769,11 @@ export function MerchantBody({
           </PropertyCard>
           </div>
           <div className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
-            <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
+            {mixedVendor ? (
+              <span>Charges use more than one category. Set one on a charge.</span>
+            ) : (
+              <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
+            )}
             <span className="whitespace-nowrap">
               {usd(data.trailing12 / monthsActive, { cents: false })} per active month · {data.count12} charge{data.count12 === 1 ? "" : "s"} in 12 months
             </span>

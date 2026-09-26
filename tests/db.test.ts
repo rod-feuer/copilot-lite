@@ -326,6 +326,12 @@ test("Start a plan on a forced vendor's off-day charge makes a second plan, not 
   seed(v, [{ date: "2026-10-07", amount: -11.99 }]);
   setTransactionRecurringIncluded(idOf("2026-10-07"), `${v} · Lake`);
   assert.deepEqual(plans(), [`${v} · $11.99 monthly -11.99 x2`, `${v} · Lake monthly -11.99 x15`]);
+  // The keys are an amount and a name the owner typed. The shelf tells the
+  // houses apart by the day each one bills, so neither has to be renamed.
+  assert.deepEqual(
+    merchantSummary(v).planList.map((p) => p.day).sort(),
+    ["25th", "7th"]
+  );
 });
 
 test("a split parent or a charge excluded from totals can't start a plan", () => {
@@ -352,10 +358,10 @@ test("merchantSummary lists a multi-plan vendor's plans with their monthly total
   detectRecurrings();
   setRecurringSetting("Apple · 26th", { alias: "Apple TV", expectedAmount: 14.99 });
   const v = merchantSummary("Apple");
-  assert.deepEqual(v.planList.map((p) => [p.key, p.name, p.amount, p.cadence, p.ended]), [
-    ["Apple · 26th", "Apple TV", 14.99, "monthly", false],
-    ["Apple · 2nd", "2nd", 9.99, "monthly", false],
-  ], "most recently charged first; the user's name and expected amount where set, the key's qualifier where not");
+  assert.deepEqual(v.planList.map((p) => [p.key, p.day, p.name, p.amount, p.cadence, p.ended]), [
+    ["Apple · 26th", "26th", "Apple TV", 14.99, "monthly", false],
+    ["Apple · 2nd", "2nd", "2nd", 9.99, "monthly", false],
+  ], "the day pill tells the plans apart; the user's name stays for the plan's own shelf");
   assert.equal(v.monthly, 24.98);
   assert.equal(v.recurringDetail?.perCharge, 12.99, "the single-plan figures are still there for a caller that wants them");
 
@@ -373,8 +379,8 @@ test("merchantSummary lists a multi-plan vendor's plans with their monthly total
     "a one-off crowded out of Recent is listed on its own, not dropped"
   );
   assert.ok(
-    withStray.recent.every((c) => c.recurringId == null || c.planName),
-    "a charge in a plan is named with that plan"
+    withStray.recent.every((c) => c.recurringId == null || c.planDay),
+    "a charge in a plan carries that plan's day"
   );
   assert.equal(merchantSummary("Apple", "Apple · 2nd").otherCharges.length, 0, "a plan's shelf pulls one-offs into its own list");
 });
