@@ -81,6 +81,10 @@ function TransactionsView() {
   // The vendor statement's heading. A charge's own name can be its plan
   // ("Benjamin Franklin (Carmel)"); the statement is every charge of the vendor.
   const [vendorName, setVendorName] = useState<string | null>(null);
+  // Whether every charge of the vendor has one category (from the server,
+  // across every page). When they don't, the heading names none and each row
+  // shows its own.
+  const [categoryShared, setCategoryShared] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false); // synchronous guard against double-fetch
   // Review-queue widgets are deferred to after first paint so their fetches
@@ -255,6 +259,7 @@ function TransactionsView() {
           setTotalCount(data.count ?? data.rows?.length ?? 0);
           setNetTotal(data.net ?? 0);
           setVendorName(typeof data.vendorName === "string" ? data.vendorName : null);
+          setCategoryShared(data.categoryShared !== false);
           setStatus("ready");
         } catch {
           // Transient failure (cold dev route / blip) → retry, so the first load
@@ -473,6 +478,7 @@ function TransactionsView() {
       categoryName: rep.categoryName,
       categoryColor: rep.categoryColor,
       categoryIcon: rep.categoryIcon,
+      categoryShared,
       account: topAcct,
       // Only what counts: the same rule as the page's net and the day totals.
       // Summing every row put an excluded duplicate into the header, so one
@@ -481,7 +487,7 @@ function TransactionsView() {
       notCounted: txs.length - counted.length,
       total: counted.reduce((a, t) => a + t.amount, 0),
     };
-  }, [vendor, vendorName, txs]);
+  }, [vendor, vendorName, categoryShared, txs]);
 
   // Linear-style filters: a filter shows as a chip only when active (has a
   // value) or explicitly added from the "+ Filter" menu. The menu lists the rest.
@@ -730,13 +736,18 @@ function TransactionsView() {
           <>
             {modal && (
               <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--background)] px-4 py-3">
-                <CategoryBadge icon={modal.categoryIcon} color={modal.categoryColor} size="md" fallback={modal.displayName} />
+                <CategoryBadge
+                  icon={modal.categoryShared ? modal.categoryIcon : null}
+                  color={modal.categoryShared ? modal.categoryColor : null}
+                  size="md"
+                  fallback={modal.displayName}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[15px] font-semibold">{modal.displayName}</div>
                   <div className="truncate text-xs text-[var(--muted)]">
                     {modal.count} transaction{modal.count === 1 ? "" : "s"}
-                    {modal.notCounted > 0 ? ` · ${modal.notCounted} not counted` : ""} ·{" "}
-                    {modal.categoryName ?? "Uncategorized"}
+                    {modal.notCounted > 0 ? ` · ${modal.notCounted} not counted` : ""}
+                    {modal.categoryShared ? ` · ${modal.categoryName ?? "Uncategorized"}` : ""}
                     {modal.account ? ` · ${modal.account}` : ""}
                   </div>
                 </div>
@@ -940,7 +951,7 @@ const TxRow = memo(function TxRow({
   onSetCategory,
 }: {
   t: Tx;
-  modal: { categoryId: number | null; account: string } | null;
+  modal: { categoryId: number | null; categoryShared: boolean; account: string } | null;
   headed: boolean;
   isCatActive: boolean;
   isShelfActive: boolean;
@@ -950,7 +961,7 @@ const TxRow = memo(function TxRow({
   onSetCategory: (id: number, categoryId: number | null) => void;
 }) {
   const sameCat =
-    modal && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
+    modal && modal.categoryShared && String(t.categoryId ?? "none") === String(modal.categoryId ?? "none");
   const sameAcct = modal && t.account === modal.account;
   const recState = recurringState(t);
   const setCategory = onSetCategory;

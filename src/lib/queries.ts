@@ -517,7 +517,12 @@ export function transactionById(id: number): ChargeDetail | null {
 // header's "N shown" and net figure can't be derived from the loaded rows.
 // Net mirrors the dashboard: excluded rows and excluded-from-totals categories
 // don't count.
-export function transactionsSummary(opts: TxFilter): { count: number; net: number; vendorName?: string } {
+export function transactionsSummary(opts: TxFilter): {
+  count: number;
+  net: number;
+  vendorName?: string;
+  categoryShared?: boolean;
+} {
   const db = getDb();
   ensureRecurringTxExclusions(db);
   const { whereSql, params } = buildTxFilter(opts);
@@ -525,17 +530,25 @@ export function transactionsSummary(opts: TxFilter): { count: number; net: numbe
     .prepare(
       `SELECT COUNT(*) AS count,
         COALESCE(SUM(CASE WHEN t.excluded = 1 OR COALESCE(c.excludeFromTotals, 0) = 1
-                          THEN 0 ELSE t.amount END), 0) AS net
+                          THEN 0 ELSE t.amount END), 0) AS net,
+        COUNT(DISTINCT COALESCE(t.categoryId, -1)) AS categories
        FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
        ${whereSql}`
     )
-    .get(params) as { count: number; net: number };
+    .get(params) as { count: number; net: number; categories: number };
   // The statement lists the vendor. Its heading is the vendor's name — the
   // same one as the vendor shelf — not the newest charge's plan.
-  const vendorName = opts.vendor
-    ? merchantDisplayName(opts.vendor, getRecurringSettings(), getMerchantLinks())
-    : undefined;
-  return { count: row.count, net: Number(row.net.toFixed(2)), vendorName };
+  if (!opts.vendor) return { count: row.count, net: Number(row.net.toFixed(2)) };
+  return {
+    count: row.count,
+    net: Number(row.net.toFixed(2)),
+    vendorName: merchantDisplayName(opts.vendor, getRecurringSettings(), getMerchantLinks()),
+    // The heading names a category only when every listed charge has it.
+    // Ben Franklin's two houses split its charges; naming the commoner one
+    // said all 24 were Lake Home. Counted here, not from the loaded page:
+    // the statement loads 60 rows at a time.
+    categoryShared: row.categories <= 1,
+  };
 }
 
 // Recurring-detection overrides (merchant -> 'force' | 'mute'), applied by

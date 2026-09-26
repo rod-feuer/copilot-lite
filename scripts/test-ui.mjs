@@ -574,6 +574,48 @@ async function vendorHeaderCounts(browser) {
   });
 }
 
+// The heading names a category for the whole vendor, and a row matching it
+// hides its own. Ben Franklin's two houses split its charges, so the heading
+// said Lake Home over the Carmel charges and the Lake rows showed nothing. A
+// vendor whose charges disagree names no category; one that agrees still does.
+async function vendorHeaderCategory(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    const setup = await page.evaluate(async () => {
+      const rows = (await (await fetch("/api/transactions?vendor=Streamly&limit=50")).json()).rows;
+      const cats = (await (await fetch("/api/categories")).json()).filter((c) => c.kind === "expense");
+      const [a, b] = cats;
+      const before = rows.map((r) => [r.id, r.categoryId]);
+      for (const r of rows) await fetch(`/api/transactions/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: Math.abs(r.amount) < 10 ? a.id : b.id }) });
+      return { before, names: [a.name, b.name], n: rows.length };
+    });
+    const read = async (vendor) => {
+      await page.goto(BASE + `/transactions?vendor=${vendor}`, { waitUntil: "networkidle2" });
+      await page.waitForSelector("[data-vendor-total]");
+      return page.evaluate(() => ({
+        head: document.querySelector("[data-vendor-total]").closest("div.flex").innerText,
+        rows: [...document.querySelectorAll("[data-drawer-row]")].map((r) => r.innerText),
+      }));
+    };
+    const mixed = await read("Streamly");
+    const [a, b] = setup.names;
+    const eachRowNamed = mixed.rows.length === setup.n && mixed.rows.every((t) => t.includes(a) || t.includes(b));
+    record("vendor header", "a vendor whose charges sit in two categories names neither in its heading, and every row shows its own",
+      !mixed.head.includes(a) && !mixed.head.includes(b) && eachRowNamed,
+      `heading "${mixed.head.split("\n").slice(0, 2).join(" / ")}"; ${mixed.rows.filter((t) => t.includes(a) || t.includes(b)).length}/${setup.n} rows named`);
+    const agree = await page.evaluate(async () => {
+      const r = (await (await fetch("/api/transactions?vendor=Chipotle&limit=50")).json()).rows[0];
+      return r.categoryName;
+    });
+    const shared = await read("Chipotle");
+    record("vendor header", "a vendor whose charges agree still names its category in the heading",
+      !!agree && shared.head.includes(agree), `"${agree}" in heading=${!!agree && shared.head.includes(agree)}`);
+    await page.evaluate(async (before) => {
+      for (const [id, categoryId] of before) await fetch(`/api/transactions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId }) });
+    }, setup.before);
+  });
+}
+
 // Split drift: a split rule matches to the cent, so a price change makes it miss
 // silently. The charge it missed is tagged in the list, its shelf says why and
 // offers the same parts scaled to the new total, and one tap splits it.
@@ -1569,7 +1611,7 @@ try {
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
-    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
+    ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["vendor header category", vendorHeaderCategory], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }

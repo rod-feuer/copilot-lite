@@ -2333,6 +2333,25 @@ test("a charge takes its plan's name when the user named the plan", () => {
   assert.equal(transactionsSummary({}).vendorName, undefined, "a mixed list has no vendor to name");
 });
 
+// WHY: the statement's heading names a category for the whole vendor, and a
+// row whose category matches the heading hides its own. Ben Franklin's
+// charges are half Carmel Home, half Lake Home: the heading said Lake Home
+// over all of them, and the Lake rows showed no category at all. The answer
+// comes from every charge, not the first page the statement loaded.
+test("the statement heading names a category only when every charge has it", () => {
+  const lake = addCat("Lake Home (stmt)");
+  const carmel = addCat("Carmel Home (stmt)");
+  for (const m of ["01", "02", "03"]) {
+    tx("Ben Stmt", { amount: -11.99, date: `2026-${m}-08`, categoryId: lake });
+    tx("Ben Stmt", { amount: -11.99, date: `2026-${m}-25`, categoryId: carmel });
+  }
+  assert.equal(transactionsSummary({ vendor: "Ben Stmt" }).categoryShared, false);
+
+  for (const m of ["01", "02", "03"]) tx("Water Stmt", { amount: -40, date: `2026-${m}-03`, categoryId: lake });
+  assert.equal(transactionsSummary({ vendor: "Water Stmt" }).categoryShared, true);
+  assert.equal(transactionsSummary({}).categoryShared, undefined, "a list of many vendors has no heading");
+});
+
 // WHY: a bank can fold two bills into one new name. "Sofi Lending Loan Paymt"
 // (the mortgage) and a personal loan both became "Sofi". As a vendor, "Sofi"
 // has mixed amounts and its first charge was the loan, so it matched nothing:
