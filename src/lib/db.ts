@@ -47,6 +47,7 @@ function init(db: Database.Database) {
       recurringId INTEGER REFERENCES recurrings(id),
       source TEXT NOT NULL DEFAULT 'seed',
       note TEXT,
+      categoryByHand INTEGER NOT NULL DEFAULT 0,
       hash TEXT NOT NULL UNIQUE
     );
 
@@ -114,6 +115,13 @@ function init(db: Database.Database) {
   // Migration: add a per-transaction `note` (a free-text memo; null = none).
   if (!cols.some((c) => c.name === "note")) {
     db.exec("ALTER TABLE transactions ADD COLUMN note TEXT");
+  }
+
+  // Migration: `categoryByHand` — the user picked this charge's category
+  // (1), rather than a rule, history or a plan. A plan's category never
+  // overwrites it. Never touched by the importer's upsert.
+  if (!cols.some((c) => c.name === "categoryByHand")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN categoryByHand INTEGER NOT NULL DEFAULT 0");
   }
 
   // Migration: add `excludeFromTotals` to categories created before it existed.

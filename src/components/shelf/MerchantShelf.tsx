@@ -681,7 +681,7 @@ export function MerchantBody({
             {mixedVendor ? (
               <span>Charges use more than one category. Set one on a plan, or on a charge.</span>
             ) : (
-              <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
+              <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} edited={data.categoryEdited} />
             )}
             {mixedVendor ? null : newCat.popover}
             {/* Items are separated by space, not dots: a wrap can then never
@@ -772,7 +772,7 @@ export function MerchantBody({
             {mixedVendor ? (
               <span>Charges use more than one category. Set one on a charge.</span>
             ) : (
-              <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} />
+              <CategoryCaption data={data} cats={cats} onChange={onRecategorize} onNew={(anchor) => newCat.open(anchor, null, `New category for ${data.displayName}`)} edited={data.categoryEdited} />
             )}
             <span className="whitespace-nowrap">
               {usd(data.trailing12 / monthsActive, { cents: false })} per active month · {data.count12} charge{data.count12 === 1 ? "" : "s"} in 12 months
