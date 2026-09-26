@@ -6,6 +6,7 @@ import {
   renormalizeMerchants,
   undoRenormalizeMerchants,
   cleanupUndoAvailable,
+  ensurePlans,
 } from "../src/lib/db";
 import { dashboard, detectRecurrings, categorizeByHistory, categorizeByRules, learnRule } from "../src/lib/core";
 import { importCsv } from "../src/lib/import";
@@ -13,6 +14,8 @@ import {
   listTransactions,
   merchantSummary,
   applyRecategorize,
+  confirmPlan,
+  unconfirmPlan,
   categoriesWithTotals,
   setRecurringSetting,
   setTransactionRecurringExcluded,
@@ -2708,4 +2711,51 @@ test("an uncategorized duplicate candidate is deferred to the merge, which names
   const after = categorizeSuggestions();
   assert.deepEqual(after.deferred, [], "the merge dismissed, Dga is no longer deferred");
   assert.equal(after.needsModelCount, 1, "and is back in the queue, waiting on the model");
+});
+
+// WHY: a plan's key is rebuilt from the detector's guess ("Ben · 25th"), so
+// when the bill moves day or price the key changes and the owner's name,
+// amount and pins are orphaned (the real data holds two such orphans). A
+// confirmed plan is frozen under the key it had when the owner touched it.
+// Confirming must record the plan as it stands, never overwrite a frozen
+// plan, and leave alone a single-plan vendor, whose bare key is its name.
+test("confirming a plan freezes it under its key; a second confirm changes nothing", () => {
+  const planRow = (key: string) =>
+    getDb().prepare("SELECT key, vendor, amount, day, cadence, categoryId, anchorDate FROM plans WHERE key = ?").get(key);
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx("Ben Frozen", { amount: -11.99, date: `2026-${m}-08` });
+    tx("Ben Frozen", { amount: -11.99, date: `2026-${m}-25` });
+  }
+  const keys = detectRecurrings().map((r) => r.merchant).filter((k) => k.startsWith("Ben Frozen")).sort();
+  assert.deepEqual(keys, ["Ben Frozen · 25th", "Ben Frozen · 8th"], "fixture: two plans split by day");
+
+  assert.equal(confirmPlan("Ben Frozen · 25th"), true);
+  const frozen = { key: "Ben Frozen · 25th", vendor: "Ben Frozen", amount: 11.99, day: 25, cadence: "monthly", categoryId: null, anchorDate: "2026-06-25" };
+  assert.deepEqual(planRow("Ben Frozen · 25th"), frozen, "the plan as it stood: a magnitude, its billing day, its newest charge");
+
+  // The bill moves: July posts on the 27th at a new price, and plans rebuild.
+  tx("Ben Frozen", { amount: -12.99, date: "2026-07-27" });
+  detectRecurrings();
+  assert.equal(confirmPlan("Ben Frozen · 25th"), true);
+  assert.deepEqual(planRow("Ben Frozen · 25th"), frozen, "confirming again keeps the first: only the owner's edits change it");
+
+  unconfirmPlan("Ben Frozen · 25th");
+  assert.equal(planRow("Ben Frozen · 25th"), undefined, "un-confirmed: derived again");
+
+  // One plan under the vendor: its key is the vendor's own name, already stable.
+  for (const m of ["01", "02", "03", "04"]) tx("Solo Water", { amount: -40, date: `2026-${m}-03` });
+  detectRecurrings();
+  assert.equal(confirmPlan("Solo Water"), false);
+  assert.equal(planRow("Solo Water"), undefined);
+  assert.equal(confirmPlan("No Such Plan"), false, "nothing to confirm");
+
+  // A bare key beside the vendor's other plan could be rebuilt as either: it is confirmed.
+  const ins = getDb().prepare("INSERT INTO recurrings (merchant, avgAmount, cadence, lastDate, nextDate, count) VALUES (?, ?, 'monthly', ?, ?, 3)");
+  ins.run("Twin Bare", -11.99, "2026-06-08", "2026-07-08");
+  ins.run("Twin Bare · $20", -20, "2026-06-25", "2026-07-25");
+  assert.equal(confirmPlan("Twin Bare"), true);
+  assert.equal((planRow("Twin Bare") as { day: number }).day, 8);
+
+  ensurePlans(getDb());
+  assert.notEqual(planRow("Twin Bare"), undefined, "ensuring the table again keeps what it holds");
 });

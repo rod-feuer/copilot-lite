@@ -234,6 +234,38 @@ export function resetRecurringOverrides(merchant: string) {
   });
 }
 
+// Confirm a plan: freeze it as it stands now, from its live recurrings row.
+// A plan key that could be rebuilt differently needs it: one split off a
+// vendor ("V · 25th"), or a vendor's bare key while it carries other plans.
+// A single-plan vendor's bare key is its own name and already stable, so it
+// is left derived. Confirming twice keeps the first: a confirmed plan
+// changes only through its own edits. False when there is nothing to confirm.
+export function confirmPlan(key: string): boolean {
+  const db = getDb();
+  const live = db
+    .prepare("SELECT merchant, avgAmount, cadence, lastDate FROM recurrings WHERE merchant = ?")
+    .get(key) as { merchant: string; avgAmount: number; cadence: string; lastDate: string } | undefined;
+  if (!live) return false;
+  const links = getMerchantLinks();
+  const vendor = canonicalMerchant(seriesVendor(key), links);
+  if (!isSeriesKey(key)) {
+    const siblings = (db.prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[]).filter(
+      (r) => canonicalMerchant(seriesVendor(r.merchant), links) === vendor
+    ).length;
+    if (siblings < 2) return false;
+  }
+  db.prepare(
+    `INSERT OR IGNORE INTO plans (key, vendor, amount, day, cadence, categoryId, anchorDate)
+     VALUES (?, ?, ?, ?, ?, NULL, ?)`
+  ).run(key, vendor, Number(Math.abs(live.avgAmount).toFixed(2)), Number(live.lastDate.slice(8, 10)), live.cadence, live.lastDate);
+  return true;
+}
+
+// Undo a confirmation (Not recurring, Reset all): the plan is derived again.
+export function unconfirmPlan(key: string) {
+  getDb().prepare("DELETE FROM plans WHERE key = ?").run(key);
+}
+
 // Merchant strings to match for a text search: every descriptor of any vendor
 // whose own name, original bank descriptor (rawMerchant), canonical name, or
 // user alias contains the query — then expanded across linked variants so a
