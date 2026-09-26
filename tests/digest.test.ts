@@ -1,4 +1,4 @@
-import { cleanDbBeforeEach, addCat, tx, daysAgo } from "./helpers";
+import { detectAndConfirm, cleanDbBeforeEach, addCat, tx, daysAgo } from "./helpers";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb } from "../src/lib/db";
@@ -88,7 +88,7 @@ test("a bill that differed is reported once, as a bill, and never again as an un
   // read as one doubled bill.
   for (const back of [3, 2, 1]) tx("Acme Insurance", { amount: LARGE, date: monthsBefore(daysAgo(2), back), categoryId: cat });
   tx("Acme Insurance", { amount: LARGE - 400, date: daysAgo(2), categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Acme Insurance", { expectedAmount: Math.abs(LARGE) });
 
   const built = dailyDigest()!;
@@ -115,7 +115,7 @@ test("an overdue bill is reported only after the bank has had time to post it", 
   };
   seedBill("Water Co", OVERDUE_GRACE_DAYS + 1);
   seedBill("Gas Co", OVERDUE_GRACE_DAYS - 1);
-  detectRecurrings();
+  detectAndConfirm();
   const sections = dailyDigest()?.sections ?? [];
   assert.deepEqual(sections.map((s) => s.title), ["Bills that haven't posted"]);
   assert.equal(sections[0].lines.length, 1);
@@ -230,7 +230,7 @@ test("a bill's difference is reported only when it is at least $25 and at least 
   bill("Mortgage Co", 900, 930); // $30 on $900: money, but 3% of the bill
   bill("Water Co", 74, 142); // $68 on $74: both
   bill("Phone Co", 120, 85); // $35 less on $120: both, and it fell
-  detectRecurrings();
+  detectAndConfirm();
   for (const [name, usual] of [["Groomer", 114], ["Mortgage Co", 900], ["Water Co", 74], ["Phone Co", 120]] as const) setRecurringSetting(name, { expectedAmount: usual });
   assert.deepEqual(dailyDigest()!.sections, [{ title: "Bills that changed", lines: ["Water Co $142, up $68", "Phone Co $85, down $35"] }]);
 });
@@ -246,7 +246,7 @@ test("the text leads with what you did not choose, and puts a large charge last"
   for (const back of [3, 2, 1]) tx("Water Co", { amount: -74, date: monthsBefore(daysAgo(2), back), categoryId: cat });
   tx("Water Co", { amount: -142, date: daysAgo(2), categoryId: cat });
   for (const back of [3, 2, 1]) tx("Gas Co", { amount: -90, date: monthsBefore(daysAgo(OVERDUE_GRACE_DAYS + 1), back), categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Water Co", { expectedAmount: 74 });
   const built = dailyDigest()!;
   assert.deepEqual(built.sections.map((s) => s.title), ["Bills that haven't posted", "Bills that came in high", "Charges worth a look"]);
@@ -289,7 +289,7 @@ test("a once-a-month bill charged twice in a month is reported, once", async () 
   const cat = addCat("Auto");
   for (const back of [3, 2, 1]) tx("Car Loan", { amount: -818.4, date: monthsBefore(daysAgo(3), back), categoryId: cat });
   tx("Car Loan", { amount: -818.4, date: daysAgo(3), categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   assert.equal(dailyDigest(), null, "paid once: nothing to say");
   const sameMonth = daysAgo(3).slice(0, 7) === daysAgo(1).slice(0, 7);
   tx("Car Loan", { amount: -818.4, date: daysAgo(1), categoryId: cat });
@@ -385,7 +385,7 @@ test("the week is compared with a typical one only when there is enough history,
 
   for (const back of [3, 2, 1]) tx("Landlord", { amount: -900, date: monthsBefore(daysAgo(2), back), categoryId: cat });
   tx("Landlord", { amount: -900, date: daysAgo(2), categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   assert.match(titled(weeklyDigest(), /outside your bills/)!.lines[0], /^\$560 spent/, "rent is a bill, not the week's spending");
 });
 
@@ -422,7 +422,7 @@ test("a plan in a category that is not counted is neither due nor overdue, and t
   dueIn("Power Co", 3, 120, bills);
   dueIn("Amex Autopay", 3, 4000, transfers);
   for (const back of [4, 3, 2]) tx("Card Payment Received", { amount: 4000, date: monthsBefore(daysAgo(10), back), categoryId: transfers }); // overdue by the other rule
-  detectRecurrings();
+  detectAndConfirm();
   const rows = recurringsForMonth(daysAgo(0).slice(0, 7));
   assert.deepEqual(
     rows.filter((r) => /Amex Autopay|Card Payment|Power Co/.test(r.merchant)).map((r) => [r.merchant, r.categoryExcluded]).sort(),

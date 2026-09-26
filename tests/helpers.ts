@@ -14,6 +14,8 @@ process.env.COPILOT_DB_PATH = path.join(
 
 import { after, beforeEach } from "node:test";
 import { getDb } from "../src/lib/db";
+import { detectRecurrings } from "../src/lib/core";
+import { confirmPlan } from "../src/lib/queries";
 
 after(() => {
   const p = process.env.COPILOT_DB_PATH!;
@@ -122,3 +124,15 @@ export const daysAgo = (n: number): string => {
   return d.toISOString().slice(0, 10);
 };
 export const daysFromNow = (n: number): string => daysAgo(-n);
+
+// Plans count only once confirmed (the owner accepts what the detector
+// found). A test about bills, totals or the digest, not about accepting,
+// detects and then accepts every plan, as an owner who added them all.
+export function confirmAll() {
+  for (const r of getDb().prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[]) confirmPlan(r.merchant);
+}
+export function detectAndConfirm() {
+  const plans = detectRecurrings();
+  confirmAll();
+  return plans;
+}

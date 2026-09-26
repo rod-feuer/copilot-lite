@@ -1,4 +1,4 @@
-import { cleanDbBeforeEach, addCat, tx, daysAgo, daysFromNow } from "./helpers"; // first: points the DB at a throwaway file
+import { detectAndConfirm, confirmAll, cleanDbBeforeEach, addCat, tx, daysAgo, daysFromNow } from "./helpers"; // first: points the DB at a throwaway file
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -16,6 +16,7 @@ import {
   applyRecategorize,
   confirmPlan,
   unconfirmPlan,
+  confirmPlansFor,
   unconfirmPlansFor,
   setTransactionCategory,
   categoriesWithTotals,
@@ -410,7 +411,7 @@ test("ending a subscription drops it from expected outflow immediately, and reac
   const lastCharge = daysAgo(5);
   for (const d of [daysAgo(95), daysAgo(65), daysAgo(35), lastCharge])
     tx(M, { amount: -16, date: d, categoryId: CAT });
-  detectRecurrings();
+  detectAndConfirm();
   const active = recurringMonthlyByCategory()[CAT] ?? 0;
   assert.ok(active >= 16, `expected the bill to count while active, got ${active}`);
 
@@ -495,7 +496,7 @@ test("a series that has gone quiet is not an upcoming bill, even with a next-due
   // Live: monthly, last charged 5 days ago. Quiet: monthly, last charged 200 days ago.
   for (const d of [95, 65, 35, 5]) tx("Power Co", { amount: -100, date: daysAgo(d), categoryId: CAT });
   for (const d of [290, 260, 230, 200]) tx("Old Box", { amount: -30, date: daysAgo(d), categoryId: CAT });
-  detectRecurrings();
+  detectAndConfirm();
   // Both get a next-due override 10 days from now, inside the window.
   setRecurringSetting("Power Co", { nextDate: daysFromNow(10) });
   setRecurringSetting("Old Box", { nextDate: daysFromNow(10) });
@@ -514,7 +515,7 @@ test("a quarterly bill counts one third per month toward the category baseline",
     tx("Water District", { amount: -300, date: d, categoryId: CAT });
   for (const d of [daysAgo(366), daysAgo(184), daysAgo(2)]) // 182-day gaps → semiannual
     tx("Car Insurance", { amount: -600, date: d, categoryId: CAT_X });
-  detectRecurrings();
+  detectAndConfirm();
   const byCat = recurringMonthlyByCategory();
   assert.equal(byCat[CAT], 100, "quarterly $300 → $100/month, not $300");
   assert.equal(byCat[CAT_X], 100, "semiannual $600 → $100/month, not $600");
@@ -589,6 +590,7 @@ test("a lumpy recurring bill is not amplified into the budget projection", () =>
   tx("Mortgage", { amount: -4000, date: `${cm}-01`, categoryId: CAT_X, recurringId: recId });
   tx("Hardware Store", { amount: -100, date: `${cm}-10`, categoryId: CAT_X });
 
+  confirmAll(); // plans count once accepted
   const d = dashboard(cm);
   assert.ok(d.budget, "budget summary exists");
   assert.equal(d.budget!.spent, 4100, "spent = mortgage + variable");
@@ -662,6 +664,7 @@ test("an inactive recurring does not claim another vendor's charge by category f
   // A current-month charge: same category + amount, DIFFERENT vendor.
   tx("New Place", { amount: -60, date: `${cm}-15`, categoryId: CAT });
 
+  confirmAll(); // plans count once accepted
   const old = recurringsForMonth(cm).find((r) => r.merchant === "Old Salon");
   assert.ok(old, "the stale recurring still appears (it'll sit in Inactive)");
   assert.equal(old!.paid, false, "stale recurring is NOT falsely marked paid via category fallback");
@@ -682,6 +685,7 @@ test("upcoming bills appear on the current month only, never on a past one", () 
     )
     .run({ cat: CAT, nd });
 
+  confirmAll(); // plans count once accepted
   const cur = dashboard(cm);
   assert.ok(cur.upcoming.count >= 1, "current month surfaces the upcoming bill");
 
@@ -759,6 +763,7 @@ test("a stale (renamed/stopped) recurring stops counting toward the category bas
   ins("Gym Inc", -59, 5); // live: charged 5 days ago
   ins("Gym", -52, 200); // dead: renamed away, silent for 200 days
 
+  confirmAll(); // plans count once accepted
   const byCat = recurringMonthlyByCategory();
   assert.equal(
     byCat[CAT_X],
@@ -1303,6 +1308,7 @@ test("recurrings dedupe folds only clones of the same vendor, not same-price nei
   ins.run("Chase Home Lending", subs, -40, "2026-08-01", "2026-09-01", 4);
   linkMerchant("Chase Home Lending", "Chase Mortgage");
 
+  confirmAll(); // plans count once accepted
   const rows = recurringsForMonth("2026-09");
   assert.deepEqual(
     rows.map((r) => r.merchant).sort(),
@@ -1390,7 +1396,7 @@ test("detector splits a descriptor that carries two monthly bills into one serie
   for (let i = 0; i < 60; i++)
     tx("Market District", { amount: -(40 + ((i * 37) % 90)), date: new Date(g0 + i * 4 * 86_400_000).toISOString().slice(0, 10), categoryId: home });
 
-  const recs = detectRecurrings();
+  const recs = detectAndConfirm();
   const by = (m: string) => recs.find((r) => r.merchant === m);
   assert.ok(!recs.some((r) => r.merchant.startsWith("Market District · ")), "a weekly store never splits into monthly bills");
   assert.deepEqual(
@@ -1457,7 +1463,7 @@ test("detector splits a descriptor that carries two monthly bills into one serie
     tx("Acme Payroll", { amount: A[m - 1], date: `${ym(m)}-28`, categoryId: home });
     tx("Acme Payroll", { amount: B[m - 1], date: `${ym(m)}-28`, categoryId: home, account: "Savings" });
   }
-  const acme = detectRecurrings().filter((r) => r.merchant.startsWith("Acme Payroll"));
+  const acme = detectAndConfirm().filter((r) => r.merchant.startsWith("Acme Payroll"));
   assert.deepEqual(acme.map((r) => r.merchant).sort(), ["Acme Payroll · larger", "Acme Payroll · smaller"], "ranked, not banded — the keys survive raises");
   assert.equal(acme.find((r) => r.merchant.endsWith("larger"))!.avgAmount, 9738.55);
   assert.equal(acme.find((r) => r.merchant.endsWith("smaller"))!.count, 8);
@@ -1702,7 +1708,7 @@ test("detector joins a renamed descriptor to its vendor only when the merge earn
     tx("Chubb Prs Debitpmt", { amount: -163.75, date: `${ym(m)}-05`, categoryId: tools });
     tx("Chubb-prs Direct Deb Prs", { amount: -903.48, date: `${ym(m)}-20`, categoryId: tools });
   }
-  const recs = detectRecurrings();
+  const recs = detectAndConfirm();
   const cursor = recs.filter((r) => /cursor/i.test(r.merchant));
   assert.deepEqual(
     cursor.map((r) => [r.merchant, r.count]),
@@ -1753,6 +1759,7 @@ test("month view pays a bill only with its own vendor's charge", () => {
   ins.run("Sp Liquid I.v", home, -52.48, last, next);
   tx("Barthuly Irrigat", { amount: -249, date: next, categoryId: home });
   tx("Liquid I.v", { amount: -52.48, date: next, categoryId: home });
+  confirmAll(); // plans count once accepted
   const rows = recurringsForMonth(month);
   const rosy = rows.find((r) => r.merchant.startsWith("Zelle Payment To Rosy"));
   assert.equal(rosy?.paid, false, "another vendor's charge of the same category and amount is not this bill");
@@ -1857,7 +1864,7 @@ test("detector reads a plan that moved to every two months, history and relabel 
   for (const d of ["2025-11-02", "2026-01-11", "2026-03-10", "2026-05-10"]) tx(v, { amount: -52.47, date: d, categoryId: fit });
   tx("Liquid I.v", { amount: -52.48, date: "2026-07-11", categoryId: fit });
   tx("Liquid I.v", { amount: -52.48, date: "2026-09-11", categoryId: fit });
-  const recs = detectRecurrings();
+  const recs = detectAndConfirm();
   const plans = recs.filter((r) => /liquid/i.test(r.merchant));
   assert.equal(plans.length, 1, "one plan for the vendor");
   const plan = plans[0];
@@ -2038,7 +2045,7 @@ test("recurringsForMonth: a once-a-month plan is paid by the charge nearest its 
   for (const back of [3, 2, 1, 0]) tx("Ai Lab", { amount: -20, date: at(back, 3), categoryId: CAT });
   for (const day of [1, 8, 15, 22]) for (const back of [1, 0]) tx("Lawn Crew", { amount: -60, date: at(back, day), categoryId: CAT });
   for (const back of [3, 2, 1, 0]) tx("Car Loan", { amount: -818.4, date: at(back, 1), categoryId: CAT });
-  detectRecurrings();
+  detectAndConfirm();
   // A one-off purchase from the same vendor, the same month. The plan claims
   // every charge on its vendor's name, whether or not the detector linked it.
   tx("Ai Lab", { amount: -200, date: at(0, 2), categoryId: CAT });
@@ -2066,7 +2073,7 @@ test("recurringsForMonth counts the charges a weekly plan still has due this mon
     tx("Lawn Weekly", { amount: -63.1, date: `2026-${d}` });
   for (const d of ["08-23", "09-08", "09-24"]) tx("Pay Biweekly", { amount: -369.65, date: `2026-${d}` });
   for (const m of ["06", "07", "08", "09"]) tx("Water Monthly", { amount: -40, date: `2026-${m}-03` });
-  detectRecurrings();
+  detectAndConfirm();
   const sep = recurringsForMonth("2026-09");
   const row = (m: string) => sep.find((r) => r.merchant === m)!;
 
@@ -2975,7 +2982,6 @@ test("a per-plan category confirms it; its day follows its bill; confirmed clone
   }
   detectRecurrings();
   const faces = () => recurringsForMonth("2026-06").filter((r) => r.merchant.startsWith("Clone Co")).length;
-  assert.equal(faces(), 1, "fixture: unconfirmed, they fold into one face");
   const ins = getDb().prepare("INSERT INTO plans (key, vendor, amount, day, cadence, anchorDate) VALUES (?, ?, -30, 10, 'monthly', '2026-06-10')");
   ins.run("Clone Co", "Clone Co");
   ins.run("Clone Co Pl", "Clone Co Pl");
@@ -3058,4 +3064,55 @@ test("a confirmed single-plan vendor keeps its key when it gains a second plan",
   assert.equal(keys.length, 2, `fixture: the vendor now has two plans (${keys.join(", ")})`);
   assert.equal(planOf(v, "2026-07-01"), v, "the mortgage keeps the vendor's key, and so its name");
   assert.notEqual(planOf(v, "2026-07-18"), v, "the new payment is a plan of its own");
+});
+
+// WHY: a plan the detector found used to be a bill on its own: Pies & Pints,
+// a restaurant, read as a monthly bill because the detector said so. Now it
+// waits in the suggestions queue until the owner adds it: until then it is
+// no bill, no upcoming charge, no part of the recurring tick, and its
+// charges are ordinary spending. Added, it counts; dismissed, it stays gone.
+test("a detected plan counts only once added; dismissed, it stays gone", () => {
+  const subs = addCat("Subs (queue)");
+  for (const m of ["2026-06", "2026-07", "2026-08", "2026-09"]) tx("Stream Queue", { amount: -15.49, date: `${m}-03`, categoryId: subs });
+  detectRecurrings();
+  const bill = () => recurringsForMonth("2026-09").some((r) => r.merchant === "Stream Queue");
+  const upcoming = () => upcomingRecurringExpenses("2026-01-01", "2027-12-31").some((r) => r.merchant === "Stream Queue");
+  const inPlan = () => listTransactions({ recurring: true, vendor: "Stream Queue" }).length;
+  const queued = () => suggestedRecurrings().find((x) => x.merchant === "Stream Queue");
+
+  assert.equal(bill(), false, "not a bill until added");
+  assert.equal(upcoming(), false, "nor an upcoming charge");
+  assert.equal(recurringMonthlyByCategory()[subs] ?? 0, 0, "nor part of the recurring tick");
+  assert.equal(inPlan(), 0, "its charges are ordinary spending");
+  assert.equal(queued()?.reason, "detected", "it waits in the queue");
+
+  confirmPlan("Stream Queue"); // Add
+  assert.equal(bill(), true);
+  assert.equal(upcoming(), true);
+  assert.equal(recurringMonthlyByCategory()[subs], 15.49);
+  assert.equal(inPlan(), 4);
+  assert.equal(queued(), undefined, "added, it leaves the queue");
+
+  for (const m of ["2026-06", "2026-07", "2026-08", "2026-09"]) tx("Lunch Queue", { amount: -12, date: `${m}-10`, categoryId: subs });
+  detectRecurrings();
+  assert.equal(suggestedRecurrings().find((x) => x.merchant === "Lunch Queue")?.reason, "detected");
+  setRecurringOverride("Lunch Queue", "mute"); // Dismiss
+  detectRecurrings();
+  assert.equal(suggestedRecurrings().find((x) => x.merchant === "Lunch Queue"), undefined, "dismissed, it stays gone after a rebuild");
+  assert.equal(recurringsForMonth("2026-09").some((r) => r.merchant === "Lunch Queue"), false);
+});
+
+// WHY: a "variable" suggestion (a bill the detector won't claim on its own)
+// is added by forcing the vendor. Its plans must then count, or Add would
+// leave the bill off the page.
+test("adding a forced suggestion makes its plan count", () => {
+  const util = addCat("Utilities (queue)");
+  const amts = [20, 190, 15, 210, 30, 175]; // too variable for the detector to claim
+  ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"].forEach((m, i) => tx("Gas Queue", { amount: -amts[i], date: `${m}-12`, categoryId: util }));
+  detectRecurrings();
+  assert.equal(suggestedRecurrings().find((x) => x.merchant === "Gas Queue")?.reason, "variable", "fixture: a variable bill");
+  setRecurringOverride("Gas Queue", "force");
+  detectRecurrings();
+  confirmPlansFor("Gas Queue");
+  assert.equal(recurringsForMonth("2026-09").some((r) => r.merchant === "Gas Queue"), true);
 });

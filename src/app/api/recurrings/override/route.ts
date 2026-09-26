@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   setRecurringOverride,
   unconfirmPlansFor,
+  confirmPlansFor,
   clearRecurringOverride,
   clearRecurringTxExclusionsForMerchant,
   merchantVariants,
@@ -37,5 +38,7 @@ export async function POST(req: NextRequest) {
   else return NextResponse.json({ error: "invalid status" }, { status: 400 });
 
   detectRecurrings();
+  // Forced from the suggestions queue: its plans count, so confirm them.
+  if (status === "force") confirmPlansFor(merchant);
   return NextResponse.json({ ok: true });
 }

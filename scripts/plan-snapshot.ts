@@ -6,7 +6,8 @@ import path from "node:path";
 import fs from "node:fs";
 import Database from "better-sqlite3";
 
-export const LIVE = path.join(process.cwd(), "data", "copilot.db");
+// The real database, or the one COPILOT_DB_PATH names (the browser suite's).
+export const LIVE = process.env.COPILOT_DB_PATH || path.join(process.cwd(), "data", "copilot.db");
 
 type Charge = { plan: string | null; category: string; label: string };
 export type Snapshot = {
