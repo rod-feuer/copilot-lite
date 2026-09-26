@@ -352,10 +352,14 @@ test("merchantSummary lists a multi-plan vendor's plans with their monthly total
   detectRecurrings();
   setRecurringSetting("Apple · 26th", { alias: "Apple TV", expectedAmount: 14.99 });
   const v = merchantSummary("Apple");
-  assert.deepEqual(v.planList.map((p) => [p.key, p.name, p.amount, p.cadence, p.ended]), [
+  // The list shows next due, so it is in that order: whichever of the 2nd and
+  // the 26th comes first from today (it read by last charge, "Oct 25" above "Oct 8").
+  const byDue = [...v.planList].sort((a, b) => a.nextDate.localeCompare(b.nextDate)).map((p) => p.key);
+  assert.deepEqual(v.planList.map((p) => p.key), byDue, "next due first");
+  assert.deepEqual(v.planList.map((p) => [p.key, p.name, p.amount, p.cadence, p.ended]).sort(), [
     ["Apple · 26th", "Apple TV", 14.99, "monthly", false],
     ["Apple · 2nd", "2nd", 9.99, "monthly", false],
-  ], "most recently charged first; the user's name and expected amount where set, the key's qualifier where not");
+  ], "the user's name and expected amount where set, the key's qualifier where not");
   assert.equal(v.monthly, 24.98);
   assert.equal(v.recurringDetail?.perCharge, 12.99, "the single-plan figures are still there for a caller that wants them");
 
