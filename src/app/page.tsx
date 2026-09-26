@@ -912,23 +912,30 @@ function CategoryBars({
               </span>
             </div>
             <div className="relative">
-              {/* The bar fills with the category's own color up to budget; only
-                  the overage beyond budget is red, so being over reads as a tip
-                  whose length is the dollars over — not a whole red row. */}
+              {/* One scale for every row, so a bar's length compares categories.
+                  Spend fills in the neutral tone up to the budget, the budget
+                  still left is a lighter track, and only the dollars over it
+                  are red. The category's colour is on its icon, not its bar
+                  (DESIGN.md §2): seven hues read as seven states. */}
               <div className="flex h-2 overflow-hidden rounded-full bg-[var(--background)]">
                 <div
                   className="h-full"
                   style={{
                     width: pct(Math.min(r.total, r.budget ?? r.total)),
-                    background: r.color,
+                    background: "var(--muted)",
                   }}
                 />
-                {over && (
+                {over ? (
                   <div
                     className="h-full"
                     style={{ width: pct(r.total - (r.budget as number)), background: "var(--bad)" }}
                   />
-                )}
+                ) : r.budget != null ? (
+                  <div
+                    className="h-full bg-[var(--muted)]/20"
+                    style={{ width: pct(r.budget - r.total) }}
+                  />
+                ) : null}
               </div>
               {/* Recurring marker: where this category's committed recurring spend
                   sits on the bar, so the discretionary headroom is visible at a
