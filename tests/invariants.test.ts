@@ -2230,6 +2230,58 @@ test("a vendor whose charges disagree cannot be recategorized as a whole", () =>
   );
 });
 
+// WHY: the refusal exists for houses — several plans in different categories.
+// Drawn wider, it locked out edits the user is entitled to: Apple's plans all
+// in one category, a vendor with one mis-filed one-off, and Combine's "one
+// category for both". Each of those returned 409 and moved nothing.
+test("a vendor-wide category edit is refused only for plans in different categories", () => {
+  const subs = addCat("Subs (wide)");
+  const fun = addCat("Fun (wide)");
+  const gyms = addCat("Gyms (wide)");
+  const catsOf = (m: string) =>
+    new Set((getDb().prepare("SELECT categoryId FROM transactions WHERE merchant = ?").all(m) as { categoryId: number }[]).map((t) => t.categoryId));
+
+  // Several plans that agree: the vendor moves, every plan with it.
+  for (const m of ["01", "02", "03", "04"]) {
+    tx("Apple Wide", { amount: -9.99, date: `2026-${m}-02`, categoryId: subs });
+    tx("Apple Wide", { amount: -12.99, date: `2026-${m}-26`, categoryId: subs });
+  }
+  assert.equal(detectRecurrings().filter((r) => r.merchant.startsWith("Apple Wide")).length, 2, "fixture: two plans");
+  assert.equal(merchantSummary("Apple Wide").categoryMixed, false, "the shelf offers the category");
+  assert.equal(applyRecategorize("Apple Wide", fun, null), "vendor", "and the server takes it");
+  assert.deepEqual([...catsOf("Apple Wide")], [fun]);
+
+  // Aimed at one of several plans, only that plan moves, even when they agree.
+  const tvPlan = (getDb().prepare("SELECT recurringId AS id FROM transactions WHERE merchant = 'Apple Wide' AND amount = -12.99").get() as { id: number }).id;
+  assert.equal(applyRecategorize("Apple Wide", subs, tvPlan), "plan");
+  assert.deepEqual([...catsOf("Apple Wide")].sort(), [subs, fun].sort(), "the other plan kept its category");
+
+  // One plan and a stray one-off in another category: the vendor still moves.
+  for (const m of ["01", "02", "03", "04"]) tx("Gym Wide", { amount: -40, date: `2026-${m}-03`, categoryId: subs });
+  tx("Gym Wide", { amount: -15, date: "2026-02-17", categoryId: fun });
+  detectRecurrings();
+  assert.equal(merchantSummary("Gym Wide").categoryMixed, false, "a one-off doesn't hide the vendor's category");
+  assert.equal(applyRecategorize("Gym Wide", gyms, null), "vendor");
+  assert.deepEqual([...catsOf("Gym Wide")], [gyms], "the one-off moved with it");
+
+  // Combine: two vendors in different categories, no plans, then one category.
+  tx("Foo Wide Co", { amount: -5, date: "2026-03-01", categoryId: subs });
+  tx("Foo Wide Company", { amount: -6, date: "2026-03-05", categoryId: fun });
+  linkMerchant("Foo Wide Company", "Foo Wide Co");
+  assert.equal(applyRecategorize("Foo Wide Co", gyms, null), "vendor", "combined vendors without plans are one vendor");
+
+  // Houses, combined: refused unless the user asked for one category for all.
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx("Twin Wide", { amount: -11.99, date: `2026-${m}-08`, categoryId: subs });
+    tx("Twin Wide", { amount: -11.99, date: `2026-${m}-25`, categoryId: fun });
+  }
+  detectRecurrings();
+  assert.equal(applyRecategorize("Twin Wide", gyms, null), "refused");
+  assert.deepEqual([...catsOf("Twin Wide")].sort(), [subs, fun].sort(), "a refusal moves nothing");
+  assert.equal(applyRecategorize("Twin Wide", gyms, null, true), "vendor", "Combine's choice is the user's");
+  assert.deepEqual([...catsOf("Twin Wide")], [gyms]);
+});
+
 // WHY: one bank descriptor can carry two plans the user tells apart by name —
 // "In 529 Dir Ach Contrib" is $200 for one child and $300 for the other, named
 // on the Recurrings page. A charge is linked to its plan, so it carries that

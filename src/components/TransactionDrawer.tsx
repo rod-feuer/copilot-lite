@@ -307,8 +307,9 @@ export function TxDrawerProvider({ children }: { children: ReactNode }) {
         await postJson("/api/recurrings/link", { alias: loser, primary });
         if (alias != null) await postJson("/api/recurrings/settings", { merchant: primary, alias });
         // Unify the category when the user chose to, so a combined vendor isn't
-        // left split across categories. Recategorize covers all linked descriptors.
-        if (categoryId != null) await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId });
+        // left split across categories. Recategorize covers all linked descriptors;
+        // `force` because the user chose one category for both, plans and all.
+        if (categoryId != null) await postJson("/api/recurrings/recategorize", { merchant: primary, categoryId, force: true });
       },
       { success: "Vendors combined", error: "Couldn't combine — please try again" },
       close
