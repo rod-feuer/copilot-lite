@@ -18,3 +18,15 @@ export function billDelta(r: Bill): number | null {
     ? r.paidAmount - r.expectedAmount
     : null;
 }
+
+// The "edited" tag on a charge that is IN a plan marks a placement the plan's
+// own amount doesn't explain (a $95 pinned into an $80 plan). A pinned charge
+// at the plan's amount is where the detector would put it: in a plan the user
+// started, every charge is pinned or gathered by amount, and tagging them all
+// read as something wrong. A charge taken out is always the user's word.
+export function placementEdited(pinned: boolean, amount: number, planAmount: number | null): boolean {
+  if (!pinned) return false;
+  if (planAmount == null) return true;
+  const a = Math.abs(amount), p = Math.abs(planAmount);
+  return Math.abs(a - p) > Math.max(0.5, 0.01 * p);
+}

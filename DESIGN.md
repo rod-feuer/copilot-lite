@@ -108,7 +108,9 @@ and §3 carry over unchanged.
   "excluded", "not detected" or "configure" in the UI. *(Teach, One-pattern)*
 - **Auto vs. edited is always legible.** A field shows whether it holds the
   system's detected value or one the user set ("Auto · Monthly"; an "edited"
-  tag). *(Correct-don't-configure, Honest)*
+  tag). On a charge in a plan the tag marks a placement the plan's amount
+  doesn't explain; a charge at its plan's amount is where the detector would
+  put it, pinned or not. A charge taken out is always edited. *(Correct-don't-configure, Honest)*
 - **Dropdowns — one rule.** Native `<select>` for simple/keyboard cases (category,
   filters, sort), and it must *look* interactive (visible affordance). Custom
   dropdowns only when the content is rich (the combine picker, the emoji grid).
@@ -229,8 +231,8 @@ glyph (a category's vendors: the verb lives in the vendor shelf a tap away);
 then match, the vendor's split rules (each removable, which restores what it
 split), and the action row. The footer link follows the content, not the panel edge. Three shelves,
 one anatomy: a **vendor** (or one of its plans; a vendor with several plans
-lists them with their monthly total in place of the cards, each opening its
-own shelf), a **category**, and a **charge** — the charge's cards are its date (the editor for an effective
+lists them by next due with their monthly total in place of the cards, each
+opening its own shelf, and its recent charges name the plan each is in), a **category**, and a **charge** — the charge's cards are its date (the editor for an effective
 date) and its amount (bank data); its caption carries the category and its
 plan membership; then the note and its verbs (exclude from totals, split),
 the vendor's recent charges and its spend by year (evidence only: the

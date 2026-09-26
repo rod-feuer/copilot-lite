@@ -1,5 +1,6 @@
 "use client";
 
+import { placementEdited } from "@/lib/bills";
 import {
   createContext,
   useCallback,
@@ -887,7 +888,7 @@ function ChargeBody({
             <MembershipPill
               kind="charge"
               inPlan={data.recurringId != null}
-              edited={data.recurringExcluded === 1 || data.recurringIncluded === 1}
+              edited={data.recurringExcluded === 1 || placementEdited(data.recurringIncluded === 1 && data.recurringId != null, data.amount, data.planAmount)}
               onToggle={() => onSetMembership(data.recurringId != null ? "out" : "in")}
             />
             <span className="truncate">{data.planName}</span>
@@ -1201,6 +1202,12 @@ function MerchantBody({
   // the part after the names' shared prefix, so three "Healthy Paws Pet Ins…"
   // don't all truncate alike), else the category.
   const rowText = (() => {
+    // On a vendor with several plans, which plan a charge is in: "In plan"
+    // alone read the same on Benjamin Franklin's Lake and Carmel charges.
+    if (multi) {
+      const planName = new Map(data.planList.map((p) => [p.id, p.name]));
+      return (r: { recurringId: number | null }) => (r.recurringId != null ? planName.get(r.recurringId) : undefined);
+    }
     // Descriptors count as different only when their vendor keys differ —
     // genuinely different labels ("Central In Academy" / "Central Indiana
     // Academ"), not one label with and without a trailing "Payment". Shown
@@ -1211,6 +1218,8 @@ function MerchantBody({
     if (categories.size > 1) return (r: { categoryName: string | null }) => r.categoryName ?? "Uncategorized";
     return () => undefined;
   })();
+  const editedIn = (r: { recurringIncluded: 0 | 1; recurringId: number | null; amount: number; planAmount: number | null }) =>
+    placementEdited(r.recurringIncluded === 1 && r.recurringId != null, r.amount, r.planAmount);
   return (
     <div className="flex flex-col gap-4">
       {d ? (
@@ -1399,7 +1408,7 @@ function MerchantBody({
                   ? undefined
                   : {
                       kind: "charge",
-                      edited: r.recurringExcluded === 1 || r.recurringIncluded === 1,
+                      edited: r.recurringExcluded === 1 || editedIn(r),
                       onToggle: () => onTxSetMembership(r.id, r.recurringId != null ? "out" : "in", data.planKey),
                     }
               }
