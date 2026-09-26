@@ -15,7 +15,8 @@
     "smoke": "node --env-file-if-exists=.env.local scripts/smoke.mjs",
     "test:clock": "node scripts/test-clock.mjs",
     "test:ui": "node scripts/test-ui.mjs",
-    "detect:diff": "node --import tsx scripts/detect-diff.ts"
+    "detect:diff": "node --import tsx scripts/detect-diff.ts",
+    "plans:confirm": "node --import tsx scripts/confirm-plans.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
