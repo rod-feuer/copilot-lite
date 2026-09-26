@@ -1159,6 +1159,60 @@ async function shelfSettings(browser) {
   });
 }
 
+// A budget row carries one colour signal: red, on its bar and its verdict,
+// when it is over. The bar was the category's colour on one row and amber or
+// red on the next, and a flat "90% spent" amber fired late in every month,
+// when 90% is on pace. The category's colour is on its badge.
+async function budgetBarColour(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
+    const month = day(0, 1).slice(0, 7);
+    const set = await page.evaluate(async (month) => {
+      const cats = await (await fetch(`/api/categories?month=${month}`)).json();
+      const spent = cats.filter((c) => c.kind === "expense" && c.budget == null && !c.excludeFromTotals && c.total > 0).sort((a, b) => b.total - a.total);
+      if (spent.length < 2) return { error: `need two unbudgeted expense categories with spend this month, have ${spent.length}` };
+      const [over, near] = spent;
+      const patch = (id, budget) => fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget, period: "monthly" }) });
+      await patch(over.id, Math.max(1, Math.floor(over.total / 2))); // over
+      await patch(near.id, Math.ceil(near.total / 0.95)); // 95% spent: the old amber
+      return { over: over.name, near: near.name, ids: [over.id, near.id] };
+    }, month);
+    if (set.error) { record("budget colour", "fixture", false, set.error); return; }
+    await page.goto(BASE + "/categories", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-budget-fill]");
+    const rows = await page.evaluate(() => {
+      const probe = (v) => { const e = document.createElement("span"); e.style.color = `var(${v})`; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; };
+      const bad = probe("--bad"), fg = probe("--foreground");
+      const probeBg = (v) => { const e = document.createElement("span"); e.style.background = v; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
+      const [mutedBg, badBg] = [probeBg("var(--muted)"), probeBg("var(--bad)")];
+      return [...document.querySelectorAll("[data-drawer-row]")].filter((r) => r.querySelector("[data-budget-fill]")).map((r) => {
+        const fill = getComputedStyle(r.querySelector("[data-budget-fill]")).backgroundColor;
+        const spentEl = [...r.querySelectorAll("span.tabular-nums")].find((e) => /^\$[\d,]+$/.test(e.textContent.trim()));
+        return {
+          text: r.innerText,
+          fill: fill === mutedBg ? "muted" : fill === badBg ? "bad" : fill,
+          spent: spentEl ? (getComputedStyle(spentEl).color === fg ? "foreground" : getComputedStyle(spentEl).color === bad ? "bad" : getComputedStyle(spentEl).color) : "none",
+        };
+      });
+    });
+    await page.evaluate(async (ids) => {
+      for (const id of ids) await fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget: null }) });
+    }, set.ids);
+    const find = (n) => rows.find((r) => r.text.includes(n));
+    const over = find(set.over), near = find(set.near);
+    const wrong = rows.filter((r) => r.fill !== (/ over\b/.test(r.text) ? "bad" : "muted"));
+    record("budget colour", "every budget bar is neutral, and red exactly when its row says over",
+      rows.length >= 2 && wrong.length === 0,
+      `${rows.length} bars: ${rows.map((r) => `${r.text.split("\n")[0]}=${r.fill}`).join(", ")}`);
+    record("budget colour", "a category at 95% of its budget is not flagged: neutral bar, spent figure in the text colour",
+      !!near && near.fill === "muted" && near.spent === "foreground",
+      near ? `${set.near}: bar ${near.fill}, spent ${near.spent}` : `${set.near} not listed`);
+    record("budget colour", "an over-budget category is red on its bar and its verdict, not on its spent figure",
+      !!over && over.fill === "bad" && / over\b/.test(over.text) && over.spent === "foreground",
+      over ? `${set.over}: bar ${over.fill}, spent ${over.spent}` : `${set.over} not listed`);
+  });
+}
+
 async function moneyColour(browser) {
   // The colour of the amount in the row that names `who`, on the current page.
   const colourOf = (page, who) => page.evaluate((who) => {
@@ -1612,7 +1666,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["vendor header category", vendorHeaderCategory], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["budget colour", budgetBarColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }
