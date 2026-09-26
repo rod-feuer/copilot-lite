@@ -92,6 +92,7 @@ export type Membership = { kind: "charge" | "vendor"; onToggle: () => void; edit
 export function ShelfRow({
   date,
   name,
+  pill,
   amount,
   sign,
   muted,
@@ -107,6 +108,7 @@ export function ShelfRow({
 }: {
   date: string;
   name?: string; // omitted when every row in the list would say the same thing
+  pill?: string; // the day a plan bills, when a vendor carries several
   amount: number;
   sign?: boolean;
   muted?: boolean;
@@ -143,6 +145,14 @@ export function ShelfRow({
             <span className="w-3.5 shrink-0" aria-hidden />
           )}
           <span className="w-11 shrink-0 tabular-nums text-[var(--muted)]">{shortDatePad(date)}</span>
+          {pill && (
+            <span
+              data-plan-day
+              className={`shrink-0 rounded-full border border-[var(--border)] px-2 py-px text-[11px] font-medium tabular-nums ${muted ? "text-[var(--muted)]" : ""}`}
+            >
+              {pill}
+            </span>
+          )}
           {name && (
             <Tooltip
               label={name}

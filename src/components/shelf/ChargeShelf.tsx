@@ -203,13 +203,12 @@ export function ChargeBody({
         )}
       </div>
 
-      {/* Evidence: what this vendor usually costs. The last five charges,
-          the open one marked; a row steps the shelf to that charge. A charge
-          that doesn't count reads muted, as on the vendor shelf. The vendor's
-          shelf is the way to the full history and its plan. */}
+      {/* Evidence for "is this the usual amount?". One plan: the vendor's
+          charges. Several plans: this plan only — the other plan would read
+          as this one. The vendor shelf still has both, and the one-offs. */}
       <div>
         <div className="stat-label mb-2">
-          Recent from this vendor
+          {data.scopedToPlan ? "Recent in this plan" : "Recent from this vendor"}
           {data.vendorCount > data.recent.length ? ` · ${data.recent.length} of ${data.vendorCount}` : ""}
         </div>
         <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list data-charge-recent>

@@ -140,8 +140,9 @@ export default function RecurringsPage() {
 
   async function recategorize(r: Rec, categoryId: number | null) {
     const merchant = r.vendor;
-    // A split series ("Netflix · 26th") recategorizes only its own charges.
-    const recurringId = r.vendor !== r.merchant ? r.id : undefined;
+    // Always the plan's own id. The server moves the whole vendor only when
+    // its charges already share a category; otherwise this stays on the plan.
+    const recurringId = r.id;
     await mutate(
       () => postJson("/api/recurrings/recategorize", { merchant, categoryId, recurringId }),
       { error: "Couldn't recategorize — please try again" }

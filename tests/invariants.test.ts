@@ -12,6 +12,7 @@ import { importCsv } from "../src/lib/import";
 import {
   listTransactions,
   merchantSummary,
+  applyRecategorize,
   categoriesWithTotals,
   setRecurringSetting,
   setTransactionRecurringExcluded,
@@ -1955,6 +1956,28 @@ test("transactionById: the vendor's plan, and recent charges across descriptors 
   assert.equal(transactionById(999999), null);
 });
 
+// WHY: Benjamin Franklin posts two $11.99 plans under one vendor. The Carmel
+// charge's shelf listed the 8th's charges and a one-off beside it, so they
+// read as Carmel's. With several plans, the list is this plan only; a charge
+// in no plan still shows the vendor, because it has no plan to scope to.
+test("transactionById recent list is this plan when the vendor has several", () => {
+  for (const d of ["2026-01-02", "2026-02-02", "2026-03-02", "2026-04-02"]) tx("Apple", { amount: -9.99, date: d });
+  for (const d of ["2026-01-26", "2026-02-26", "2026-03-26", "2026-04-26"]) tx("Apple", { amount: -12.99, date: d });
+  tx("Apple", { amount: -1299, date: "2026-03-15", hash: "phone" });
+  detectRecurrings();
+  const idOf = (date: string, amount: number) =>
+    (getDb().prepare("SELECT id FROM transactions WHERE merchant = 'Apple' AND date = ? AND amount = ?").get(date, amount) as { id: number }).id;
+
+  const carmel = transactionById(idOf("2026-04-02", -9.99))!;
+  assert.equal(carmel.scopedToPlan, true);
+  assert.ok(carmel.recent.every((r) => r.amount === -9.99), "the other plan and the one-off are not this plan");
+  assert.equal(carmel.vendorCount, 4, "the count is the plan's charges, not the vendor's");
+
+  const phone = transactionById(idOf("2026-03-15", -1299))!;
+  assert.equal(phone.scopedToPlan, false, "a charge in no plan has no plan to scope to");
+  assert.ok(phone.recent.some((r) => r.amount === -12.99), "its list is still the vendor's");
+});
+
 // WHY: the charge's shelf shows what its vendor costs a year, as evidence. It
 // must be the vendor's own figures — every linked descriptor, no excluded
 // charge, a split counted once — or the two shelves would state different
@@ -2166,6 +2189,47 @@ test("a handoff keeps the side that carries the user's settings, and stays dismi
   assert.equal(handoffSuggestions(new Set()).length, 0);
 });
 
+// WHY: Ben Franklin's charges are Carmel Home and Lake Home. A category edit
+// on the vendor would move both, and teach the next import to keep doing it.
+// The edit is refused. Aimed at one plan, only that plan moves. A vendor
+// whose charges already agree still moves as a whole.
+test("a vendor whose charges disagree cannot be recategorized as a whole", () => {
+  const lake = addCat("Lake Home (plumb)");
+  const carmel = addCat("Carmel Home (plumb)");
+  const plumbing = addCat("Plumbing (plumb)");
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx("Ben Plumb", { amount: -11.99, date: `2026-${m}-08`, categoryId: lake });
+    tx("Ben Plumb", { amount: -11.99, date: `2026-${m}-25`, categoryId: carmel });
+  }
+  const plans = detectRecurrings().filter((r) => r.merchant.startsWith("Ben Plumb"));
+  assert.equal(plans.length, 2, "fixture: two plans");
+  assert.equal(merchantSummary("Ben Plumb").categoryMixed, true);
+  assert.equal(applyRecategorize("Ben Plumb", plumbing, null), "refused");
+  const catOf = (day: string) =>
+    (getDb().prepare("SELECT categoryId FROM transactions WHERE merchant = 'Ben Plumb' AND date LIKE ?").get(`%-${day}`) as { categoryId: number }).categoryId;
+  assert.equal(catOf("08"), lake, "the 8th stayed");
+  assert.equal(catOf("25"), carmel, "the 25th stayed");
+
+  const planId = (day: string) =>
+    (getDb().prepare("SELECT recurringId AS id FROM transactions WHERE merchant = 'Ben Plumb' AND date LIKE ?").get(`%-${day}`) as { id: number }).id;
+  assert.equal(applyRecategorize("Ben Plumb", plumbing, planId("25")), "plan");
+  assert.equal(catOf("25"), plumbing, "the 25th moved");
+  assert.equal(catOf("08"), lake, "the 8th stayed");
+  for (const p of plans) {
+    const n = (getDb().prepare("SELECT COUNT(*) AS n FROM transactions WHERE recurringId = ? AND excluded = 0").get(p.id) as { n: number }).n;
+    assert.equal(merchantSummary("Ben Plumb", p.merchant).count, n, "opening the plan is that plan, even when its key is the vendor's name");
+  }
+
+  for (const m of ["01", "02", "03", "04"]) tx("City Water", { amount: -40, date: `2026-${m}-03`, categoryId: lake });
+  detectRecurrings();
+  assert.equal(merchantSummary("City Water").categoryMixed, false);
+  assert.equal(applyRecategorize("City Water", plumbing, null), "vendor");
+  assert.ok(
+    (getDb().prepare("SELECT categoryId FROM transactions WHERE merchant = 'City Water'").all() as { categoryId: number }[]).every((t) => t.categoryId === plumbing),
+    "one category: the vendor still moves together"
+  );
+});
+
 // WHY: one bank descriptor can carry two plans the user tells apart by name —
 // "In 529 Dir Ach Contrib" is $200 for one child and $300 for the other, named
 // on the Recurrings page. A charge is linked to its plan, so it carries that
@@ -2198,11 +2262,23 @@ test("a charge takes its plan's name when the user named the plan", () => {
   assert.ok(found.every((r) => r.amount === -200));
   assert.equal(transactionsSummary({ q: "henry" }).count, 6, "the count above the list agrees with the list");
   assert.equal(listTransactions({ q: "529 dir" }).length, 12, "the bank's name still finds both");
+  assert.deepEqual(
+    merchantSummary(v).planList.map((p) => p.day).sort(),
+    ["18th · $200", "18th · $300"],
+    "two plans on one day: the pill adds the amount"
+  );
 
   // a charge the user took out of the plan is no longer that plan's
   setTransactionRecurringExcluded(id("h200-09"), true);
   detectRecurrings();
   assert.equal(transactionById(id("h200-09"))!.displayName, v);
+
+  // The statement lists every charge of the vendor. Naming it from the newest
+  // row put "529 Contribution - Henry" over the $300 plan too.
+  const statement = transactionsSummary({ vendor: v });
+  assert.equal(statement.vendorName, merchantSummary(v).displayName, "the statement wears the vendor's name");
+  assert.notEqual(statement.vendorName, "529 Contribution - Henry");
+  assert.equal(transactionsSummary({}).vendorName, undefined, "a mixed list has no vendor to name");
 });
 
 // WHY: a bank can fold two bills into one new name. "Sofi Lending Loan Paymt"

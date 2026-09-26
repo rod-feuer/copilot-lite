@@ -1,5 +1,5 @@
 import { splitDriftFor, splitRules, splitRulesFor, type SplitDrift } from "./splits";
-import { isSeriesKey, seriesVendor, seriesKey, amountLabel } from "./series";
+import { isSeriesKey, seriesVendor, seriesKey, amountLabel, dayLabel, SERIES_SEP } from "./series";
 import { displayMerchant, merchantKey } from "./merchant";
 import {
   getDb,
@@ -432,9 +432,11 @@ export type ChargeDetail = TransactionRow & {
   recurringIncluded: 0 | 1;
   planKey: string | null;
   planName: string | null;
-  // The vendor's last few charges (all its descriptors, split parents left
-  // out): the evidence for the charge's verbs — is this amount the usual one?
+  // The last few charges that answer "is this amount the usual one?". One
+  // plan under the vendor: every descriptor. Several plans: only this plan,
+  // so the other plan's charges don't read as this one.
   recent: { id: number; date: string; amount: number; excluded: 0 | 1; recurringId: number | null }[];
+  scopedToPlan: boolean;
   vendorCount: number;
   // What the vendor costs a year: read-only evidence, the same figures as the
   // vendor's shelf. The vendor's controls stay on the vendor's shelf.
@@ -474,15 +476,28 @@ export function transactionById(id: number): ChargeDetail | null {
       )
       .get(...variants) as { merchant: string } | undefined);
   const notParent = "NOT EXISTS (SELECT 1 FROM transactions s WHERE s.hash LIKE t.hash || ':s%')";
+  // A vendor with several plans: this charge's list is its plan. The other
+  // plan, and charges in no plan, stay on the vendor shelf.
+  const planCount = (
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT recurringId) AS n FROM transactions
+         WHERE merchant IN (${ph}) AND recurringId IS NOT NULL`
+      )
+      .get(...variants) as { n: number }
+  ).n;
+  const scopedToPlan = row.recurringId != null && planCount > 1;
+  const scopeSql = scopedToPlan ? `t.merchant IN (${ph}) AND t.recurringId = ?` : `t.merchant IN (${ph})`;
+  const scopeArgs: (string | number)[] = scopedToPlan ? [...variants, row.recurringId as number] : [...variants];
   const recent = db
     .prepare(
       `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.amount, t.excluded, t.recurringId
-       FROM transactions t WHERE t.merchant IN (${ph}) AND ${notParent}
+       FROM transactions t WHERE ${scopeSql} AND ${notParent}
        ORDER BY COALESCE(t.effectiveDate, t.date) DESC, t.id DESC LIMIT 5`
     )
-    .all(...variants) as ChargeDetail["recent"];
+    .all(...scopeArgs) as ChargeDetail["recent"];
   const vendorCount = (
-    db.prepare(`SELECT COUNT(*) AS n FROM transactions t WHERE t.merchant IN (${ph}) AND ${notParent}`).get(...variants) as { n: number }
+    db.prepare(`SELECT COUNT(*) AS n FROM transactions t WHERE ${scopeSql} AND ${notParent}`).get(...scopeArgs) as { n: number }
   ).n;
   return {
     ...row,
@@ -490,6 +505,7 @@ export function transactionById(id: number): ChargeDetail | null {
     planKey: plan?.merchant ?? null,
     planName: plan ? (settings[plan.merchant]?.alias ?? displayMerchant(plan.merchant)) : null,
     recent,
+    scopedToPlan,
     vendorCount,
     byYear: spendByYear(`merchant IN (${ph})`, variants),
     splitDrift: splitDriftFor(row),
@@ -501,7 +517,7 @@ export function transactionById(id: number): ChargeDetail | null {
 // header's "N shown" and net figure can't be derived from the loaded rows.
 // Net mirrors the dashboard: excluded rows and excluded-from-totals categories
 // don't count.
-export function transactionsSummary(opts: TxFilter): { count: number; net: number } {
+export function transactionsSummary(opts: TxFilter): { count: number; net: number; vendorName?: string } {
   const db = getDb();
   ensureRecurringTxExclusions(db);
   const { whereSql, params } = buildTxFilter(opts);
@@ -514,7 +530,12 @@ export function transactionsSummary(opts: TxFilter): { count: number; net: numbe
        ${whereSql}`
     )
     .get(params) as { count: number; net: number };
-  return { count: row.count, net: Number(row.net.toFixed(2)) };
+  // The statement lists the vendor. Its heading is the vendor's name — the
+  // same one as the vendor shelf — not the newest charge's plan.
+  const vendorName = opts.vendor
+    ? merchantDisplayName(opts.vendor, getRecurringSettings(), getMerchantLinks())
+    : undefined;
+  return { count: row.count, net: Number(row.net.toFixed(2)), vendorName };
 }
 
 // Recurring-detection overrides (merchant -> 'force' | 'mute'), applied by
@@ -716,11 +737,19 @@ export function merchantSummary(merchant: string, series?: string | null) {
   const db = getDb();
   const variants = merchantVariants(merchant);
   const ph = variants.map(() => "?").join(",");
+  const links = getMerchantLinks();
+  const seriesHit = series
+    ? (db
+        .prepare("SELECT id, merchant, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
+        .get(series) as { id: number; merchant: string; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
+    : undefined;
+  // A plan whose key is the vendor's own name (the 8th, beside "· $11.99")
+  // is still one plan. Scoping used to require the "·" marker, so opening it
+  // showed the whole vendor and a category edit moved both houses.
   const seriesRow =
-    series && isSeriesKey(series)
-      ? (db
-          .prepare("SELECT id, merchant, categoryId, cadence, avgAmount, nextDate, lastDate FROM recurrings WHERE merchant = ?")
-          .get(series) as { id: number; merchant: string; categoryId: number | null; cadence: string; avgAmount: number; nextDate: string; lastDate: string } | undefined)
+    seriesHit &&
+    canonicalMerchant(seriesVendor(seriesHit.merchant), links) === canonicalMerchant(merchant, links)
+      ? seriesHit
       : undefined;
   const seriesId = seriesRow?.id ?? null;
   // Scope: the vendor's descriptors, and — for one plan — only its linked charges.
@@ -730,7 +759,6 @@ export function merchantSummary(merchant: string, series?: string | null) {
   // The descriptor variants with per-name counts. canUnlink is true only for
   // explicit merchant_links aliases (those can be split off); the canonical and
   // the automatic first-2-token key-rollups have no link to remove.
-  const links = getMerchantLinks();
   const settings = getRecurringSettings();
   // Per-vendor settings (alias, expected amount, cadence) live on the canonical
   // merchant, so they read consistently no matter which descriptor opened the
@@ -923,39 +951,60 @@ export function merchantSummary(merchant: string, series?: string | null) {
   // Every plan this vendor's charges belong to, for a shelf about the vendor
   // rather than one plan: Apple carries six subscriptions, and the shelf that
   // borrowed the most recent one's cards read "$128 per year" for a vendor
-  // that costs $790. Named as the user named them, else by the key's own
-  // qualifier ("2nd", "$10.69"). `monthly` is what the live plans add up to.
-  const planList = seriesRow
+  // that costs $790. `day` is the pill that tells the plans apart — the day
+  // each one bills, plus the amount when two share a day. `name` stays the
+  // user's name for the plan's own shelf. `monthly` is what the live plans
+  // add up to.
+  const planRows = seriesRow
     ? []
-    : (
-        db
-          .prepare(
-            `SELECT id, merchant, cadence, avgAmount, lastDate FROM recurrings
-             WHERE id IN (SELECT DISTINCT recurringId FROM transactions WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
-             ORDER BY lastDate DESC`
-          )
-          .all(...variants) as { id: number; merchant: string; cadence: string; avgAmount: number; lastDate: string }[]
-      ).map((r) => {
-        const s = settings[r.merchant];
-        const cadence = s?.cadence ?? r.cadence;
-        const qualifier = isSeriesKey(r.merchant) ? r.merchant.slice(seriesVendor(r.merchant).length + 3) : displayMerchant(r.merchant);
-        return {
-          id: r.id,
-          key: r.merchant,
-          name: s?.alias ?? qualifier,
-          amount: s?.expectedAmount ?? Number(Math.abs(r.avgAmount).toFixed(2)),
-          cadence,
-          nextDate: nextDueFromToday(s?.nextDate ?? nextAfter(r.lastDate, cadence), cadence),
-          ended: recurringEnded(s?.endedDate, r.lastDate),
-        };
-      });
+    : (db
+        .prepare(
+          `SELECT id, merchant, cadence, avgAmount, lastDate FROM recurrings
+           WHERE id IN (SELECT DISTINCT recurringId FROM transactions WHERE merchant IN (${ph}) AND recurringId IS NOT NULL)
+           ORDER BY lastDate DESC`
+        )
+        .all(...variants) as { id: number; merchant: string; cadence: string; avgAmount: number; lastDate: string }[]);
+  const dayNum = (merchant: string, lastDate: string) => {
+    // The key carries the day when the detector split on it ("· 26th").
+    // A plan that kept the vendor's name, or was split on an amount both
+    // plans share ("· $11.99"), is told apart by the day it last billed.
+    if (isSeriesKey(merchant)) {
+      const first = merchant.slice(seriesVendor(merchant).length + SERIES_SEP.length).split(SERIES_SEP)[0];
+      const m = /^(\d+)(?:st|nd|rd|th)$/.exec(first);
+      if (m) return Number(m[1]);
+    }
+    return Number(lastDate.slice(8, 10));
+  };
+  const dayCount = new Map<number, number>();
+  for (const r of planRows) {
+    const d = dayNum(r.merchant, r.lastDate);
+    dayCount.set(d, (dayCount.get(d) ?? 0) + 1);
+  }
+  const planList = planRows.map((r) => {
+    const s = settings[r.merchant];
+    const cadence = s?.cadence ?? r.cadence;
+    const qualifier = isSeriesKey(r.merchant) ? r.merchant.slice(seriesVendor(r.merchant).length + SERIES_SEP.length) : displayMerchant(r.merchant);
+    const amount = s?.expectedAmount ?? Number(Math.abs(r.avgAmount).toFixed(2));
+    const d = dayNum(r.merchant, r.lastDate);
+    return {
+      id: r.id,
+      key: r.merchant,
+      name: s?.alias ?? qualifier,
+      day: (dayCount.get(d) ?? 0) > 1 ? `${dayLabel(d)} · ${amountLabel(amount)}` : dayLabel(d),
+      amount,
+      cadence,
+      nextDate: nextDueFromToday(s?.nextDate ?? nextAfter(r.lastDate, cadence), cadence),
+      ended: recurringEnded(s?.endedDate, r.lastDate),
+    };
+  });
   const monthly = Number(planList.filter((p) => !p.ended).reduce((a, p) => a + (p.amount * (PER_YEAR[p.cadence as Cadence] ?? 12)) / 12, 0).toFixed(2));
-  // Which plan a Recent row belongs to. The vendor shelf lists several plans;
-  // "In plan" alone doesn't say which one.
-  const planNameById = new Map(planList.map((p) => [p.id, p.name]));
+  // Which plan a Recent row belongs to. The day pill says which one; the
+  // name stays available for a shelf that still speaks the plan's name.
+  const planById = new Map(planList.map((p) => [p.id, p]));
   const recentNamed = recent.map((r) => ({
     ...r,
-    planName: r.recurringId != null ? (planNameById.get(r.recurringId) ?? null) : null,
+    planName: r.recurringId != null ? (planById.get(r.recurringId)?.name ?? null) : null,
+    planDay: r.recurringId != null ? (planById.get(r.recurringId)?.day ?? null) : null,
   }));
   // Charges in no plan, outside the mixed last-8. Six monthly plans fill that
   // window, and a device purchase from last month never appears. Their own
@@ -979,7 +1028,7 @@ export function merchantSummary(merchant: string, series?: string | null) {
           .all(
             ...variants,
             ...recent.filter((r) => r.recurringId == null).map((r) => r.id)
-          ) as typeof recent).map((r) => ({ ...r, planName: null as string | null }));
+          ) as typeof recent).map((r) => ({ ...r, planName: null as string | null, planDay: null as string | null }));
   return {
     merchant,
     series: seriesRow ? (series as string) : null, // the plan this summary is scoped to, if any
@@ -1035,6 +1084,17 @@ export function merchantSummary(merchant: string, series?: string | null) {
     categoryName: cat?.name ?? null,
     categoryColor: cat?.color ?? null,
     categoryIcon: cat?.icon ?? null,
+    // More than one category among the charges in view. The vendor shelf
+    // must not offer one category for all of them.
+    categoryMixed:
+      (
+        db
+          .prepare(
+            `SELECT COUNT(DISTINCT COALESCE(categoryId, -1)) AS n FROM transactions
+             WHERE ${scope} AND excluded = 0`
+          )
+          .get(...scopeArgs) as { n: number }
+      ).n > 1,
     recent: recentNamed,
     otherCharges,
   };
@@ -1085,6 +1145,46 @@ export function setMerchantCategory(merchant: string, categoryId: number | null)
   return getDb()
     .prepare("UPDATE transactions SET categoryId = ? WHERE merchant = ?")
     .run(categoryId, merchant).changes;
+}
+
+// A category edit from the vendor, rather than from one plan. "vendor" moves
+// every charge and is only allowed when they already share a category and
+// the vendor has at most one plan. "plan" moves that plan's charges. "refused"
+// is a vendor-wide edit that would pull two houses into one bucket.
+export function applyRecategorize(
+  merchant: string,
+  categoryId: number | null,
+  recurringId?: number | null
+): "vendor" | "plan" | "refused" {
+  const db = getDb();
+  const variants = merchantVariants(merchant);
+  const ph = variants.map(() => "?").join(",");
+  const plans = (
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT recurringId) AS n FROM transactions
+         WHERE merchant IN (${ph}) AND recurringId IS NOT NULL`
+      )
+      .get(...variants) as { n: number }
+  ).n;
+  const categories = (
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT COALESCE(categoryId, -1)) AS n FROM transactions
+         WHERE merchant IN (${ph}) AND excluded = 0`
+      )
+      .get(...variants) as { n: number }
+  ).n;
+  const whole = plans <= 1 && categories <= 1;
+  if (!whole) {
+    if (recurringId == null) return "refused";
+    setSeriesCategory(recurringId, categoryId);
+    return "plan";
+  }
+  for (const v of variants) setMerchantCategory(v, categoryId);
+  if (recurringId != null)
+    db.prepare("UPDATE recurrings SET categoryId = ? WHERE id = ?").run(categoryId, recurringId);
+  return "vendor";
 }
 
 // Override the accounting month/day of a transaction (e.g. a mortgage that
