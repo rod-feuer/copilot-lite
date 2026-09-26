@@ -6,8 +6,9 @@
 // category would change. `npm run plans:confirm -- --apply` backs the real file
 // up to data/copilot-before-plans-<time>.db first, then does the same to it.
 //
-// A single-plan vendor's plan keeps its name as its key, which is already
-// stable, so it stays as it is (confirmPlan leaves it). Where a vendor's
+// `-- --active` also confirms every plan charged in the last three months,
+// told something or not (step 8: the bills on screen stay bills once new
+// detections wait for acceptance). Where a vendor's
 // confirmed plans sit in different categories (Ben Franklin's Carmel and Lake
 // houses), each plan keeps its own category, so its next charges take it too.
 import path from "node:path";
@@ -15,6 +16,7 @@ import { LIVE, copyOf, tempCopyPath, removeCopy, snapshot, report } from "./plan
 
 async function main() {
   const apply = process.argv.includes("--apply");
+  const active = process.argv.includes("--active");
   let target: string;
   if (apply) {
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
@@ -38,9 +40,13 @@ async function main() {
     ...(db.prepare("SELECT DISTINCT plan AS key FROM recurring_tx_inclusions").all() as { key: string }[]),
   ].map((r) => r.key);
   const live = new Set((db.prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[]).map((r) => r.merchant));
-  const keys = [...new Set(told)].sort();
+  const recent = active
+    ? (db.prepare("SELECT merchant AS key FROM recurrings WHERE lastDate >= date('now', '-3 months')").all() as { key: string }[]).map((r) => r.key)
+    : [];
+  const keys = [...new Set([...told, ...recent])].sort();
   const orphans = keys.filter((k) => !live.has(k));
-  const confirmed = db.transaction(() => keys.filter((k) => live.has(k) && confirmPlan(k)))();
+  const already = new Set((db.prepare("SELECT key FROM plans").all() as { key: string }[]).map((r) => r.key));
+  const confirmed = db.transaction(() => keys.filter((k) => live.has(k) && !already.has(k) && confirmPlan(k)))();
 
   // Houses: a vendor whose confirmed plans sit in different categories.
   const rows = db
@@ -63,11 +69,10 @@ async function main() {
   }
   detectRecurrings();
 
-  console.log(`\nConfirmed (${confirmed.length})`);
+  console.log(`\nConfirmed now (${confirmed.length}); ${already.size} already were`);
   for (const k of confirmed) console.log(`  ${k}`);
   console.log(`\nKept their own category (${own.length})`);
   for (const k of own) console.log(`  ${k}`);
-  console.log(`\nLeft as they are: ${keys.length - confirmed.length - orphans.length} single-plan vendors, already keyed by their name`);
   if (orphans.length) {
     console.log(`\nSettings or pins on a plan that no longer exists (${orphans.length}), not confirmed:`);
     for (const k of orphans) console.log(`  ${k}`);

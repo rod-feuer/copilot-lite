@@ -235,25 +235,18 @@ export function resetRecurringOverrides(merchant: string) {
 }
 
 // Confirm a plan: freeze it as it stands now, from its live recurrings row.
-// A plan key that could be rebuilt differently needs it: one split off a
-// vendor ("V · 25th"), or a vendor's bare key while it carries other plans.
-// A single-plan vendor's bare key is its own name and already stable, so it
-// is left derived. Confirming twice keeps the first: a confirmed plan
-// changes only through its own edits. False when there is nothing to confirm.
+// Any plan: a single-plan vendor is keyed by its own name today, but when it
+// gains a second plan ("Chase Ach" drawing a second payment) the detector
+// splits it and re-keys both by day; confirmed, the plan holding its charges
+// keeps the name. Confirming twice keeps the first: a confirmed plan changes
+// only through its own edits. False when there is nothing to confirm.
 export function confirmPlan(key: string): boolean {
   const db = getDb();
   const live = db
     .prepare("SELECT merchant, avgAmount, cadence, lastDate FROM recurrings WHERE merchant = ?")
     .get(key) as { merchant: string; avgAmount: number; cadence: string; lastDate: string } | undefined;
   if (!live) return false;
-  const links = getMerchantLinks();
-  const vendor = canonicalMerchant(seriesVendor(key), links);
-  if (!isSeriesKey(key)) {
-    const siblings = (db.prepare("SELECT merchant FROM recurrings").all() as { merchant: string }[]).filter(
-      (r) => canonicalMerchant(seriesVendor(r.merchant), links) === vendor
-    ).length;
-    if (siblings < 2) return false;
-  }
+  const vendor = canonicalMerchant(seriesVendor(key), getMerchantLinks());
   const added = db
     .prepare(
       `INSERT OR IGNORE INTO plans (key, vendor, amount, day, cadence, categoryId, anchorDate)
