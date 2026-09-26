@@ -19,6 +19,8 @@ import { MonthPicker, ImportButton, SeedButton, SyncBankButton } from "@/compone
 import { RecurringGlyph, RECURRING_LABEL, recurringState } from "@/components/RecurringGlyph";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { Money } from "@/components/Money";
+import { BudgetBar, paceOf } from "@/components/BudgetBar";
+import { InfoHint } from "@/components/InfoHint";
 import { SummaryCard } from "@/components/SummaryCard";
 import { rowButtonProps, ROW_FOCUS } from "@/components/rowButton";
 import { AmountCell, CategoryProperty } from "@/components/RowCells";
@@ -370,7 +372,10 @@ export default function DashboardPage() {
 
             <div className="card p-4 lg:col-span-2">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-[15px] font-semibold">Spending by category</h3>
+                <h3 className="flex items-center gap-1 text-[15px] font-semibold">
+                  Spending by category
+                  <InfoHint text="Each bar is the category's budget. The line marks how far through the month we are: a bar short of it is under pace, one past it is ahead." />
+                </h3>
                 <SeeAll href="/categories" />
               </div>
               <CategoryBars rows={data.byCategory} month={month} />
@@ -870,12 +875,7 @@ function CategoryBars({
   const shelfActive = useShelfActive();
   if (rows.length === 0)
     return <p className="text-[13px] text-[var(--muted)]">No spending this month.</p>;
-  // Scale to the largest of spend, budget, or recurring baseline across rows so
-  // over-budget bars and the recurring marker all land in range.
-  const max = Math.max(
-    ...rows.map((r) => Math.max(r.total, r.budget ?? 0, r.recurringBaseline))
-  );
-  const pct = (v: number) => `${(v / max) * 100}%`;
+  const pace = paceOf(month);
   const fmt = (v: number) => usd(v, { cents: false });
   const shown = rows.slice(0, 7);
   return (
@@ -911,51 +911,8 @@ function CategoryBars({
                 <DrillChevron className="-mr-1 h-3.5 w-3.5" />
               </span>
             </div>
-            <div className="relative">
-              {/* One scale for every row, so a bar's length compares categories.
-                  Spend fills in the neutral tone up to the budget, the budget
-                  still left is a lighter track, and only the dollars over it
-                  are red. The category's colour is on its icon, not its bar
-                  (DESIGN.md §2): seven hues read as seven states. */}
-              <div className="flex h-2 overflow-hidden rounded-full bg-[var(--background)]">
-                <div
-                  className="h-full"
-                  style={{
-                    width: pct(Math.min(r.total, r.budget ?? r.total)),
-                    background: "var(--muted)",
-                  }}
-                />
-                {over ? (
-                  <div
-                    className="h-full"
-                    style={{ width: pct(r.total - (r.budget as number)), background: "var(--bad)" }}
-                  />
-                ) : r.budget != null ? (
-                  <div
-                    className="h-full bg-[var(--muted)]/20"
-                    style={{ width: pct(r.budget - r.total) }}
-                  />
-                ) : null}
-              </div>
-              {/* Recurring marker: where this category's committed recurring spend
-                  sits on the bar, so the discretionary headroom is visible at a
-                  glance. Instant Tooltip (not native `title`, which lags ~1s); the
-                  thin line gets a wider invisible hover zone so it's easy to land. */}
-              {r.recurringBaseline > 0 && (
-                <div
-                  className="absolute top-0 -translate-x-1/2"
-                  style={{ left: pct(Math.min(r.recurringBaseline, max)) }}
-                >
-                  <HoverTip
-                    label={`Recurring bills: ${fmt(r.recurringBaseline)}/mo expected`}
-                    onlyIfTruncated={false}
-                    className="flex h-2 w-2 cursor-help justify-center"
-                  >
-                    <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)]/40" />
-                  </HoverTip>
-                </div>
-              )}
-            </div>
+            {/* Its own budget is the bar; a category without one has none. */}
+            {r.budget != null && <BudgetBar spent={r.total} budget={r.budget} pace={pace} />}
           </>
         );
         return r.categoryId != null ? (
