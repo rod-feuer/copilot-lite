@@ -482,11 +482,13 @@ async function restingActions(browser) {
     const shelfMenus = await page.$$eval(`${shelfSel} button[aria-label='Edit transaction']`, (bs) => bs.length);
     record("resting actions", "shelf · no row menu on the category shelf", shelfMenus === 0, `${shelfMenus} menus`);
     // One shelf anatomy (DESIGN.md §2): at most two property cards, and the
-    // way out follows the content rather than sitting in a pinned footer.
+    // way out follows the content rather than sitting in a pinned footer. The
+    // link is found by where it goes: its label carries the count, or names
+    // the vendor on a plan's shelf.
     for (const [route, label] of [["/categories", "category shelf"], ["/recurrings", "vendor shelf"]]) {
       await page.goto(BASE + route, { waitUntil: "networkidle2" });
       await page.click("[data-drawer-row]"); await shelfIs(page, true); await shelfSettled(page);
-      const a = await page.evaluate((sel) => { const s = document.querySelector(sel); const cards = s.querySelectorAll("[data-property-card]").length; const link = [...s.querySelectorAll("a")].find((x) => /View all transactions/.test(x.textContent)); const inScroll = !!link && !link.closest("footer") && !!link.closest(".overflow-y-auto"); return { cards, inScroll }; }, shelfSel);
+      const a = await page.evaluate((sel) => { const s = document.querySelector(sel); const cards = s.querySelectorAll("[data-property-card]").length; const link = s.querySelector("a[href^='/transactions?']"); const inScroll = !!link && !link.closest("footer") && !!link.closest(".overflow-y-auto"); return { cards, inScroll }; }, shelfSel);
       record("resting actions", `${label} · ≤2 property cards; the View-all link follows the content`, a.cards <= 2 && a.inScroll, `${a.cards} cards, link in scroll body=${a.inScroll}`);
       await page.keyboard.press("Escape");
     }
