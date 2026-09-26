@@ -1266,26 +1266,25 @@ async function dashboardBars(browser) {
   });
 }
 
-// Durable plans: naming a plan confirms it, so it keeps its charges when
-// the bill moves. Streamly's $15.49 plan bills the 19th; named, a charge that
-// posts on the 23rd is still that plan's after a re-scan, under its name.
-// Unnamed, the detector's day parts leave a lone 23rd out.
+// Durable plans: naming a plan confirms it through the real routes, and a
+// re-scan keeps its key, its name and its charges. (That the key survives
+// the bill moving day or price is in the unit tests: a browser fixture can't
+// move a bill.)
 async function namedPlanStays(browser) {
   await withPage(browser, async (page) => {
     await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
     const key = "Streamly · 19th";
-    const r = await page.evaluate(async (key, date) => {
+    const r = await page.evaluate(async (key) => {
       const read = async () => (await (await fetch(`/api/merchant?name=Streamly&series=${encodeURIComponent(key)}`)).json());
       const before = await read();
       await fetch("/api/recurrings/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ merchant: key, alias: "Streamly Premium" }) });
-      await fetch("/api/import", { method: "POST", body: `Date,Name,Amount,Account\n${date},Streamly,-15.49,Credit` });
       await fetch("/api/recompute", { method: "POST" });
       const after = await read();
       await fetch("/api/recurrings/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ merchant: key, clear: true }) });
       return { series: after.series, name: after.displayName, before: before.count, after: after.count };
-    }, key, day(-1, 23));
-    record("named plan", "a named plan keeps its name and takes a charge that posts days late, after a re-scan",
-      r.series === key && r.name === "Streamly Premium" && r.after === r.before + 1,
+    }, key);
+    record("named plan", "a named plan keeps its key, its name and its charges after a re-scan",
+      r.series === key && r.name === "Streamly Premium" && r.after === r.before && r.before > 0,
       `${r.series}: "${r.name}", ${r.before} → ${r.after} charges`);
   });
 }

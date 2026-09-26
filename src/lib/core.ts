@@ -850,100 +850,37 @@ function rebuildRecurrings(): Recurring[] {
   };
   const linked = (plans: Plan[]) => plans.reduce((n, p) => n + p.txs.length, 0);
 
-  // Plans the user confirmed (durable plans). Each keeps the key it had and
-  // takes its charges before the detector sees the vendor: a pinned charge,
-  // then any charge at its amount (1%, or 50 cents) near its billing day (the
-  // timing test's slack: 10 days for monthly and longer, a third of the
-  // period for weekly and every two weeks). The day window keeps one
-  // confirmed house from taking the other's charges at the same price (Ben
-  // Franklin's $11.99 on the 8th and the 25th); between two confirmed plans
-  // at one amount the nearest day decides, and a plan without a charge yet
-  // that month is preferred, so a late posting doesn't land in the plan
-  // already paid. Only the charges left over are planned by the rules below.
-  // A cadence the user set on the plan is its rhythm for the day window too.
-  const confirmed = (
-    db
-      .prepare("SELECT key, vendor, amount, cadence, anchorDate, categoryId FROM plans")
-      .all() as { key: string; vendor: string; amount: number; cadence: Recurring["cadence"]; anchorDate: string; categoryId: number | null }[]
-  ).map((p) => ({ ...p, cadence: (settings[p.key]?.cadence as Recurring["cadence"] | null | undefined) ?? p.cadence }));
+  // Plans the user confirmed (durable plans). The detector groups every
+  // charge as it always has: its tuning for real drift (a price rise, a
+  // variable bill, usage on top of a plan, a re-split) stays in charge of
+  // which charges belong together. A confirmed plan is an identity: after a
+  // vendor is planned, each detected plan takes the confirmed key whose
+  // charges it shares most, so the plan's name, settings, pins and category
+  // stay with it when its bill moves day or price and the detected key would
+  // change ("Ben · 25th" billing the 27th). Matching confirmed plans to new
+  // charges by amount and day instead lost a new $82.99 plan to a
+  // neighbouring one and left price changes and re-splits in no plan.
+  const confirmed = db.prepare("SELECT key, vendor, categoryId FROM plans").all() as {
+    key: string;
+    vendor: string;
+    categoryId: number | null;
+  }[];
   const members = new Map(
     (db.prepare("SELECT hash, key FROM plan_charges").all() as { hash: string; key: string }[]).map((m) => [m.hash, m.key])
   );
-  const keepCharge = db.prepare("INSERT OR IGNORE INTO plan_charges (hash, key) VALUES (?, ?)");
+  // A confirmed plan's charges are what the detector grouped for it this time.
+  const keepCharge = db.prepare("INSERT OR REPLACE INTO plan_charges (hash, key) VALUES (?, ?)");
   const confirmedByCanon = new Map<string, typeof confirmed>();
   for (const p of confirmed) {
     const canon = canonicalMerchant(p.vendor, links);
     confirmedByCanon.set(canon, [...(confirmedByCanon.get(canon) ?? []), p]);
   }
-  const claimConfirmed = (plans: typeof confirmed, txs: Tx[]): Map<string, Tx[]> => {
-    const got = new Map<string, Tx[]>(plans.map((p) => [p.key, []]));
-    const rest: Tx[] = [];
-    for (const t of txs) {
-      // The user's pin first, then the plan's own charges, whatever they cost.
-      const k = included.get(t.hash) ?? members.get(t.hash);
-      if (k && got.has(k)) got.get(k)!.push(t);
-      else rest.push(t);
-    }
-    const often = (p: (typeof plans)[number]) => p.cadence === "weekly" || p.cadence === "biweekly";
-    const filled = new Map(plans.map((p) => [p.key, new Set(got.get(p.key)!.map((t) => t.date.slice(0, 7)))]));
-    const center = (p: (typeof plans)[number]) =>
-      settings[p.key]?.expectedAmount != null ? Math.sign(p.amount) * settings[p.key]!.expectedAmount! : p.amount;
-    const fits = (p: (typeof plans)[number], t: Tx) =>
-      Math.sign(t.amount) === Math.sign(p.amount) &&
-      Math.abs(t.amount - center(p)) <= Math.max(0.5, 0.01 * Math.abs(center(p)));
-    const dayGap = (p: (typeof plans)[number], t: Tx) => {
-      if (often(p)) {
-        const period = CADENCE_DAYS[p.cadence];
-        const off = ((((Date.parse(t.date) - Date.parse(p.anchorDate)) / DAY) % period) + period) % period;
-        return Math.min(off, period - off);
-      }
-      const d = Math.abs(Number(t.date.slice(8, 10)) - Number(p.anchorDate.slice(8, 10)));
-      return Math.min(d, 30 - d);
-    };
-    const window = (p: (typeof plans)[number]) => (often(p) ? Math.floor(0.35 * CADENCE_DAYS[p.cadence]) : 10);
-    for (const t of [...rest].sort((x, y) => y.date.localeCompare(x.date))) {
-      const open = (p: (typeof plans)[number]) => often(p) || !filled.get(p.key)!.has(t.date.slice(0, 7));
-      const best = plans
-        .filter((p) => fits(p, t) && dayGap(p, t) <= window(p))
-        .sort((a, b) => Number(open(b)) - Number(open(a)) || dayGap(a, t) - dayGap(b, t) || a.key.localeCompare(b.key))[0];
-      if (!best) continue;
-      got.get(best.key)!.push(t);
-      filled.get(best.key)!.add(t.date.slice(0, 7));
-    }
-    for (const list of got.values()) list.sort((x, y) => x.date.localeCompare(y.date));
-    return got;
-  };
   // A confirmed plan follows its bill: its newest charge sets its day.
   const followPlan = db.prepare("UPDATE plans SET day = ?, anchorDate = ? WHERE key = ?");
 
   for (const [name, canons] of byVendor) {
-    const mine = canons.flatMap((c) => confirmedByCanon.get(c) ?? []);
-    const firm: Plan[] = [];
-    let rowsOf = (c: string) => byCanon.get(c)!;
-    if (mine.length) {
-      const vendorTxs = canons
-        .flatMap((c) => byCanon.get(c)!)
-        .filter((t) => !excluded.has(t.hash))
-        .sort((a, b) => a.date.localeCompare(b.date));
-      const taken = new Set<string>();
-      for (const [key, txs] of claimConfirmed(mine, vendorTxs)) {
-        if (!txs.length) continue; // no charge yet: it waits, confirmed, for one
-        for (const t of txs) {
-          taken.add(t.hash);
-          keepCharge.run(t.hash, key);
-        }
-        const plan = mine.find((p) => p.key === key)!;
-        firm.push({ key, txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })), cadence: plan.cadence, categoryId: plan.categoryId });
-        const newest = txs[txs.length - 1].date;
-        followPlan.run(Number(newest.slice(8, 10)), newest, key);
-      }
-      rowsOf = (c: string) => byCanon.get(c)!.filter((t) => !taken.has(t.hash));
-      // The forced pass below reads a vendor's charges whole; it would fold
-      // the confirmed plans and the purchases into one plan.
-      for (const c of canons) created.add(c);
-    }
     // Each descriptor on its own, as the user has seen and corrected it.
-    const apart = canons.map((c) => planVendor(c, rowsOf(c), overrides[c]));
+    const apart = canons.map((c) => planVendor(c, byCanon.get(c)!, overrides[c]));
     let chosen = apart.flat();
     let together: Plan[] | null = null;
     if (canons.length > 1) {
@@ -963,7 +900,7 @@ function rebuildRecurrings(): Recurring[] {
       // date order for the gap math and the last/next charge.
       together = planVendor(
         name,
-        canons.flatMap(rowsOf).sort((a, b) => a.date.localeCompare(b.date)),
+        canons.flatMap((c) => byCanon.get(c)!).sort((a, b) => a.date.localeCompare(b.date)),
         status
       );
       if (linked(together) > linked(chosen) && together.length >= chosen.length) {
@@ -998,31 +935,7 @@ function rebuildRecurrings(): Recurring[] {
     // start their own plan below — and so do the plan's charges at their
     // amount that post off its day (the 22nd's, once its mark is lifted),
     // which the catch-all took only because nothing else had.
-    // Beside a confirmed plan, a detected plan is one of several: with the
-    // confirmed plan's charges set aside it would read as the vendor's only
-    // plan and take the vendor's bare name ("Ben" in place of "Ben · 8th"),
-    // so it keeps its billing day. It can't wear a confirmed plan's key: then
-    // it is named by its amount.
-    const firmKeys = new Set(mine.map((p) => p.key));
-    const firmCanons = new Set(mine.map((p) => canonicalMerchant(p.vendor, links)));
-    for (const p of chosen) {
-      if (!mine.length) break;
-      // Only the confirmed plan's own descriptor: another descriptor's plan
-      // under the same vendor keeps its name ("Youtube Tv Go G.co Helppay"
-      // beside a confirmed "Youtube Tv · 3rd").
-      if (!isSeriesKey(p.key) && firmCanons.has(p.key)) {
-        const days = new Map<number, number>();
-        for (const t of p.txs) days.set(Number(t.date.slice(8, 10)), (days.get(Number(t.date.slice(8, 10))) ?? 0) + 1);
-        const day = [...days].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0][0];
-        p.key = seriesKey(p.key, dayLabel(day));
-        p.inherit = undefined;
-      }
-      if (firmKeys.has(p.key)) {
-        const amounts = p.txs.map((t) => Math.abs(t.amount)).sort((a, b) => a - b);
-        p.key = seriesKey(seriesVendor(p.key), amountLabel(amounts[amounts.length >> 1]));
-      }
-    }
-    let emitted = new Set([...chosen.map((p) => p.key), ...firmKeys]);
+    let emitted = new Set(chosen.map((p) => p.key));
     const bucket = (t: Tx) => Math.min(Number(t.date.slice(8, 10)), 28);
     for (const p of chosen) {
       const isMine = (t: Tx) => { const k = included.get(t.hash); return !!k && k !== p.key && !emitted.has(k); };
@@ -1052,8 +965,8 @@ function rebuildRecurrings(): Recurring[] {
         p.events = p.txs.map((t) => ({ date: t.date, amount: t.amount }));
       }
     }
-    emitted = new Set([...chosen.map((p) => p.key), ...firmKeys]);
-    const claimed = new Set([...chosen, ...firm].flatMap((p) => p.txs.map((t) => t.hash)));
+    emitted = new Set(chosen.map((p) => p.key));
+    const claimed = new Set(chosen.flatMap((p) => p.txs.map((t) => t.hash)));
     const vendorRows = canons.flatMap((c) => byCanon.get(c)!);
     const started = new Map<string, Tx[]>();
     for (const t of vendorRows) {
@@ -1067,7 +980,41 @@ function rebuildRecurrings(): Recurring[] {
       for (const t of txs) claimed.add(t.hash);
       chosen.push({ key, txs, events: txs.map((t) => ({ date: t.date, amount: t.amount })), cadence: settings[key]?.cadence ?? "monthly" });
     }
-    for (const p of [...firm, ...chosen]) commit(p);
+    // Each confirmed plan of this vendor goes to the detected plan holding
+    // most of its charges (a pin already on the key breaks a tie). A
+    // detected plan that wears a confirmed key without holding its charges
+    // is another plan: it is named by its amount.
+    const mine = canons.flatMap((c) => confirmedByCanon.get(c) ?? []);
+    if (mine.length) {
+      const pairs: { p: Plan; k: (typeof mine)[number]; n: number }[] = [];
+      for (const p of chosen)
+        for (const k of mine) {
+          const n = p.txs.filter((t) => members.get(t.hash) === k.key).length + (p.key === k.key ? 0.5 : 0);
+          if (n > 0) pairs.push({ p, k, n });
+        }
+      pairs.sort((a, b) => b.n - a.n);
+      const given = new Set<string>();
+      const placed = new Set<Plan>();
+      for (const { p, k } of pairs) {
+        if (given.has(k.key) || placed.has(p)) continue;
+        p.key = k.key;
+        p.inherit = undefined;
+        p.categoryId = k.categoryId;
+        given.add(k.key);
+        placed.add(p);
+      }
+      for (const p of chosen) {
+        if (placed.has(p) || !mine.some((k) => k.key === p.key)) continue;
+        const amounts = p.txs.map((t) => Math.abs(t.amount)).sort((a, b) => a - b);
+        p.key = seriesKey(seriesVendor(p.key), amountLabel(amounts[amounts.length >> 1]));
+      }
+      for (const p of placed) {
+        for (const t of p.txs) keepCharge.run(t.hash, p.key);
+        const newest = p.txs.reduce((a, t) => (t.date > a ? t.date : a), "");
+        if (newest) followPlan.run(Number(newest.slice(8, 10)), newest, p.key);
+      }
+    }
+    for (const p of chosen) commit(p);
   }
 
   // User-forced recurrings: create one for each 'force' merchant the auto pass

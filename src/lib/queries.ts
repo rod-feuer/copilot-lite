@@ -289,17 +289,6 @@ export function unconfirmPlansFor(merchant: string) {
   for (const k of keys) unconfirmPlan(k);
 }
 
-// The user put a charge in a plan: that confirms it. When the charge is the
-// plan's newest, the plan follows it to its price (a rise's first charge), so
-// next month's charge at the new price joins on its own.
-export function planTookCharge(key: string, txId: number) {
-  if (!confirmPlan(key)) return;
-  const db = getDb();
-  const t = db
-    .prepare("SELECT COALESCE(effectiveDate, date) AS date, amount FROM transactions WHERE id = ?")
-    .get(txId) as { date: string; amount: number } | undefined;
-  if (t) db.prepare("UPDATE plans SET amount = ? WHERE key = ? AND anchorDate <= ?").run(t.amount, key, t.date);
-}
 
 // Merchant strings to match for a text search: every descriptor of any vendor
 // whose own name, original bank descriptor (rawMerchant), canonical name, or
