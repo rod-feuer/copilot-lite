@@ -1213,6 +1213,59 @@ async function budgetBarColour(browser) {
   });
 }
 
+// The dashboard's category bars share one scale, so length compares
+// categories. They were filled with each category's colour, seven hues for
+// seven rows, and the budget wasn't drawn, so a category at 93% of its budget
+// looked a third used. Spend is neutral, the budget left is a lighter track,
+// and only the dollars over are red.
+async function dashboardBars(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    const month = day(0, 1).slice(0, 7);
+    const set = await page.evaluate(async (month) => {
+      const cats = await (await fetch(`/api/categories?month=${month}`)).json();
+      const spent = cats.filter((c) => c.kind === "expense" && c.budget == null && !c.excludeFromTotals && c.total > 0).sort((a, b) => b.total - a.total);
+      if (spent.length < 2) return { error: `need two unbudgeted expense categories with spend this month, have ${spent.length}` };
+      const [over, under] = spent;
+      const patch = (id, budget) => fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget, period: "monthly" }) });
+      await patch(over.id, Math.max(1, Math.floor(over.total / 2)));
+      await patch(under.id, Math.ceil(under.total * 2));
+      return { over: over.name, under: under.name, ids: [over.id, under.id], colours: cats.map((c) => c.color) };
+    }, month);
+    if (set.error) { record("dashboard bars", "fixture", false, set.error); return; }
+    await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+    await page.waitForFunction(() => [...document.querySelectorAll("h3")].some((h) => /Spending by category/.test(h.textContent)));
+    // Found by the card's structure and read by colour, so the check means
+    // the same on any version of the bar.
+    const rows = await page.evaluate((colours) => {
+      const probe = (v) => { const e = document.createElement("span"); e.style.background = v; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
+      const catBg = new Set(colours.map(probe));
+      const bad = probe("var(--bad)");
+      const card = [...document.querySelectorAll(".card")].find((c) => [...c.querySelectorAll("h3")].some((h) => /Spending by category/.test(h.textContent)));
+      return [...card.querySelectorAll("[data-drawer-row]")].map((row) => {
+        const bar = row.querySelector(".h-2.overflow-hidden.rounded-full");
+        const segs = [...bar.children].map((c) => ({ bg: getComputedStyle(c).backgroundColor, w: c.getBoundingClientRect().width }));
+        const fill = segs[0]?.bg;
+        return {
+          text: row.innerText,
+          catColour: segs.some((g) => catBg.has(g.bg) && g.bg !== bad),
+          over: segs.some((g) => g.bg === bad && g.w > 0),
+          left: segs.slice(1).filter((g) => g.bg !== bad && g.bg !== fill).reduce((a, g) => a + g.w, 0),
+          badFigure: !!row.querySelector(".text-\\[var\\(--bad\\)\\]"),
+        };
+      });
+    }, set.colours);
+    await page.evaluate(async (ids) => {
+      for (const id of ids) await fetch(`/api/categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budget: null }) });
+    }, set.ids);
+    const find = (n) => rows.find((r) => r.text.includes(n));
+    const over = find(set.over), under = find(set.under);
+    record("dashboard bars", "no category bar is filled with a category's colour", rows.length >= 2 && rows.every((r) => !r.catColour), `${rows.length} bars; coloured: ${rows.filter((r) => r.catColour).map((r) => r.text).join(", ") || "none"}`);
+    record("dashboard bars", "red only for the dollars over, on the row whose figure says over", !!over && over.over && rows.every((r) => r.over === r.badFigure), over ? `${set.over}: over segment=${over.over}; ${rows.filter((r) => r.over).length} rows with red` : `${set.over} not shown`);
+    record("dashboard bars", "an under-budget category shows the budget it has left", !!under && !under.over && under.left > 0, under ? `${set.under}: left ${Math.round(under.left)}px` : `${set.under} not shown`);
+  });
+}
+
 async function moneyColour(browser) {
   // The colour of the amount in the row that names `who`, on the current page.
   const colourOf = (page, who) => page.evaluate((who) => {
@@ -1664,7 +1717,7 @@ try {
   await loadFixture();
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   for (const [name, fn] of [
-    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
+    ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["dashboard bars", dashboardBars], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["vendor header category", vendorHeaderCategory], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
     ["shelf settings", shelfSettings], ["money colour", moneyColour], ["budget colour", budgetBarColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans],
   ]) {
