@@ -28,6 +28,7 @@ import Shell from "@/components/Shell";
 import { HeaderMenu } from "@/components/HeaderMenu";
 import { useTxDrawer, useCategoryShelf, useShelfActive } from "@/components/TransactionDrawer";
 import { useSyncedRefresh } from "@/components/SyncOnLaunch";
+import { useMonthBoot } from "@/components/useMonthBoot";
 import { useMutation } from "@/components/useMutation";
 // Aliased: `Tooltip` is already taken by recharts' chart tooltip above.
 import { Tooltip as HoverTip } from "@/components/Tooltip";
@@ -40,11 +41,9 @@ type Dash = DashboardData;
 type Tx = TransactionRow;
 
 export default function DashboardPage() {
-  const [months, setMonths] = useState<string[]>([]);
-  const [month, setMonth] = useState<string>("");
+  const { months, setMonths, month, setMonth, status, setStatus, boot } = useMonthBoot();
   const [data, setData] = useState<Dash | null>(null);
   const [recent, setRecent] = useState<Tx[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const openTx = useTxDrawer();
   const shelfActive = useShelfActive();
 
@@ -65,26 +64,15 @@ export default function DashboardPage() {
       // doesn't flash on a transient blip; Retry re-runs the whole boot.
       setStatus("error");
     }
-  }, []);
+  }, [setStatus]);
 
   // Months, then the month's data. Also the Retry path, so a failed months
   // read and a failed dashboard read recover the same way.
-  const boot = useCallback(async () => {
-    setStatus("loading");
-    try {
-      const ms = await getJson<string[]>("/api/months");
-      setMonths(ms);
-      setMonth((cur) => cur || defaultMonth(ms));
-      await load(defaultMonth(ms));
-    } catch {
-      setStatus("error");
-    }
-  }, [load]);
+  const start = useCallback(() => boot(load), [boot, load]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void boot();
-  }, [boot]);
+    void start();
+  }, [start]);
 
   // After a sync: months may have grown, so re-read them, then reload the
   // month on screen (or the default if none is chosen yet).
@@ -96,7 +84,7 @@ export default function DashboardPage() {
     } catch {
       setStatus("error");
     }
-  }, [load, month]);
+  }, [load, month, setMonths, setStatus]);
   useSyncedRefresh(refresh);
 
   function changeMonth(m: string) {
@@ -148,7 +136,7 @@ export default function DashboardPage() {
         </>
       }
     >
-      {status === "error" && <LoadError what="the dashboard" onRetry={boot} />}
+      {status === "error" && <LoadError what="the dashboard" onRetry={start} />}
       {status === "loading" && !data && <LoadingRows />}
       {status !== "error" && data && (
         <div className="flex flex-col gap-6">
@@ -307,21 +295,21 @@ export default function DashboardPage() {
                   <AreaChart data={data.pace.series} margin={{ left: -8, right: 8, top: 4 }}>
                     <defs>
                       <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6d5efc" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#6d5efc" stopOpacity={0} />
+                        <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <XAxis
                       dataKey="date"
                       tickFormatter={shortDate}
-                      tick={{ fontSize: 11, fill: "#9aa0a6" }}
+                      tick={{ fontSize: 11, fill: "var(--muted)" }}
                       axisLine={false}
                       tickLine={false}
                       minTickGap={28}
                     />
                     <YAxis
                       domain={[0, "auto"]}
-                      tick={{ fontSize: 11, fill: "#9aa0a6" }}
+                      tick={{ fontSize: 11, fill: "var(--muted)" }}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(v) => `$${Math.round(v / 1000)}k`}
@@ -351,7 +339,7 @@ export default function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="prev"
-                      stroke="#c3c6cc"
+                      stroke="var(--border)"
                       strokeWidth={1.5}
                       fill="none"
                       connectNulls
@@ -361,7 +349,7 @@ export default function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="actual"
-                      stroke="#6d5efc"
+                      stroke="var(--accent)"
                       strokeWidth={2}
                       fill="url(#g)"
                       connectNulls={false}
@@ -369,7 +357,7 @@ export default function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="projected"
-                      stroke="#6d5efc"
+                      stroke="var(--accent)"
                       strokeWidth={2}
                       strokeDasharray="5 4"
                       fill="none"
@@ -499,18 +487,18 @@ function ChartLegend({
   return (
     <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--muted)]">
       <span className="flex items-center gap-2">
-        <span className="inline-block h-0.5 w-3.5 rounded-full bg-[#6d5efc]" />
+        <span className="inline-block h-0.5 w-3.5 rounded-full bg-[var(--accent)]" />
         This month
       </span>
       {showProjected && (
         <span className="flex items-center gap-2">
-          <span className="inline-block w-3.5 border-t-2 border-dashed border-[#6d5efc]" />
+          <span className="inline-block w-3.5 border-t-2 border-dashed border-[var(--accent)]" />
           Projected
         </span>
       )}
       {showPrev && (
         <span className="flex items-center gap-2">
-          <span className="inline-block h-0.5 w-3.5 rounded-full bg-[#c3c6cc]" />
+          <span className="inline-block h-0.5 w-3.5 rounded-full bg-[var(--border)]" />
           Last month
         </span>
       )}
@@ -938,7 +926,7 @@ function CategoryBars({
                 {over && (
                   <div
                     className="h-full"
-                    style={{ width: pct(r.total - (r.budget as number)), background: "#e11d48" }}
+                    style={{ width: pct(r.total - (r.budget as number)), background: "var(--bad)" }}
                   />
                 )}
               </div>

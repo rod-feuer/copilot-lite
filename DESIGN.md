@@ -206,7 +206,9 @@ month's net takes its colour.
 **Page anatomy** — header: title, optional one-line subtitle, the month picker
 in one slot on every page, page actions to its right (on a phone the title
 and the picker hold one row and the subtitle sits beneath both). Then the summary card
-(the month). Then the toolbar — search, filters, sort — sitting directly
+(the month). Transactions is the statement, and the exception: its count and net
+live in the header subtitle, because a second card above a day-by-day list would
+bury the statement. Then the toolbar — search, filters, sort — sitting directly
 above the list it acts on, never in the header and never above the summary.
 Then the list, in one of two patterns: **sections** for a handful of groups
 (a small-caps title on the page above one card of rows — Recurrings, the

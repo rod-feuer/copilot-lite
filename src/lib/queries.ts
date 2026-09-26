@@ -950,6 +950,36 @@ export function merchantSummary(merchant: string, series?: string | null) {
         };
       });
   const monthly = Number(planList.filter((p) => !p.ended).reduce((a, p) => a + (p.amount * (PER_YEAR[p.cadence as Cadence] ?? 12)) / 12, 0).toFixed(2));
+  // Which plan a Recent row belongs to. The vendor shelf lists several plans;
+  // "In plan" alone doesn't say which one.
+  const planNameById = new Map(planList.map((p) => [p.id, p.name]));
+  const recentNamed = recent.map((r) => ({
+    ...r,
+    planName: r.recurringId != null ? (planNameById.get(r.recurringId) ?? null) : null,
+  }));
+  // Charges in no plan, outside the mixed last-8. Six monthly plans fill that
+  // window, and a device purchase from last month never appears. Their own
+  // short list — only on the vendor shelf, never on one plan's.
+  const otherCharges =
+    seriesRow || planList.length < 2
+      ? []
+      : (db
+          .prepare(
+            `SELECT t.id, COALESCE(t.effectiveDate, t.date) AS date, t.merchant, t.amount, t.account, t.excluded,
+               COALESCE(c.excludeFromTotals, 0) AS categoryExcluded, c.name AS categoryName,
+               t.categoryId, t.recurringId,
+               (t.hash IN (SELECT hash FROM recurring_tx_exclusions)) AS recurringExcluded,
+               (t.hash IN (SELECT hash FROM recurring_tx_inclusions)) AS recurringIncluded
+             FROM transactions t LEFT JOIN categories c ON t.categoryId = c.id
+             WHERE t.merchant IN (${ph}) AND t.excluded = 0 AND t.recurringId IS NULL
+               ${recent.some((r) => r.recurringId == null) ? `AND t.id NOT IN (${recent.filter((r) => r.recurringId == null).map(() => "?").join(",")})` : ""}
+               AND NOT EXISTS (SELECT 1 FROM transactions s WHERE s.hash LIKE t.hash || ':s%')
+             ORDER BY COALESCE(t.effectiveDate, t.date) DESC LIMIT 8`
+          )
+          .all(
+            ...variants,
+            ...recent.filter((r) => r.recurringId == null).map((r) => r.id)
+          ) as typeof recent).map((r) => ({ ...r, planName: null as string | null }));
   return {
     merchant,
     series: seriesRow ? (series as string) : null, // the plan this summary is scoped to, if any
@@ -1005,7 +1035,8 @@ export function merchantSummary(merchant: string, series?: string | null) {
     categoryName: cat?.name ?? null,
     categoryColor: cat?.color ?? null,
     categoryIcon: cat?.icon ?? null,
-    recent,
+    recent: recentNamed,
+    otherCharges,
   };
 }
 

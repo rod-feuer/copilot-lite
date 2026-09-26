@@ -765,7 +765,7 @@ async function openVendorFromCharge(browser) {
     let vendor = false; try { await page.waitForSelector(`${shelfSel} button::-p-text(Combine)`, { timeout: 8000 }); vendor = true; } catch {}
     const back = await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button`)].some((b) => /Back/.test(b.textContent)), shelfSel);
     const onVendor = vendor ? await years(shelfSel) : null;
-    // From the vendor's shelf, "Show all N →" is a link to this same page with
+    // From the vendor's shelf, "View all N transactions →" is a link to this same page with
     // ?vendor=. The page read its filters once, on load, so the URL changed and
     // nothing else did: the shelf stayed open over an unfiltered list.
     if (vendor) {
@@ -776,11 +776,11 @@ async function openVendorFromCharge(browser) {
       await shelfIs(page, true); await shelfSettled(page);
       await page.click(`${shelfSel} [data-open-vendor]`);
       await page.waitForSelector(`${shelfSel} button::-p-text(Combine)`, { timeout: 8000 });
-      const label = await page.evaluate((sel) => { const a = [...document.querySelectorAll(`${sel} a`)].find((a) => /^Show all \d+/.test(a.textContent)); a?.click(); return a?.textContent.trim() ?? null; }, shelfSel);
+      const label = await page.evaluate((sel) => { const a = [...document.querySelectorAll(`${sel} a`)].find((a) => /^View all \d+ transactions/.test(a.textContent)); a?.click(); return a?.textContent.trim() ?? null; }, shelfSel);
       // Key on the URL, not the count: the unfiltered list may already show N rows.
       await page.waitForFunction((n) => /vendor=Netflix/.test(location.search) && !document.querySelector("[data-shelf]") && new RegExp(`\\b${n} shown`).test(document.querySelector("header")?.innerText ?? ""), { timeout: 8000 }, label?.match(/\d+/)?.[0] ?? "-").catch(() => {});
       const after = await page.evaluate(() => ({ url: location.search, shelf: !!document.querySelector("[data-shelf]"), shown: document.querySelector("header")?.innerText.match(/(\d+) shown/)?.[1] ?? "" }));
-      record("open vendor", "\"Show all N\" from a charge on the Transactions page shows that vendor's statement, shelf closed", !!label && after.url === "?vendor=Netflix" && !after.shelf && after.shown === label.match(/\d+/)?.[0] && after.shown !== shown, `clicked "${label}": ${after.url}, shelf=${after.shelf}, ${shown} shown → ${after.shown}`);
+      record("open vendor", "\"View all N transactions\" from a charge on the Transactions page shows that vendor's statement, shelf closed", !!label && after.url === "?vendor=Netflix" && !after.shelf && after.shown === label.match(/\d+/)?.[0] && after.shown !== shown, `clicked "${label}": ${after.url}, shelf=${after.shelf}, ${shown} shown → ${after.shown}`);
     }
     record("open vendor", "a charge's shelf shows its vendor's spend by year, the same figures as the vendor's shelf", !!onCharge && onCharge.rows.length >= 2 && /vendor/i.test(onCharge.title) && !!onVendor && onCharge.rows.join("|") === onVendor.rows.join("|"), onCharge ? `charge: ${onCharge.rows.join(", ")}; vendor: ${onVendor ? onVendor.rows.join(", ") : "none"}` : "no by-year block on the charge");
     record("open vendor", "the vendor's name in a charge's header opens the vendor's shelf, with Back", c.name.length > 0 && vendor && back, `"${c.name}" → vendor shelf=${vendor}, back=${back}`);
@@ -1414,7 +1414,7 @@ async function recurringsRow(browser) {
     // the verbs live in the shelf, in §2 vocabulary, reached from the row
     await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]"); await shelfSettled(page); // the verbs arrive with the data, not the skeleton
     const shelfText = await page.evaluate(() => document.querySelector("[data-shelf]").innerText);
-    record("recurrings row", "the row opens the shelf, which holds Not recurring + Mark as ended", shelfText.includes("Not recurring") && shelfText.includes("Mark as ended"), "both present");
+    record("recurrings row", "the row opens the shelf, which holds Not recurring + Mark ended", shelfText.includes("Not recurring") && shelfText.includes("Mark ended"), "both present");
     await page.keyboard.press("Escape");
 
     // "+ New category…" in a row's dropdown creates the category in place and

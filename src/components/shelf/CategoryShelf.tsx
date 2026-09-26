@@ -103,7 +103,7 @@ export function CategoryBody({
       {data.upcoming.length > 0 && (
         <div>
           <div className="stat-label mb-2">Upcoming this month</div>
-          <ul className="divide-y divide-[var(--border)] rounded-lg border border-dashed border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list>
             {data.upcoming.map((u) => (
               <ShelfRow
                 key={u.merchant}
@@ -112,11 +112,13 @@ export function CategoryBody({
                 amount={-u.amount}
                 muted
                 recurring="in"
+                flush
+                showGlyph
               />
             ))}
             {/* Total — a column-foot total: the label sits under the name column,
                 the amount under the amount column, mirroring the rows above. */}
-            <li className="flex w-full items-center gap-2 px-3 py-2 text-xs">
+            <li className="-mx-2 flex items-center gap-2 px-2 py-2 text-xs">
               <span className="w-3.5 shrink-0" aria-hidden />
               <span className="w-11 shrink-0" aria-hidden />
               <span className="flex-1 font-medium text-[var(--muted)]">Total expected</span>
@@ -131,11 +133,9 @@ export function CategoryBody({
       <div>
         <div className="stat-label mb-2">Transactions</div>
         {data.transactions.length === 0 ? (
-          <p className="rounded-lg border border-[var(--border)] p-4 text-center text-xs text-[var(--muted)]">
-            No transactions this month.
-          </p>
+          <p className="text-xs text-[var(--muted)]">No transactions this month.</p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)] border-y border-[var(--border)]" data-edge-list>
             {data.transactions.map((t) => (
               <ShelfRow
                 key={t.id}
@@ -147,6 +147,8 @@ export function CategoryBody({
                 excluded={isExcluded}
                 recurring={recurringState(t)}
                 onClick={() => onOpenMerchant(t.merchant)}
+                flush
+                showGlyph
               />
             ))}
           </ul>
@@ -175,3 +177,5 @@ export function CategoryBody({
     </div>
   );
 }
+
+// Calendar months from firstSeen through today (inclusive), clamped to [1, 12]

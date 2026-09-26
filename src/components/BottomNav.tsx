@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV } from "@/components/Sidebar";
 import SignOut from "@/components/SignOut";
+import ThemeToggle from "@/components/ThemeToggle";
 
 // Mobile navigation: a fixed bottom tab bar (the desktop sidebar is hidden below
 // `sm`). Reuses the sidebar's NAV items/icons so the two never drift. Hidden at
@@ -34,6 +35,11 @@ export default function BottomNav({ signOut = false }: { signOut?: boolean }) {
         );
       })}
       {signOut && <SignOut variant="tab" />}
+      {/* The sidebar's theme switch is desktop-only. The tab bar is the chrome
+          that stays on screen while the header scrolls away. */}
+      <div className="flex items-center pr-1">
+        <ThemeToggle compact />
+      </div>
     </nav>
   );
 }
