@@ -2753,8 +2753,8 @@ test("confirming a plan freezes it under its key; a second confirm changes nothi
   assert.deepEqual(keys, ["Ben Frozen · 25th", "Ben Frozen · 8th"], "fixture: two plans split by day");
 
   assert.equal(confirmPlan("Ben Frozen · 25th"), true);
-  const frozen = { key: "Ben Frozen · 25th", vendor: "Ben Frozen", amount: 11.99, day: 25, cadence: "monthly", categoryId: null, anchorDate: "2026-06-25" };
-  assert.deepEqual(planRow("Ben Frozen · 25th"), frozen, "the plan as it stood: a magnitude, its billing day, its newest charge");
+  const frozen = { key: "Ben Frozen · 25th", vendor: "Ben Frozen", amount: -11.99, day: 25, cadence: "monthly", categoryId: null, anchorDate: "2026-06-25" };
+  assert.deepEqual(planRow("Ben Frozen · 25th"), frozen, "the plan as it stood: its signed amount, its billing day, its newest charge");
 
   // The bill moves: July posts on the 27th at a new price, and plans rebuild.
   tx("Ben Frozen", { amount: -12.99, date: "2026-07-27" });
@@ -2781,4 +2781,138 @@ test("confirming a plan freezes it under its key; a second confirm changes nothi
 
   ensurePlans(getDb());
   assert.notEqual(planRow("Twin Bare"), undefined, "ensuring the table again keeps what it holds");
+});
+
+// Confirmed plans take their charges before the detector sees the vendor.
+const planOf = (merchant: string, date: string) =>
+  (getDb()
+    .prepare("SELECT r.merchant AS plan FROM transactions t LEFT JOIN recurrings r ON r.id = t.recurringId WHERE t.merchant = ? AND t.date = ?")
+    .get(merchant, date) as { plan: string | null } | undefined)?.plan ?? null;
+const idOn = (merchant: string, date: string) =>
+  (getDb().prepare("SELECT id FROM transactions WHERE merchant = ? AND date = ?").get(merchant, date) as { id: number }).id;
+
+// WHY: the owner names Ben Franklin's 25th plan "Carmel". When that bill
+// moves to the 27th, the detector rebuilds the plan under a new key and the
+// name is orphaned (the real data holds two such orphans). A confirmed plan
+// keeps its key and takes the moved charges: same plan, same name.
+test("a confirmed plan keeps its key and its charges when the bill moves day", () => {
+  const v = "Ben Moves";
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx(v, { amount: -11.99, date: `2026-${m}-08` });
+    tx(v, { amount: -11.99, date: `2026-${m}-25` });
+  }
+  detectRecurrings();
+  setRecurringSetting(`${v} · 25th`, { alias: "Carmel" });
+  assert.equal(confirmPlan(`${v} · 25th`), true);
+  for (const m of ["07", "08", "09"]) {
+    tx(v, { amount: -11.99, date: `2026-${m}-08` });
+    tx(v, { amount: -11.99, date: `2026-${m}-27` });
+  }
+  const plans = detectRecurrings().filter((r) => r.merchant.startsWith(v));
+  assert.equal(plans.length, 2, `still two plans: ${plans.map((r) => r.merchant).join(", ")}`);
+  assert.equal(planOf(v, "2026-09-27"), `${v} · 25th`, "the moved charge is Carmel's");
+  assert.equal(plans.find((r) => r.merchant === `${v} · 25th`)!.count, 9);
+  assert.equal(planOf(v, "2026-09-08"), `${v} · 8th`, "the other house is untouched");
+  const day = (getDb().prepare("SELECT day FROM plans WHERE key = ?").get(`${v} · 25th`) as { day: number }).day;
+  assert.equal(day, 27, "the plan follows its bill to the 27th");
+});
+
+// WHY: two confirmed plans at one amount are told apart by the day they bill.
+// A charge that posts a day early, or late into the other house's week, must
+// still land in its own house, and a month's second charge goes to the plan
+// not yet paid that month rather than doubling the one that was.
+test("confirmed plans at one amount take charges by billing day, one per month", () => {
+  const v = "Ben Routes";
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx(v, { amount: -11.99, date: `2026-${m}-08` });
+    tx(v, { amount: -11.99, date: `2026-${m}-25` });
+  }
+  detectRecurrings();
+  confirmPlan(`${v} · 8th`);
+  confirmPlan(`${v} · 25th`);
+  tx(v, { amount: -11.99, date: "2026-07-24" }); // a day early
+  tx(v, { amount: -11.99, date: "2026-07-17" }); // late, nearer the 25th, but July's 25th is paid
+  detectRecurrings();
+  assert.equal(planOf(v, "2026-07-24"), `${v} · 25th`);
+  assert.equal(planOf(v, "2026-07-17"), `${v} · 8th`, "the 8th has no July charge yet");
+});
+
+// WHY: Apple bills subscriptions and sells devices under one name. Forced as
+// recurring, the vendor used to become one plan of every charge. Its
+// confirmed subscriptions keep their charges; a purchase, and a refund at a
+// subscription's price, belong to no plan.
+test("a forced vendor's confirmed plans leave its purchases and refunds out", () => {
+  const v = "Apple Firm";
+  for (const m of ["01", "02", "03", "04", "05"]) {
+    tx(v, { amount: -9.99, date: `2026-${m}-02` });
+    tx(v, { amount: -14.99, date: `2026-${m}-26` });
+  }
+  tx(v, { amount: -999, date: "2026-03-15" });
+  tx(v, { amount: -4.99, date: "2026-04-11" });
+  tx(v, { amount: 9.99, date: "2026-05-03" }); // a refund at the iCloud price
+  setRecurringOverride(v, "force");
+  const keys = detectRecurrings().filter((r) => r.merchant.startsWith(v)).map((r) => r.merchant).sort();
+  for (const k of keys) confirmPlan(k);
+  const plans = detectRecurrings().filter((r) => r.merchant.startsWith(v));
+  assert.deepEqual(plans.map((r) => [r.merchant, r.count]).sort(), keys.map((k) => [k, 5]).sort(), "two subscriptions, five charges each");
+  for (const d of ["2026-03-15", "2026-04-11", "2026-05-03"]) assert.equal(planOf(v, d), null, `${d} is in no plan`);
+});
+
+// WHY: a charge the owner puts in a plan is that plan's, whatever its amount
+// (a price rise's first charge), and a detected plan never takes a confirmed
+// plan's key: two plans under one key would share a name and settings.
+test("a pin joins its confirmed plan; a detected plan never takes a confirmed key", () => {
+  const v = "Ben Pinned";
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx(v, { amount: -11.99, date: `2026-${m}-08` });
+    tx(v, { amount: -11.99, date: `2026-${m}-25` });
+  }
+  detectRecurrings();
+  confirmPlan(`${v} · 25th`);
+  tx(v, { amount: -12.99, date: "2026-07-25" });
+  setTransactionRecurringIncluded(idOn(v, "2026-07-25"), `${v} · 25th`);
+  detectRecurrings();
+  assert.equal(planOf(v, "2026-07-25"), `${v} · 25th`, "the pinned charge at the new price");
+  for (const m of ["08", "09", "10", "11"]) tx(v, { amount: -12.99, date: `2026-${m}-25` });
+  const keys = detectRecurrings().filter((r) => r.merchant.startsWith(v)).map((r) => r.merchant);
+  assert.equal(new Set(keys).size, keys.length, `no key twice: ${keys.join(", ")}`);
+  assert.equal(planOf(v, "2026-06-25"), `${v} · 25th`, "the confirmed plan keeps its history");
+});
+
+// WHY: a plan's history is not one amount. The Sofi mortgage paid $4,315.18,
+// then $4,388.48, then $4,397.28 as escrow changed; matched by today's amount
+// alone, confirming it dropped 32 of its 35 charges. A confirmed plan keeps
+// the charges it held, whatever they cost; amount matching is for new ones.
+test("a confirmed plan keeps its history across price changes", () => {
+  const v = "Loan Escrow";
+  const months = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
+  months.forEach((m, i) => tx(v, { amount: i < 6 ? -4315.18 : -4397.28, date: `${m}-01` }));
+  const key = detectRecurrings().find((r) => r.merchant === v)!.merchant;
+  // Ben Franklin-style: one plan of two, so the bare key can be confirmed.
+  for (const m of ["2026-03", "2026-04", "2026-05", "2026-06"]) tx(v, { amount: -52, date: `${m}-21` });
+  const plans = detectRecurrings().filter((r) => r.merchant.startsWith(v));
+  const loan = plans.find((r) => r.count === 12)!;
+  assert.ok(loan, `fixture: the loan plan holds all twelve (${plans.map((r) => `${r.merchant} x${r.count}`).join(", ")}; first ${key})`);
+  setRecurringSetting(loan.merchant, { expectedAmount: 4397.28 });
+  assert.equal(confirmPlan(loan.merchant), true);
+  tx(v, { amount: -4397.28, date: "2026-07-01" });
+  const after = detectRecurrings().find((r) => r.merchant === loan.merchant)!;
+  assert.equal(after.count, 13, "every past payment stays, and July's joins");
+});
+
+// WHY: beside a confirmed plan, a plan the detector reads as the vendor's
+// only one keeps its day ("Ben · 8th", not "Ben"). Another bank descriptor's
+// plan under the same vendor is not that: renaming it ("Youtube Tv Go G.co
+// Helppay" to "· 30th") would orphan whatever the owner set on it.
+test("another descriptor's plan keeps its name beside a confirmed plan", () => {
+  for (const m of ["01", "02", "03", "04", "05", "06"]) {
+    tx("Tube Tv", { amount: -10, date: `2026-${m}-03` });
+    tx("Tube Tv", { amount: -20, date: `2026-${m}-20` });
+    tx("Tube Tv Go Helppay", { amount: -72.98, date: `2026-${m}-28` });
+  }
+  const before = detectRecurrings().map((r) => r.merchant).filter((k) => k.startsWith("Tube Tv")).sort();
+  assert.ok(before.includes("Tube Tv Go Helppay"), `fixture: the other descriptor is its own plan (${before.join(", ")})`);
+  confirmPlan(before.find((k) => k.startsWith("Tube Tv ·"))!);
+  const after = detectRecurrings().map((r) => r.merchant).filter((k) => k.startsWith("Tube Tv")).sort();
+  assert.deepEqual(after, before);
 });

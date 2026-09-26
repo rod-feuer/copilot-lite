@@ -254,16 +254,29 @@ export function confirmPlan(key: string): boolean {
     ).length;
     if (siblings < 2) return false;
   }
-  db.prepare(
-    `INSERT OR IGNORE INTO plans (key, vendor, amount, day, cadence, categoryId, anchorDate)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`
-  ).run(key, vendor, Number(Math.abs(live.avgAmount).toFixed(2)), Number(live.lastDate.slice(8, 10)), live.cadence, live.lastDate);
+  const added = db
+    .prepare(
+      `INSERT OR IGNORE INTO plans (key, vendor, amount, day, cadence, categoryId, anchorDate)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`
+    )
+    .run(key, vendor, Number(live.avgAmount.toFixed(2)), Number(live.lastDate.slice(8, 10)), live.cadence, live.lastDate).changes;
+  // Its charges as they stand: the plan keeps them whatever they cost. Not a
+  // charge of the other sign the detector let in (a refund at a bill's price
+  // posted near its day): a refund is not the bill.
+  if (added)
+    db.prepare(
+      `INSERT OR IGNORE INTO plan_charges (hash, key)
+       SELECT t.hash, ? FROM transactions t JOIN recurrings r ON r.id = t.recurringId
+       WHERE r.merchant = ? AND (t.amount < 0) = (r.avgAmount < 0)`
+    ).run(key, key);
   return true;
 }
 
 // Undo a confirmation (Not recurring, Reset all): the plan is derived again.
 export function unconfirmPlan(key: string) {
-  getDb().prepare("DELETE FROM plans WHERE key = ?").run(key);
+  const db = getDb();
+  db.prepare("DELETE FROM plans WHERE key = ?").run(key);
+  db.prepare("DELETE FROM plan_charges WHERE key = ?").run(key);
 }
 
 // Merchant strings to match for a text search: every descriptor of any vendor

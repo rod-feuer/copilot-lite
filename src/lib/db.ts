@@ -140,6 +140,7 @@ function init(db: Database.Database) {
   ensureRecurringTxInclusions(db);
   ensureMergeDismissals(db);
   ensurePlans(db);
+  ensurePlanCharges(db);
 }
 
 // Individual charges the user flagged as one-offs, excluded from their
@@ -159,9 +160,10 @@ export function ensureRecurringTxInclusions(db: Database.Database) {
 // A plan the user confirmed: named it, set its amount, cadence or category,
 // started it, or put a charge in it. Keyed by the plan key it had then, which
 // never changes afterwards, so its settings and pins stay attached when the
-// bill moves day or price. `amount` is a magnitude, like expectedAmount;
-// `day` and `anchorDate` are its newest charge's. A null categoryId follows
-// the vendor. Plans the user never touched are not here: they stay derived.
+// bill moves day or price. `amount` is signed, like the charges (a refund at
+// a bill's price is not the bill); `day` and `anchorDate` are its newest
+// charge's. A null categoryId follows the vendor. Plans the user never
+// touched are not here: they stay derived.
 export function ensurePlans(db: Database.Database) {
   db.exec(`CREATE TABLE IF NOT EXISTS plans (
     key TEXT PRIMARY KEY,
@@ -172,6 +174,15 @@ export function ensurePlans(db: Database.Database) {
     categoryId INTEGER,
     anchorDate TEXT NOT NULL
   )`);
+}
+
+// A confirmed plan's charges, kept across rebuilds: the ones it held when it
+// was confirmed and every one it has taken since. A plan's history is not one
+// amount (a mortgage at three escrow prices), so matching by amount is only
+// for charges it has not seen. Keyed by charge hash, like the pins; unlike a
+// pin it is not the user's edit, so a charge here reads as auto.
+export function ensurePlanCharges(db: Database.Database) {
+  db.exec("CREATE TABLE IF NOT EXISTS plan_charges (hash TEXT PRIMARY KEY, key TEXT NOT NULL)");
 }
 
 // Merge suggestions the user rejected, keyed by the proposed canonical name, so
