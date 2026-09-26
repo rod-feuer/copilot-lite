@@ -180,6 +180,8 @@ figures wherever numbers align.
 three semantic ones, `--good`, `--warn`, `--bad`, each with a dark value one
 step lighter; tints are the token at 10–25%. Semantic colour is never the
 accent and the accent is never semantic. Category colours are data, not chrome.
+A budget bar's fill is neutral and takes `--bad` only when over; a category's
+colour is on its badge, never its bar.
 
 **Space and shape** — spacing steps 4 · 8 · 12 · 16 · 24 · 32 (Tailwind 1 2 3
 4 6 8). Card padding 16; the summary card 24. Rows 8 vertical × 16
