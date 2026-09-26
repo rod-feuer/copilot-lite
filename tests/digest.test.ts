@@ -2,7 +2,6 @@ import { detectAndConfirm, cleanDbBeforeEach, addCat, tx, daysAgo } from "./help
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb } from "../src/lib/db";
-import { detectRecurrings } from "../src/lib/core";
 import { linkMerchant, setBudget, setRecurringSetting, recurringsForMonth } from "../src/lib/queries";
 import { LARGE_CHARGE } from "../src/lib/forecast";
 import {
@@ -101,7 +100,7 @@ test("a bill that differed is reported once, as a bill, and never again as an un
 test("a plan that charges more than once a month is never reported as differed", () => {
   const cat = addCat("Help");
   for (const d of [36, 29, 22, 15, 8, 1]) tx("Lawn Crew", { amount: -60, date: daysAgo(d), categoryId: cat });
-  const plan = detectRecurrings().find((r) => r.merchant === "Lawn Crew");
+  const plan = detectAndConfirm().find((r) => r.merchant === "Lawn Crew");
   assert.equal(plan?.cadence, "weekly", "fixture: a weekly plan");
   assert.equal(dailyDigest(), null);
 });
@@ -399,7 +398,7 @@ test("the weekly lists the bills due in the next seven days with their total", (
   dueIn("Power Co", 3, 120);
   dueIn("Phone Co", 5, 80);
   dueIn("Far Off Co", 20, 999);
-  detectRecurrings();
+  detectAndConfirm();
   setRecurringSetting("Phone Co", { alias: "Phone Co · $80" }); // the detector's own label for a second plan
   const due = titled(weeklyDigest(), /^Due in the next 7 days/);
   if (Number(daysAgo(-3).slice(8, 10)) > 28 || Number(daysAgo(-5).slice(8, 10)) > 28) return; // the fixture clamps to the 28th: the due day would differ
@@ -453,7 +452,7 @@ test("a long list of due bills folds the small ones into one line, and the total
   const cat = addCat("Bills");
   const bills: [string, number, number][] = [["Loan Co", 1351, 1], ["Sub A", 20, 2], ["Sub B", 15, 2], ["Coffee Co", 89, 3], ["Sub C", 27, 4], ["Watch Co", 600, 5], ["Sub D", 19, 5], ["Sub E", 5, 6]];
   for (const [name, amount, days] of bills) for (const back of [3, 2, 1]) tx(name, { amount: -amount, date: monthsBefore(daysAgo(-days), back), categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   const due = titled(weeklyDigest(), /^Due in the next 7 days/)!;
   assert.equal(due.title, "Due in the next 7 days: $2,126 expected", "every bill, folded or not");
   assert.deepEqual(due.lines.map((l) => l.replace(/^[A-Z][a-z]{2} \d+ /, "")), ["Loan Co $1,351", "Coffee Co $89", "Watch Co $600", "All other (5) $86"]);
@@ -466,7 +465,7 @@ test("a short list of due bills is shown whole, small ones included", () => {
   const cat = addCat("Bills");
   for (const [name, amount, days] of [["Loan Co", 1351, 1], ["Sub A", 20, 2], ["Sub B", 15, 3]] as const)
     for (const back of [3, 2, 1]) tx(name, { amount: -amount, date: monthsBefore(daysAgo(-days), back), categoryId: cat });
-  detectRecurrings();
+  detectAndConfirm();
   assert.equal(titled(weeklyDigest(), /^Due in the next 7 days/)!.lines.length, 3);
 });
 

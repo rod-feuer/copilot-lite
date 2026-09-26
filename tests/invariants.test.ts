@@ -3073,10 +3073,11 @@ test("a confirmed single-plan vendor keeps its key when it gains a second plan",
 // charges are ordinary spending. Added, it counts; dismissed, it stays gone.
 test("a detected plan counts only once added; dismissed, it stays gone", () => {
   const subs = addCat("Subs (queue)");
-  for (const m of ["2026-06", "2026-07", "2026-08", "2026-09"]) tx("Stream Queue", { amount: -15.49, date: `${m}-03`, categoryId: subs });
+  for (const back of [92, 61, 30, 0]) tx("Stream Queue", { amount: -15.49, date: daysAgo(back), categoryId: subs });
   detectRecurrings();
-  const bill = () => recurringsForMonth("2026-09").some((r) => r.merchant === "Stream Queue");
-  const upcoming = () => upcomingRecurringExpenses("2026-01-01", "2027-12-31").some((r) => r.merchant === "Stream Queue");
+  const month = daysAgo(0).slice(0, 7);
+  const bill = () => recurringsForMonth(month).some((r) => r.merchant === "Stream Queue");
+  const upcoming = () => upcomingRecurringExpenses(daysAgo(365), daysAgo(-365)).some((r) => r.merchant === "Stream Queue");
   const inPlan = () => listTransactions({ recurring: true, vendor: "Stream Queue" }).length;
   const queued = () => suggestedRecurrings().find((x) => x.merchant === "Stream Queue");
 
@@ -3093,13 +3094,13 @@ test("a detected plan counts only once added; dismissed, it stays gone", () => {
   assert.equal(inPlan(), 4);
   assert.equal(queued(), undefined, "added, it leaves the queue");
 
-  for (const m of ["2026-06", "2026-07", "2026-08", "2026-09"]) tx("Lunch Queue", { amount: -12, date: `${m}-10`, categoryId: subs });
+  for (const back of [95, 64, 33, 2]) tx("Lunch Queue", { amount: -12, date: daysAgo(back), categoryId: subs });
   detectRecurrings();
   assert.equal(suggestedRecurrings().find((x) => x.merchant === "Lunch Queue")?.reason, "detected");
   setRecurringOverride("Lunch Queue", "mute"); // Dismiss
   detectRecurrings();
   assert.equal(suggestedRecurrings().find((x) => x.merchant === "Lunch Queue"), undefined, "dismissed, it stays gone after a rebuild");
-  assert.equal(recurringsForMonth("2026-09").some((r) => r.merchant === "Lunch Queue"), false);
+  assert.equal(recurringsForMonth(month).some((r) => r.merchant === "Lunch Queue"), false);
 });
 
 // WHY: a "variable" suggestion (a bill the detector won't claim on its own)
