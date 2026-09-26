@@ -7,7 +7,6 @@ import {
   startPlanKey,
   setTransactionRecurringIncluded,
   confirmPlan,
-  planTookCharge,
   setTransactionExcluded,
   setTransactionNote,
 } from "@/lib/queries";
@@ -71,7 +70,7 @@ export async function PATCH(
     if (row?.recurringId != null) return NextResponse.json({ ok: true, pinned: false });
     setTransactionRecurringIncluded(Number(id), plan);
     detectRecurrings();
-    planTookCharge(plan, Number(id));
+    confirmPlan(plan); // the user put a charge in it: it is theirs
     return NextResponse.json({ ok: true, pinned: true });
   }
 
