@@ -140,6 +140,7 @@ export function AmountCell({
   state = "settled",
   excluded = false,
   delta = null,
+  note = null,
   unsigned = false,
   sign = true,
   quiet = false,
@@ -149,6 +150,7 @@ export function AmountCell({
   state?: AmountState;
   excluded?: boolean; // doesn't count toward totals → an inflow is not green
   delta?: number | null; // paid − expected, when it differs
+  note?: string | null; // what the amount is made of ("2 × $369.65"), in the difference's place when there is none
   unsigned?: boolean; // a bill's amount: magnitude only — no sign, and never green
   sign?: boolean;
   quiet?: boolean; // a list where every amount is settled: medium, not semibold
@@ -169,13 +171,17 @@ export function AmountCell({
     // On a phone the difference sits under the amount (the column is 96px
     // there); from sm up, beside it. Stacked, the pair is set tight and gives
     // back its extra height, so a row with a difference is as tall as any other.
-    <span data-amount-state={state} className={`inline-flex flex-col-reverse items-end whitespace-nowrap tabular-nums sm:flex-row sm:items-baseline sm:justify-end ${delta != null ? "max-sm:-my-2 max-sm:leading-4" : ""} ${tone} ${className}`}>
-      {delta != null && (
+    <span data-amount-state={state} className={`inline-flex flex-col-reverse items-end whitespace-nowrap tabular-nums sm:flex-row sm:items-baseline sm:justify-end ${delta != null || note ? "max-sm:-my-2 max-sm:leading-4" : ""} ${tone} ${className}`}>
+      {delta != null ? (
         <span className="text-[11px] font-medium text-[var(--muted)] max-sm:leading-3 sm:mr-2">
           {delta > 0 ? "+" : "−"}
           {usd(Math.abs(delta))}
         </span>
-      )}
+      ) : note ? (
+        <span data-amount-note className="text-[11px] font-medium text-[var(--muted)] max-sm:leading-3 sm:mr-2">
+          {note}
+        </span>
+      ) : null}
       {state === "settled" && !unsigned ? (
         <Money value={shown} sign={sign} excluded={excluded} />
       ) : (

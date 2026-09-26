@@ -278,11 +278,24 @@ test("billStatus and billDelta: overdue is unpaid and past due; a difference und
   assert.equal(billStatus({ paid: true, dueDate: "2026-03-01" }, "2026-03-10"), "pd");
   assert.equal(billStatus({ paid: false, dueDate: "2026-03-09" }, "2026-03-10"), "od");
   assert.equal(billStatus({ paid: false, dueDate: "2026-03-10" }, "2026-03-10"), "up", "due today is not overdue yet");
-  const bill = { paid: true, dueDate: "2026-03-01", expectedAmount: 100 };
+  const bill = { paid: true, dueDate: "2026-03-01", expectedAmount: 100, cadence: "monthly" as const, paidTimes: 1 };
   assert.equal(billDelta({ ...bill, paidAmount: 100 + BILL_DELTA_MIN - 0.01 }), null);
   assert.equal(billDelta({ ...bill, paidAmount: 100 + BILL_DELTA_MIN }), BILL_DELTA_MIN);
   assert.equal(billDelta({ ...bill, paidAmount: 81.46 }), 81.46 - 100, "paid less is a negative difference");
   assert.equal(billDelta({ ...bill, paid: false, paidAmount: null }), null, "an unpaid bill has no difference to report");
+});
+
+// WHY: a plan charged every week or two is paid more than once a month, and
+// its paid amount is the month's sum. Held to one charge, Pay In 4's two
+// $369.65 charges read "+$369.65", an overcharge that never happened. Held
+// to one charge per payment, a real price change still shows.
+test("billDelta holds a plan charged often to its expected amount per charge", () => {
+  const payIn4 = { paid: true, dueDate: "2026-09-24", expectedAmount: 369.65, cadence: "biweekly" as const };
+  assert.equal(billDelta({ ...payIn4, paidAmount: 739.3, paidTimes: 2 }), null, "two charges at the usual amount");
+  const lawn = { paid: true, dueDate: "2026-09-22", expectedAmount: 63.1, cadence: "weekly" as const };
+  assert.equal(billDelta({ ...lawn, paidAmount: 252.4, paidTimes: 4 }), null, "four charges at the usual amount");
+  assert.equal(Number(billDelta({ ...lawn, paidAmount: 262.4, paidTimes: 4 })!.toFixed(2)), 10, "one charge $10 higher still says so");
+  assert.equal(billDelta({ ...payIn4, cadence: "monthly", paidAmount: 739.3, paidTimes: 2 }), 369.65, "a monthly bill charged twice is still news");
 });
 
 test("isOverBudget: an annual budget is judged on the year so far, a monthly one on the month", () => {
