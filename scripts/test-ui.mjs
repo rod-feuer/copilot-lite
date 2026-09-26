@@ -1211,6 +1211,9 @@ async function budgetBars(browser) {
       record("budget bars", `${where} · every bar fills in the soft accent, never a category colour`, rows.length >= 2 && rows.every((r) => r.soft && !r.catColour), `${rows.length} bars; off-style: ${rows.filter((r) => !r.soft || r.catColour).map((r) => r.text.split("\n").find((l) => /[A-Za-z]/.test(l))).join(", ") || "none"}`);
       record("budget bars", `${where} · red only for the overage, on the row whose figure is red`, !!over && over.over && rows.every((r) => r.over === r.badFigure), over ? `${set.over}: over=${over.over}` : `${set.over} not shown`);
       record("budget bars", `${where} · a category at half its budget fills half its bar`, !!half && Math.abs(half.share - 0.5) <= 0.03, half ? `${set.half}: ${(half.share * 100).toFixed(1)}%` : `${set.half} not shown`);
+      await page.hover("[data-budget-bar] [data-pace] .cursor-help");
+      const tip = await page.waitForFunction(() => [...document.querySelectorAll("body *")].find((e) => e.children.length === 0 && /through the month/.test(e.textContent))?.textContent ?? null, { timeout: 3000 }).then((h) => h.jsonValue()).catch(() => null);
+      record("budget bars", `${where} · hovering the pace line says what it is`, !!tip && /Today: \d+% through the month/.test(tip), tip ?? "no tooltip");
       record("budget bars", `${where} · the pace line is where today is in the month`, !!half && half.pace != null && Math.abs(half.pace - paceToday) <= 0.03, half ? `line at ${half.pace == null ? "none" : (half.pace * 100).toFixed(1) + "%"}, today ${(paceToday * 100).toFixed(1)}%` : "no bar");
     }
     await page.evaluate(async (ids) => {
