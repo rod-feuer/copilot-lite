@@ -404,6 +404,14 @@ async function dashboardAnatomy(browser) {
     });
     record("dashboard", "one summary card with net, income and expenses and a bar", r.figures >= 3 && r.bar, `${r.figures} figures, bar=${r.bar}`);
     record("dashboard", "no card nested in a card", r.nested === 0, `${r.nested} nested`);
+    // The queue's heading starts where its rows' text starts (structure, not a tuned offset).
+    const align = await page.evaluate(() => {
+      const q = document.querySelector("[data-uncategorized]");
+      const h = q?.querySelector("h3")?.getBoundingClientRect().left;
+      const t = q?.querySelector("[data-drawer-row] > div")?.getBoundingClientRect().left;
+      return h == null || t == null ? null : { h, t };
+    });
+    record("dashboard", "the queue's heading lines up with its rows' text", !!align && Math.abs(align.h - align.t) < 0.5, align ? `heading ${align.h}px, row text ${align.t}px` : "no queue");
     // One frame: the three big figures are all month-end views or all actuals,
     // never a mix, and the headline can be checked on the card — income minus
     // expenses is the net. (It used to lead with a projected net beside two

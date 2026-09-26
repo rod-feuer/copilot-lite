@@ -793,7 +793,7 @@ function UncategorizedResolver({
     // amber box with white cards nested inside it was the one place the app
     // nested a card in a tinted card, and it out-shouted the money above.
     <section className="flex flex-col gap-2" data-uncategorized>
-      <div className="flex items-center gap-2 px-[17px]">
+      <div className="flex items-center gap-2 border-x border-transparent px-4">
         <h3 className="stat-label text-[var(--warn)]">
           {count} transaction{count === 1 ? "" : "s"} need{count === 1 ? "s" : ""} a category
         </h3>
