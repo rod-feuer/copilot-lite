@@ -2055,6 +2055,29 @@ test("recurringsForMonth: a once-a-month plan is paid by the charge nearest its 
   assert.equal(lawn.paidAmount, 240, "four weekly visits are four payments");
 });
 
+// WHY: a plan charged every week or two is paid several times a month, and
+// once its first charge posts it reads as paid. The charges still to come
+// dropped out of "left to pay": Precision Cutz's fifth September charge, due
+// the 29th, was missing from the month's expected bills.
+test("recurringsForMonth counts the charges a weekly plan still has due this month", () => {
+  for (const d of ["06-02", "06-09", "06-16", "06-23", "06-30", "07-07", "07-14", "07-21", "07-28", "08-04", "08-11", "08-18", "08-25", "09-01", "09-08", "09-15", "09-22"])
+    tx("Lawn Weekly", { amount: -63.1, date: `2026-${d}` });
+  for (const d of ["08-23", "09-08", "09-24"]) tx("Pay Biweekly", { amount: -369.65, date: `2026-${d}` });
+  for (const m of ["06", "07", "08", "09"]) tx("Water Monthly", { amount: -40, date: `2026-${m}-03` });
+  detectRecurrings();
+  const sep = recurringsForMonth("2026-09");
+  const row = (m: string) => sep.find((r) => r.merchant === m)!;
+
+  const lawn = row("Lawn Weekly");
+  assert.equal(lawn.cadence, "weekly", "fixture");
+  assert.deepEqual([lawn.paidAmount, lawn.paidTimes, lawn.chargesStillDue], [252.4, 4, 1], "four paid, the 29th still due");
+  const pay = row("Pay Biweekly");
+  assert.equal(pay.cadence, "biweekly", "fixture");
+  assert.deepEqual([pay.paidAmount, pay.paidTimes, pay.chargesStillDue], [739.3, 2, 0], "the next one, 8 October, is next month");
+  assert.equal(row("Water Monthly").chargesStillDue, 0, "a monthly bill's one charge is paid or it isn't");
+  assert.equal(recurringsForMonth("2026-08").find((r) => r.merchant === "Lawn Weekly")!.chargesStillDue, 0, "a finished month has nothing still due");
+});
+
 // WHY: Plaid must begin the day after the imported back-history ends, or it
 // re-delivers charges the import already holds under a different key (double
 // counting). Plaid's own rows — and the parts of a split Plaid charge, which

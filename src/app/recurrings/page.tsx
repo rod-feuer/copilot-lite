@@ -21,7 +21,7 @@ import { CADENCE_DAYS, CADENCE_LABEL } from "@/lib/cadence";
 import { LoadError, LoadingRows } from "@/components/LoadState";
 import { SummaryCard } from "@/components/SummaryCard";
 import { useMonthBoot } from "@/components/useMonthBoot";
-import { billStatus, billDelta } from "@/lib/bills";
+import { billStatus, billDelta, chargedOften } from "@/lib/bills";
 import { usd, shortDate, isCurrentMonth as isCurrentMonthOf, monthName } from "@/lib/format";
 import type { RecurringSettings, RecurringForMonth, RecurringSuggestion } from "@/lib/queries";
 import type { Category } from "@/lib/types";
@@ -200,9 +200,13 @@ export default function RecurringsPage() {
   ].sort(byDue);
 
   const paidSoFar = bills.filter((r) => r.paid).reduce((a, r) => a + (r.paidAmount ?? 0), 0);
-  const leftToPay = bills
-    .filter((r) => !r.paid)
-    .reduce((a, r) => a + r.expectedAmount, 0);
+  // What is still to come: an unpaid bill's charge, and a plan charged every
+  // week or two its charges from the next due date to the month's end, paid
+  // this month or not (Precision Cutz on the 29th, after four already paid).
+  const leftToPay = bills.reduce(
+    (a, r) => a + r.expectedAmount * (r.paid ? r.chargesStillDue : Math.max(1, r.chargesStillDue)),
+    0
+  );
   const totalBills = paidSoFar + leftToPay;
   // The status line under the summary bar: overdue in red when there are any.
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -660,12 +664,20 @@ function BillList({
               {(() => {
                 const state = r.paid ? "settled" : st === "od" ? "overdue" : "provisional";
                 const delta = billDelta(r);
+                // A plan charged every week or two shows the month's sum; the
+                // note says what it is made of, so $739.30 doesn't read as a
+                // $369.65 bill doubled.
+                const note =
+                  r.paid && chargedOften(r) && r.paidTimes >= 2
+                    ? `${r.paidTimes} × ${usd(r.expectedAmount)}`
+                    : null;
                 return (
                   <AmountCell
                     value={amount}
                     unsigned
                     state={state}
                     delta={delta}
+                    note={note}
                     className="w-24 shrink-0 sm:w-32"
                   />
                 );

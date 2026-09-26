@@ -1287,6 +1287,11 @@ export type RecurringForMonth = Recurring & {
   paid: boolean;
   paidAmount: number | null;
   paidTimes: number; // how many of this month's charges were the bill itself (2 = charged twice)
+  // A plan charged every week or two is paid more than once a month. The
+  // charges still to come this month, from its next due date to the month's
+  // end (Precision Cutz on the 29th, after four already paid). 0 for a plan
+  // charged once a month or less: its one charge is paid or it isn't.
+  chargesStillDue: number;
   dueDate: string;
   matchRule: MatchRule | null;
   linkedMerchants: string[]; // descriptor aliases folded into this recurring
@@ -1494,6 +1499,15 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
 
   const [yy, mm] = month.split("-").map(Number);
   const daysInMonth = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const monthEnd = `${month}-${String(daysInMonth).padStart(2, "0")}`;
+  const stillDue = (r: (typeof recs)[number], s: RecurringSettings | null) => {
+    if (r.cadence !== "weekly" && r.cadence !== "biweekly") return 0;
+    const step = CADENCE_DAYS[r.cadence] * 86_400_000;
+    let n = 0;
+    for (let d = Date.parse(s?.nextDate ?? r.nextDate); d <= Date.parse(monthEnd); d += step)
+      if (d >= Date.parse(`${month}-01`)) n++;
+    return n;
+  };
   return recs.map((r, ri) => {
     const s = settings[r.merchant] ?? null;
     const dayBasis = s?.nextDate ?? r.lastDate;
@@ -1507,6 +1521,7 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
       paid: actual[ri] > 0.005,
       paidAmount: actual[ri] > 0.005 ? Number(actual[ri].toFixed(2)) : null,
       paidTimes: paidTimes[ri],
+      chargesStillDue: stillDue(r, s),
       dueDate: `${month}-${String(day).padStart(2, "0")}`,
       matchRule: matchRuleFor(r.merchant),
       vendor: seriesVendor(r.merchant),
