@@ -884,10 +884,43 @@ function rebuildRecurrings(): Recurring[] {
     // Once the detector catches up with a plan the user started (a fourth
     // charge makes the 21st read as monthly), its own plan carries the user's
     // key, so the plan — and the name the user gave it — stays the same plan.
+    // Only when it IS that plan: the pinned charges post on the plan's day.
+    // A forced vendor's one plan takes every unclaimed charge, and it took a
+    // second membership's first charge on the 25th into the plan of the 7th,
+    // then wore the user's name for it: one plan, renamed, in place of the two
+    // the user asked for. Off the plan's day, the pinned charges leave it and
+    // start their own plan below — and so do the plan's charges at their
+    // amount that post off its day (the 22nd's, once its mark is lifted),
+    // which the catch-all took only because nothing else had.
     let emitted = new Set(chosen.map((p) => p.key));
+    const bucket = (t: Tx) => Math.min(Number(t.date.slice(8, 10)), 28);
     for (const p of chosen) {
-      const mine = [...new Set(p.txs.map((t) => included.get(t.hash)).filter((k): k is string => !!k && k !== p.key && !emitted.has(k)))];
-      if (mine.length === 1) p.key = mine[0];
+      const isMine = (t: Tx) => { const k = included.get(t.hash); return !!k && k !== p.key && !emitted.has(k); };
+      const byKey = new Map<string, Tx[]>();
+      for (const t of p.txs) if (isMine(t)) byKey.set(included.get(t.hash)!, [...(byKey.get(included.get(t.hash)!) ?? []), t]);
+      if (byKey.size === 0) continue;
+      const rest = p.txs.filter((t) => !isMine(t));
+      const days = new Map<number, number>();
+      for (const t of rest) days.set(bucket(t), (days.get(bucket(t)) ?? 0) + 1);
+      const typical = [...days.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0]?.[0];
+      const offDay = (t: Tx) => Math.abs(bucket(t) - typical) > 2;
+      const adopt: string[] = [];
+      const leaving = new Set<Tx>();
+      for (const [key, pinned] of byKey) {
+        if (p.cadence !== "monthly" || rest.length === 0 || !pinned.some(offDay)) {
+          adopt.push(key);
+          continue;
+        }
+        const amount = Math.abs(pinned[pinned.length - 1].amount);
+        const sameAmount = (t: Tx) => Math.abs(Math.abs(t.amount) - amount) <= Math.max(0.5, 0.01 * amount);
+        for (const t of pinned) leaving.add(t);
+        for (const t of rest) if (sameAmount(t) && offDay(t)) leaving.add(t);
+      }
+      if (adopt.length === 1) p.key = adopt[0];
+      if (leaving.size) {
+        p.txs = p.txs.filter((t) => !leaving.has(t));
+        p.events = p.txs.map((t) => ({ date: t.date, amount: t.amount }));
+      }
     }
     emitted = new Set(chosen.map((p) => p.key));
     const claimed = new Set(chosen.flatMap((p) => p.txs.map((t) => t.hash)));

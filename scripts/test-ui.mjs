@@ -50,7 +50,7 @@ server.stdout.on("data", (d) => (serverLog += d));
 server.stderr.on("data", (d) => (serverLog += d));
 const stopServer = () => {
   try { process.kill(-server.pid, "SIGTERM"); } catch {}
-  for (const ext of ["", "-wal", "-shm"]) fs.rmSync(DB + ext, { force: true });
+  if (!process.env.UI_KEEP_DB) for (const ext of ["", "-wal", "-shm"]) fs.rmSync(DB + ext, { force: true }); else console.log("kept", DB);
 };
 process.on("exit", stopServer);
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(130));
@@ -1289,6 +1289,7 @@ async function recurringsRow(browser) {
       await page.waitForSelector("[data-drawer-row]");
       const names = await page.$$eval("[data-drawer-row]", (rows) => rows.map((r) => r.children[1].textContent.replace("✎", "").trim()));
       await page.click("[data-drawer-row]"); await page.waitForSelector("[data-shelf]");
+      await shelfSettled(page); // the header shows the row's name, then its alias once the shelf has read
       const title = () => page.$eval("[data-shelf] header", (h) => h.innerText.split("\n")[0].replace("✎", "").trim());
       const t0 = await title();
       await page.keyboard.press("ArrowDown"); await new Promise((r) => setTimeout(r, 700));

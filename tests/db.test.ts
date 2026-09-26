@@ -9,6 +9,7 @@ import {
   setRecurringSetting,
   setRecurringOverride,
   setTransactionRecurringIncluded,
+  setTransactionRecurringExcluded,
   startPlanKey,
   merchantSummary,
   deleteCategory,
@@ -289,6 +290,42 @@ test("Start a plan makes a plan from one charge; same-amount charges join it now
   assert.equal(plans()[0], "Apple · $10.69 monthly -10.69 x4", "next month's joins with no further tap — and the plan keeps its key (and so its name) once the detector can see it too");
   const linked = getDb().prepare("SELECT COUNT(*) AS n FROM transactions WHERE merchant = 'Apple' AND recurringId IS NOT NULL").get() as { n: number };
   assert.equal(linked.n, 10, "four $10.69, three $9.99, three $12.99; the $5.34, the iPhone and the $1.06 are not bills");
+});
+
+// WHY: Benjamin Franklin Plumbing bills $11.99 on the 7th for one house and,
+// since August, $11.99 on the 22nd–25th for the other. The vendor is forced
+// (the owner marked it recurring), so its one plan takes every unclaimed
+// charge — and "Start a plan" on the 25th's charge pinned it to a key the
+// detector had not emitted, the forced plan claimed the charge anyway, and the
+// catch-up rule ("an auto plan holding a pinned charge IS the user's plan")
+// renamed the plan of the 7th "Benjamin Franklin Pl · $11.99": one plan of
+// sixteen, in place of the two the owner asked for. The rule now holds only
+// when the pinned charges post on the plan's own day; otherwise they leave it
+// and start theirs.
+test("Start a plan on a forced vendor's off-day charge makes a second plan, not a renamed first", () => {
+  const v = "Benjamin Franklin Pl";
+  seed(v, months(8, 14, -11.99).map((r) => ({ ...r, date: r.date.replace(/-15$/, "-07") }))); // Aug 2025 – Sep 2026 on the 7th
+  seed(v, [{ date: "2026-08-21", amount: -89.95 }, { date: "2026-08-22", amount: -11.99 }, { date: "2026-09-25", amount: -11.99 }]);
+  setRecurringOverride(v, "force");
+  const plans = () => detectRecurrings().filter((r) => r.merchant.startsWith(v)).map((r) => `${r.merchant} ${r.cadence} ${r.avgAmount} x${r.count}`).sort();
+  const idOf = (date: string) => (getDb().prepare("SELECT id FROM transactions WHERE merchant = ? AND date = ?").get(v, date) as { id: number }).id;
+  // The owner's marks: the second house's first charges kept out of the first plan.
+  setTransactionRecurringExcluded(idOf("2026-08-21"), true);
+  setTransactionRecurringExcluded(idOf("2026-08-22"), true);
+  assert.deepEqual(plans(), [`${v} monthly -11.99 x15`], "forced: one plan of the 7th, plus the 25th it cannot tell apart yet");
+
+  const key = startPlanKey(idOf("2026-09-25"))!;
+  assert.equal(key, `${v} · $11.99`);
+  setTransactionRecurringIncluded(idOf("2026-09-25"), key);
+  assert.deepEqual(plans(), [`${v} monthly -11.99 x14`, `${v} · $11.99 monthly -11.99 x1`], "two plans: the 7th keeps its name and charges; the 25th's starts its own");
+  // Lifting the mark on Aug 22 (the same amount, in no plan) joins it to the new plan, not the old.
+  setTransactionRecurringExcluded(idOf("2026-08-22"), false);
+  assert.deepEqual(plans(), [`${v} monthly -11.99 x14`, `${v} · $11.99 monthly -11.99 x2`]);
+  // The catch-up rule still holds on the plan's own day: a pinned charge on
+  // the 7th belongs to the plan of the 7th, which then carries the key.
+  seed(v, [{ date: "2026-10-07", amount: -11.99 }]);
+  setTransactionRecurringIncluded(idOf("2026-10-07"), `${v} · Lake`);
+  assert.deepEqual(plans(), [`${v} · $11.99 monthly -11.99 x2`, `${v} · Lake monthly -11.99 x15`]);
 });
 
 test("a split parent or a charge excluded from totals can't start a plan", () => {
