@@ -139,6 +139,7 @@ function init(db: Database.Database) {
   ensureRecurringTxExclusions(db);
   ensureRecurringTxInclusions(db);
   ensureMergeDismissals(db);
+  ensurePlans(db);
 }
 
 // Individual charges the user flagged as one-offs, excluded from their
@@ -153,6 +154,24 @@ export function ensureRecurringTxExclusions(db: Database.Database) {
 // by the plan's series name — the recurrings.merchant it links to on rebuild).
 export function ensureRecurringTxInclusions(db: Database.Database) {
   db.exec("CREATE TABLE IF NOT EXISTS recurring_tx_inclusions (hash TEXT PRIMARY KEY, plan TEXT NOT NULL)");
+}
+
+// A plan the user confirmed: named it, set its amount, cadence or category,
+// started it, or put a charge in it. Keyed by the plan key it had then, which
+// never changes afterwards, so its settings and pins stay attached when the
+// bill moves day or price. `amount` is a magnitude, like expectedAmount;
+// `day` and `anchorDate` are its newest charge's. A null categoryId follows
+// the vendor. Plans the user never touched are not here: they stay derived.
+export function ensurePlans(db: Database.Database) {
+  db.exec(`CREATE TABLE IF NOT EXISTS plans (
+    key TEXT PRIMARY KEY,
+    vendor TEXT NOT NULL,
+    amount REAL NOT NULL,
+    day INTEGER,
+    cadence TEXT NOT NULL,
+    categoryId INTEGER,
+    anchorDate TEXT NOT NULL
+  )`);
 }
 
 // Merge suggestions the user rejected, keyed by the proposed canonical name, so

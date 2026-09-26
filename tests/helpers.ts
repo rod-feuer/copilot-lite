@@ -29,6 +29,8 @@ export const TABLES = [
   "recurring_settings",
   "recurring_overrides",
   "recurring_tx_exclusions",
+  "recurring_tx_inclusions",
+  "plans",
   "merchant_merge_dismissals",
   "merchant_cleanup_log",
   "split_rules",
