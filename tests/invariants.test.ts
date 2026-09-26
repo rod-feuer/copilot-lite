@@ -3117,3 +3117,18 @@ test("adding a forced suggestion makes its plan count", () => {
   confirmPlansFor("Gas Queue");
   assert.equal(recurringsForMonth("2026-09").some((r) => r.merchant === "Gas Queue"), true);
 });
+
+// WHY: the vendor shelf's category picker showed the vendor's commonest
+// category (Get Go: Cars) over charges that weren't all in it (ten Grocery).
+// A select only fires on a change, so choosing Cars did nothing and the
+// Grocery charges stayed. Mixed charges must read as mixed, so any pick moves
+// them all.
+test("a vendor whose charges sit in two categories reads as mixed until one change moves them all", () => {
+  const cars = addCat("Cars (mixed)");
+  const grocery = addCat("Grocery (mixed)");
+  for (let i = 0; i < 6; i++) tx("Get Go Mix", { amount: -40 - i, date: daysAgo(10 + i * 9), categoryId: cars });
+  for (let i = 0; i < 3; i++) tx("Get Go Mix", { amount: -50 - i, date: daysAgo(3 + i * 11), categoryId: grocery });
+  assert.equal(merchantSummary("Get Go Mix").chargeCategoriesMixed, true);
+  assert.equal(applyRecategorize("Get Go Mix", cars, null), "vendor");
+  assert.equal(merchantSummary("Get Go Mix").chargeCategoriesMixed, false, "one pick, every charge");
+});
