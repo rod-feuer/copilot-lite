@@ -2742,8 +2742,8 @@ test("an uncategorized duplicate candidate is deferred to the merge, which names
 // when the bill moves day or price the key changes and the owner's name,
 // amount and pins are orphaned (the real data holds two such orphans). A
 // confirmed plan is frozen under the key it had when the owner touched it.
-// Confirming must record the plan as it stands, never overwrite a frozen
-// plan, and leave alone a single-plan vendor, whose bare key is its name.
+// Confirming must record the plan as it stands and never overwrite a frozen
+// plan.
 test("confirming a plan freezes it under its key; a second confirm changes nothing", () => {
   const planRow = (key: string) =>
     getDb().prepare("SELECT key, vendor, amount, day, cadence, categoryId, anchorDate FROM plans WHERE key = ?").get(key);
@@ -2767,11 +2767,6 @@ test("confirming a plan freezes it under its key; a second confirm changes nothi
   unconfirmPlan("Ben Frozen · 25th");
   assert.equal(planRow("Ben Frozen · 25th"), undefined, "un-confirmed: derived again");
 
-  // One plan under the vendor: its key is the vendor's own name, already stable.
-  for (const m of ["01", "02", "03", "04"]) tx("Solo Water", { amount: -40, date: `2026-${m}-03` });
-  detectRecurrings();
-  assert.equal(confirmPlan("Solo Water"), false);
-  assert.equal(planRow("Solo Water"), undefined);
   assert.equal(confirmPlan("No Such Plan"), false, "nothing to confirm");
 
   // A bare key beside the vendor's other plan could be rebuilt as either: it is confirmed.
@@ -3041,4 +3036,23 @@ test("a confirmed plan whose amount varies takes its next charge", () => {
   tx(v, { amount: 7105.33, date: "2026-07-15" });
   detectRecurrings();
   assert.equal(planOf(v, "2026-07-15"), mid, "July's paycheck joins the named plan");
+});
+
+// WHY: a single-plan vendor is keyed by its own name ("Jpmorgan Chase Chase
+// Ach", named "Chase Mortgage (Lake)"). When it gains a second plan under the
+// same bank name, the detector splits it and keys both by day, and the name
+// set on the vendor's key was carried over once, by the fragile inherit
+// step. Confirmed, the plan holding the mortgage's charges keeps the key.
+test("a confirmed single-plan vendor keeps its key when it gains a second plan", () => {
+  const v = "Chase Ach Solo";
+  for (const m of ["01", "02", "03", "04", "05", "06"]) tx(v, { amount: -4861.04, date: `2026-${m}-01` });
+  detectRecurrings();
+  setRecurringSetting(v, { alias: "Chase Mortgage (Lake)" });
+  assert.equal(confirmPlan(v), true, "one plan under the vendor can be confirmed");
+  for (const m of ["03", "04", "05", "06", "07"]) tx(v, { amount: -250, date: `2026-${m}-18` });
+  tx(v, { amount: -4861.04, date: "2026-07-01" });
+  const keys = detectRecurrings().map((r) => r.merchant).filter((k) => k.startsWith(v)).sort();
+  assert.equal(keys.length, 2, `fixture: the vendor now has two plans (${keys.join(", ")})`);
+  assert.equal(planOf(v, "2026-07-01"), v, "the mortgage keeps the vendor's key, and so its name");
+  assert.notEqual(planOf(v, "2026-07-18"), v, "the new payment is a plan of its own");
 });
