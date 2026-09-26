@@ -1363,13 +1363,13 @@ export function recurringsForMonth(month: string): RecurringForMonth[] {
   const dedupeLinks = getMerchantLinks();
   // Split series ("Netflix · 23rd" / "Netflix · 26th") are distinct bills by
   // construction and never fold.
-  // Nor does a confirmed plan: the user said it is a bill of its own.
-  const firmKeys = new Set((db.prepare("SELECT key FROM plans").all() as { key: string }[]).map((p) => p.key));
+  // A confirmed plan folds too: two bank descriptors of one subscription
+  // are one bill whether or not the user confirmed them. (Keeping confirmed
+  // plans apart showed WSJ, Every and Better Bodies twice once the active
+  // plans were confirmed.)
   const sameVendor = (a: string, b: string) =>
     !isSeriesKey(a) &&
     !isSeriesKey(b) &&
-    !firmKeys.has(a) &&
-    !firmKeys.has(b) &&
     (canonicalMerchant(a, dedupeLinks) === canonicalMerchant(b, dedupeLinks) ||
       (merchantKey(a) !== "" && merchantKey(a) === merchantKey(b)));
   // A fold MERGES the clone into the face: the face keeps its key (settings,

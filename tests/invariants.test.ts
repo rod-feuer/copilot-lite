@@ -2954,9 +2954,10 @@ test("not recurring un-confirms a plan, or every plan of a vendor", () => {
 
 // WHY: setting a category on one plan is the owner's word on it, so the plan
 // is confirmed; a confirmed plan whose bill moved day shows the day it bills
-// now, not the one in its key; and the Recurrings page never folds a
-// confirmed plan into a look-alike.
-test("a per-plan category confirms it; its day and its row stay its own", () => {
+// now, not the one in its key; and two bank descriptors of one subscription
+// fold into one row whether or not they are confirmed (kept apart, WSJ, Every
+// and Better Bodies each showed twice once the active plans were confirmed).
+test("a per-plan category confirms it; its day follows its bill; confirmed clones still fold", () => {
   const home = addCat("Home (firm)");
   const v = "Ben Firm";
   for (const m of ["01", "02", "03", "04", "05", "06"]) {
@@ -2980,8 +2981,10 @@ test("a per-plan category confirms it; its day and its row stay its own", () => 
   detectRecurrings();
   const faces = () => recurringsForMonth("2026-06").filter((r) => r.merchant.startsWith("Clone Co")).length;
   assert.equal(faces(), 1, "fixture: unconfirmed, they fold into one face");
-  getDb().prepare("INSERT INTO plans (key, vendor, amount, day, cadence, anchorDate) VALUES ('Clone Co', 'Clone Co', -30, 10, 'monthly', '2026-06-10')").run();
-  assert.equal(faces(), 2, "a confirmed plan is a bill of its own");
+  const ins = getDb().prepare("INSERT INTO plans (key, vendor, amount, day, cadence, anchorDate) VALUES (?, ?, -30, 10, 'monthly', '2026-06-10')");
+  ins.run("Clone Co", "Clone Co");
+  ins.run("Clone Co Pl", "Clone Co Pl");
+  assert.equal(faces(), 1, "confirmed, they are still one bill");
 });
 
 // WHY: Ben Franklin bills two houses under one bank name, so the vendor's
