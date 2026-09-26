@@ -553,9 +553,11 @@ export function MerchantBody({
   }
   type ChargeRow = Summary["recent"][number];
   function rowName(rows: ChargeRow[], r: ChargeRow) {
-    const vary = varyLabel(rows)(r);
-    if (multi && r.planName) return vary ? `${vary} · ${r.planName}` : r.planName;
-    return vary;
+    // On a vendor with several plans, the row's name is the plan — the same
+    // words as the plan list. The bank descriptor starts with the vendor, so
+    // gluing it on truncated the plan ("Benjamin Franklin Pl · B…").
+    if (multi && r.planName) return r.planName;
+    return varyLabel(rows)(r);
   }
   function membershipFor(r: ChargeRow) {
     if (r.excluded === 1) return undefined;
