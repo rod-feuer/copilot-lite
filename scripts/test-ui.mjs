@@ -84,6 +84,10 @@ async function loadFixture() {
     [day(0, 3), "Chipotle", "-18.75", "Credit"],
     [day(0, 6), "Shell Gas Station", "-48.10", "Credit"], // a counted charge past day 5, so the month projects
     [day(0, 6), "Card Payment Received", "500", "Credit"], // goes into an excluded category below
+    // …and it is monthly, so the card's "thank you" is a plan in a category that
+    // is not counted: neither a bill nor income on the Recurrings page.
+    [day(-2, 6), "Card Payment Received", "500", "Credit"],
+    [day(-1, 6), "Card Payment Received", "500", "Credit"],
     [day(-2, 3), "Netflix", "-15.49", "Credit"],
     [day(-1, 3), "Netflix", "-15.49", "Credit"],
     [day(0, 3), "Netflix", "-15.49", "Credit"],
@@ -157,9 +161,28 @@ async function loadFixture() {
   const transfers = (await (await fetch(BASE + "/api/categories")).json()).find((c) => c.name === "Transfers");
   if (!transfers) throw new Error("could not create the Transfers category");
   await fetch(`${BASE}/api/categories/${transfers.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ excludeFromTotals: true }) });
-  const cp = (await (await fetch(BASE + "/api/transactions?q=Card%20Payment&limit=5")).json()).rows?.[0];
-  if (!cp) throw new Error("fixture row 'Card Payment Received' not found");
-  await fetch(`${BASE}/api/transactions/${cp.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: transfers.id }) });
+  const cps = (await (await fetch(BASE + "/api/transactions?q=Card%20Payment&limit=5")).json()).rows ?? [];
+  if (cps.length === 0) throw new Error("fixture row 'Card Payment Received' not found");
+  for (const cp of cps) await fetch(`${BASE}/api/transactions/${cp.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: transfers.id }) });
+  await fetch(BASE + "/api/recompute", { method: "POST" }); // the plan takes its category
+}
+
+// A plan in a category that is not counted (Transfers) is neither a bill nor
+// income: the Recurrings page leaves it out of both lists and names it in one
+// line at the foot. Before, the lists split plans by sign alone, so a card's
+// "Thank You" for its autopay read as recurring income.
+async function notCountedPlans(browser) {
+  await withPage(browser, async (page) => {
+    const plan = (await (await fetch(BASE + "/api/recurrings?month=" + CUR)).json()).find((r) => /Card Payment Received/.test(r.merchant));
+    record("not counted", "the fixture's card payment is a plan in a category that is not counted", !!plan && plan.categoryExcluded === 1, plan ? `${plan.merchant} ${plan.cadence}, excluded=${plan.categoryExcluded}` : "no plan");
+    await page.goto(BASE + "/recurrings", { waitUntil: "networkidle2" });
+    await page.waitForSelector("[data-drawer-row]");
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("[data-drawer-row]")].map((x) => x.innerText.replace(/\s+/g, " "));
+      return { listed: rows.some((t) => /Card Payment Received/.test(t)), foot: document.querySelector("[data-not-counted]")?.textContent.replace(/\s+/g, " ").trim() ?? null, income: !!document.body.innerText.match(/Recurring income/i) };
+    });
+    record("not counted", "it is in neither list, and the foot line names it with its category", !r.listed && !!r.foot && /Card Payment Received \(Transfers\)/.test(r.foot), `listed=${r.listed}; foot: ${r.foot}`);
+  });
 }
 
 // ---------- helpers ----------
@@ -1521,7 +1544,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

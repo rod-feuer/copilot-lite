@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDb } from "../src/lib/db";
 import { detectRecurrings } from "../src/lib/core";
-import { linkMerchant, setBudget, setRecurringSetting } from "../src/lib/queries";
+import { linkMerchant, setBudget, setRecurringSetting, recurringsForMonth } from "../src/lib/queries";
 import { LARGE_CHARGE } from "../src/lib/forecast";
 import {
   dailyDigest,
@@ -405,6 +405,35 @@ test("the weekly lists the bills due in the next seven days with their total", (
   if (Number(daysAgo(-3).slice(8, 10)) > 28 || Number(daysAgo(-5).slice(8, 10)) > 28) return; // the fixture clamps to the 28th: the due day would differ
   assert.equal(due?.title, "Due in the next 7 days: $200 expected");
   assert.deepEqual(due?.lines.map((l) => l.replace(/^[A-Z][a-z]{2} \d+ /, "")), ["Power Co $120", "Phone Co $80"], "and a name that already ends in its amount doesn't say it twice");
+});
+
+// WHY: a card autopay is money already spent on the card, so its category
+// (Transfers) is not counted anywhere money is added up — but the bills lists
+// split plans by sign alone, so the checking side read as a $12,748 monthly
+// bill and the card's "Thank You" as recurring income. A plan in a category
+// that is not counted is neither a bill nor income: not due, not overdue, and
+// the plan rows say so for the page.
+test("a plan in a category that is not counted is neither due nor overdue, and the rows carry the flag", () => {
+  const bills = addCat("Bills (nc)");
+  const transfers = addCat("Transfers (nc)", "expense", 1);
+  const dueIn = (name: string, days: number, amount: number, cat: number) => {
+    for (const back of [3, 2, 1]) tx(name, { amount: -amount, date: monthsBefore(daysAgo(-days), back), categoryId: cat });
+  };
+  dueIn("Power Co", 3, 120, bills);
+  dueIn("Amex Autopay", 3, 4000, transfers);
+  for (const back of [4, 3, 2]) tx("Card Payment Received", { amount: 4000, date: monthsBefore(daysAgo(10), back), categoryId: transfers }); // overdue by the other rule
+  detectRecurrings();
+  const rows = recurringsForMonth(daysAgo(0).slice(0, 7));
+  assert.deepEqual(
+    rows.filter((r) => /Amex Autopay|Card Payment|Power Co/.test(r.merchant)).map((r) => [r.merchant, r.categoryExcluded]).sort(),
+    [["Amex Autopay", 1], ["Card Payment Received", 1], ["Power Co", 0]],
+    "the rows say which plans are not counted"
+  );
+  if (Number(daysAgo(-3).slice(8, 10)) > 28) return; // the fixture clamps to the 28th: the due day would differ
+  const w = weeklyDigest();
+  const due = titled(w, /^Due in the next 7 days/);
+  assert.equal(due?.title, "Due in the next 7 days: $120 expected", "the autopay is not a bill due");
+  assert.ok(!JSON.stringify(w).includes("Amex Autopay") && !JSON.stringify(w).includes("Card Payment"), "and neither transfer is anywhere in the weekly");
 });
 
 // WHY: vendor names come from a bank and go into HTML mail.

@@ -181,7 +181,7 @@ function surprises(today: string): Found[] {
   const earlyInMonth = Number(today.slice(8, 10)) <= SURPRISE_WINDOW_DAYS;
   for (const m of earlyInMonth ? [lastMonth, month] : [month]) {
     for (const r of recurringsForMonth(m)) {
-      if (r.avgAmount >= 0) continue; // deposits are not bills
+      if (r.avgAmount >= 0 || r.categoryExcluded) continue; // deposits are not bills; nor is a plan that is not counted
       const delta = billDelta(r);
       const matters = delta != null && Math.abs(delta) >= BILL_CHANGE_MIN && Math.abs(delta) >= BILL_CHANGE_SHARE * r.expectedAmount;
       if (delta != null && matters && !SUMMED_CADENCES.has(r.cadence) && r.lastDate >= since)
@@ -318,7 +318,7 @@ export const DUE_FOLD_UNDER = 50;
 // due, and what is still open.
 function overdueNow(today: string): Row[] {
   return recurringsForMonth(today.slice(0, 7))
-    .filter((r) => r.avgAmount < 0 && billStatus(r, daysBefore(OVERDUE_GRACE_DAYS)) === "od" && r.expectedThisMonth && !r.ended && isRecurringActive(r.lastDate, r.cadence))
+    .filter((r) => r.avgAmount < 0 && !r.categoryExcluded && billStatus(r, daysBefore(OVERDUE_GRACE_DAYS)) === "od" && r.expectedThisMonth && !r.ended && isRecurringActive(r.lastDate, r.cadence))
     .map((r) => ({ lead: shortDate(r.dueDate), label: billName(r.displayName), amount: dollars(r.expectedAmount) }));
 }
 
