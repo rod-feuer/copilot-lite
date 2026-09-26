@@ -1177,6 +1177,15 @@ export function merchantSummary(merchant: string, series?: string | null) {
     // The vendor's plans sit in different categories (houses). The vendor
     // shelf must not offer one category for all of them.
     categoryMixed: plansDisagree(variants),
+    // More than one category among the charges in view. The picker then says
+    // "Mixed" instead of the commonest one: showing Cars over ten Grocery
+    // charges made choosing Cars a no-op (a select only fires on a change).
+    chargeCategoriesMixed:
+      (
+        db
+          .prepare(`SELECT COUNT(DISTINCT COALESCE(categoryId, -1)) AS n FROM transactions WHERE ${scope} AND excluded = 0`)
+          .get(...scopeArgs) as { n: number }
+      ).n > 1,
     recent: recentNamed,
     otherCharges,
   };

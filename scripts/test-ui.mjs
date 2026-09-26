@@ -1270,6 +1270,41 @@ async function addedPlan(browser) {
   });
 }
 
+// The vendor shelf's category picker is the bulk change: every charge of the
+// vendor moves. It showed the commonest category over charges that weren't
+// all in it (Get Go: Cars over ten Grocery), and a select only fires on a
+// change, so choosing that category did nothing. Mixed reads as "Mixed".
+async function mixedVendorCategory(browser) {
+  await withPage(browser, async (page) => {
+    await page.goto(BASE + "/transactions", { waitUntil: "networkidle2" });
+    const setup = await page.evaluate(async (base) => {
+      const rows = (await (await fetch(`${base}/api/transactions?vendor=Chipotle&limit=50`)).json()).rows;
+      const cats = (await (await fetch(`${base}/api/categories`)).json()).filter((c) => c.kind === "expense");
+      const home = rows[0].categoryId;
+      const other = cats.find((c) => c.id !== home);
+      await fetch(`${base}/api/transactions/${rows[0].id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: other.id }) });
+      return { id: rows[0].id, home, n: rows.length };
+    }, BASE);
+    await page.goto(BASE + "/transactions?vendor=Chipotle", { waitUntil: "networkidle2" });
+    await page.click("[data-drawer-row]");
+    await page.waitForSelector(`${shelfSel} [data-open-vendor]`);
+    await page.click(`${shelfSel} [data-open-vendor]`);
+    await page.waitForSelector(`${shelfSel} select[aria-label='Category']`);
+    await shelfSettled(page);
+    const label = await page.$eval(`${shelfSel} select[aria-label='Category']`, (s) => s.parentElement.innerText.trim());
+    await page.select(`${shelfSel} select[aria-label='Category']`, String(setup.home));
+    const after = await (async () => {
+      for (let i = 0; i < 20; i++) {
+        const rows = await page.evaluate(async () => (await (await fetch("/api/transactions?vendor=Chipotle&limit=50")).json()).rows);
+        if (rows.every((r) => r.categoryId === setup.home)) return rows.length;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      return 0;
+    })();
+    record("mixed vendor", "a vendor whose charges disagree reads \"Mixed\", and one pick moves every charge", /Mixed/.test(label) && after === setup.n, `picker "${label}"; ${after}/${setup.n} charges in the picked category`);
+  });
+}
+
 async function moneyColour(browser) {
   // The colour of the amount in the row that names `who`, on the current page.
   const colourOf = (page, who) => page.evaluate((who) => {
@@ -1730,7 +1765,7 @@ try {
   for (const [name, fn] of [
     ["load states", honestLoadStates], ["keyboard rows", keyboardRows], ["page header", pageHeader], ["dashboard", dashboardAnatomy], ["budget bars", budgetBars], ["resting actions", restingActions],
     ["qualifiers", partialMonthQualifiers], ["statement mode", statementMode], ["vendor header", vendorHeaderCounts], ["vendor header category", vendorHeaderCategory], ["split drift", splitDrift], ["split rules", splitRulesInShelf], ["queue buttons", queueButtons], ["model suggestions", modelSuggestionTiers], ["quiet login", quietLogin], ["phone layout", phoneLayout], ["open vendor", openVendorFromCharge], ["ios autofill tag", iosAutofillTag], ["app name", appName], ["start a plan", startAPlan], ["vendor shelf", multiPlanVendor], ["card heights", cardHeights], ["split → undo", splitUndo],
-    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans], ["named plan", namedPlanStays], ["added plan", addedPlan],
+    ["shelf settings", shelfSettings], ["money colour", moneyColour], ["category badge", categoryBadge], ["recurring glyph", recurringGlyph], ["inline edit", inlineEdit], ["recurrings row", recurringsRow], ["tap targets", tapTargets], ["stale shelf read", staleShelfRead], ["dashboard proposal", dashboardProposal], ["defer to merge", deferToMerge], ["not counted", notCountedPlans], ["mixed vendor", mixedVendorCategory], ["named plan", namedPlanStays], ["added plan", addedPlan],
   ]) {
     try { await fn(browser); } catch (e) { record(name, "threw", false, String(e.message).split("\n")[0]); }
   }

@@ -208,21 +208,28 @@ export function CategoryCaption({
   onChange,
   onNew,
   edited = false,
+  mixed = false,
 }: {
   data: { categoryId: number | null; categoryName: string | null; categoryIcon: string | null };
   cats: Cat[];
   onChange: (categoryId: number | null) => void;
   onNew: (anchor: HTMLSelectElement) => void;
   edited?: boolean; // a plan's own category, which its next charges take
+  mixed?: boolean; // its charges sit in more than one category: say so, and any pick moves them all
 }) {
   return (
     <CaptionSelect
       tag={edited ? <StateTag edited /> : undefined}
-      label={data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
-      value={data.categoryId ?? ""}
+      label={mixed ? "Mixed" : data.categoryId != null ? `${data.categoryIcon ?? ""} ${data.categoryName ?? ""}`.trim() : "Uncategorized"}
+      value={mixed ? "__mixed" : (data.categoryId ?? "")}
       aria-label="Category"
       onChange={categoryChange(onChange, onNew)}
     >
+      {mixed && (
+        <option value="__mixed" disabled hidden>
+          Mixed
+        </option>
+      )}
       <CategoryOptions cats={cats} withNew />
     </CaptionSelect>
   );
