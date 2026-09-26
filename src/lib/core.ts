@@ -123,10 +123,15 @@ const DAY = 86_400_000;
 function gridTolerance(period: number): number {
   return period === CADENCE_DAYS.bimonthly ? 0.35 * CADENCE_DAYS.monthly : 0.35 * period;
 }
+// A skip is one or two missed periods (k ≤ 3). Past that, the ±⅓-period
+// window covers most of any long gap: 69% of gaps between 60 and 200 days
+// land "on" the monthly grid by chance, and a restaurant visited every few
+// months (Pies & Pints: gaps of 90, 119, 189 days) read as a monthly bill.
 function onGridFraction(gaps: number[], period: number): number {
   if (!gaps.length) return 0;
   const on = gaps.filter((g) => {
     const k = Math.max(1, Math.round(g / period));
+    if (k > 3) return false;
     return Math.abs(g - k * period) <= gridTolerance(period);
   }).length;
   return on / gaps.length;

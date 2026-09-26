@@ -1657,6 +1657,28 @@ test("detector keeps the regular amount group and leaves irregular usage charges
   assert.ok(!credit || credit.count === 10, "a credit is never split into a core plus usage (all ten postings, or none)");
 });
 
+// WHY: the timing test lets a bill skip a period, so a gap of two or three
+// months still counts as on schedule. It let any gap count: past three
+// periods the tolerance covers most of a month, so long gaps land "on" the
+// grid by chance. Pies & Pints (nine restaurant visits over fifteen months,
+// gaps of 90, 119 and 189 days) read as a monthly bill. A real bill that
+// skips one or two months must still be one.
+test("a gap of more than three periods is not a skipped bill", () => {
+  const pies: [string, number][] = [
+    ["2025-06-06", -60.7], ["2025-06-14", -93.51], ["2025-06-20", -44.06], ["2025-06-28", -87.59],
+    ["2025-07-25", -71.42], ["2025-08-23", -69.8], ["2026-02-28", -102.34], ["2026-05-29", -37.03],
+    ["2026-09-25", -15.71],
+  ];
+  for (const [date, amount] of pies) tx("Pies Gap", { amount, date });
+  const bill: string[] = ["2026-01-05", "2026-02-05", "2026-04-05", "2026-05-05", "2026-08-05", "2026-09-05"];
+  for (const date of bill) tx("Mortgage Gap", { amount: -1850, date });
+  const plans = detectRecurrings();
+  assert.equal(plans.find((r) => r.merchant === "Pies Gap"), undefined, "restaurant visits months apart are not a bill");
+  const mortgage = plans.find((r) => r.merchant === "Mortgage Gap");
+  assert.equal(mortgage?.cadence, "monthly", "a bill that skips one month, then two, is still monthly");
+  assert.equal(mortgage?.count, 6);
+});
+
 // A bank rename is not a new vendor. Cursor billed $20 on the 20th as "Cursor
 // Ai Powered" for three months, then as "Cursor, Ai Powered Isan Francisco";
 // grouped by descriptor, the new charge was a one-charge vendor the shelf
