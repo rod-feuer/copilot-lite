@@ -152,7 +152,7 @@ export function SummaryCard({
             {mark && (
               <div data-bar-mark className="absolute top-0 -translate-x-1/2" style={{ left: `${Math.max(0, Math.min(mark.at, 1)) * 100}%` }}>
                 <Tooltip label={mark.label} onlyIfTruncated={false} className="flex h-2.5 w-2 cursor-help justify-center">
-                  <span className="block h-2.5 w-0.5 rounded-full bg-[var(--foreground)]/40" />
+                  <span className="block h-2.5 w-0.5 rounded-full bg-[var(--foreground)] shadow-[0_0_0_1px_var(--card)]" />
                 </Tooltip>
               </div>
             )}

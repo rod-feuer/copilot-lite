@@ -951,7 +951,7 @@ function CategoryBars({
                     onlyIfTruncated={false}
                     className="flex h-2 w-2 cursor-help justify-center"
                   >
-                    <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)]/40" />
+                    <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)] shadow-[0_0_0_1px_var(--card)]" />
                   </HoverTip>
                 </div>
               )}

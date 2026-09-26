@@ -481,7 +481,7 @@ function Group({
                           label={`${usd(recur, { cents: false })} recurring${annual ? "/yr" : ""}`}
                           onlyIfTruncated={false}
                         >
-                          <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)]/40" />
+                          <span className="block h-2 w-0.5 rounded-full bg-[var(--foreground)] shadow-[0_0_0_1px_var(--card)]" />
                         </Tooltip>
                       </div>
                     )}
