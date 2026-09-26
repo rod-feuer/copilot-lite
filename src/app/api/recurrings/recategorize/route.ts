@@ -18,12 +18,13 @@ export async function POST(req: NextRequest) {
   if (!merchant) {
     return NextResponse.json({ error: "merchant required" }, { status: 400 });
   }
-  // One plan of a vendor whose charges disagree: move only that plan. A
-  // vendor-wide edit is refused — it would put both houses in one category
-  // and teach the next import to keep doing it. A vendor whose charges
-  // already agree still moves as a whole, and the rule sticks.
+  // One plan of a vendor with several: move only that plan. A vendor-wide
+  // edit over plans in different categories is refused — it would put both
+  // houses in one category and teach the next import to keep doing it —
+  // unless `force` says the user chose one category for all (Combine).
+  // Anything else moves the vendor as a whole, and the rule sticks.
   const recurringId = body.recurringId == null ? null : Number(body.recurringId);
-  const applied = applyRecategorize(merchant, categoryId, recurringId);
+  const applied = applyRecategorize(merchant, categoryId, recurringId, body.force === true);
   if (applied === "refused") {
     return NextResponse.json(
       { error: "These charges don't share a category" },

@@ -1084,17 +1084,9 @@ export function merchantSummary(merchant: string, series?: string | null) {
     categoryName: cat?.name ?? null,
     categoryColor: cat?.color ?? null,
     categoryIcon: cat?.icon ?? null,
-    // More than one category among the charges in view. The vendor shelf
-    // must not offer one category for all of them.
-    categoryMixed:
-      (
-        db
-          .prepare(
-            `SELECT COUNT(DISTINCT COALESCE(categoryId, -1)) AS n FROM transactions
-             WHERE ${scope} AND excluded = 0`
-          )
-          .get(...scopeArgs) as { n: number }
-      ).n > 1,
+    // The vendor's plans sit in different categories (houses). The vendor
+    // shelf must not offer one category for all of them.
+    categoryMixed: plansDisagree(variants),
     recent: recentNamed,
     otherCharges,
   };
@@ -1147,14 +1139,31 @@ export function setMerchantCategory(merchant: string, categoryId: number | null)
     .run(categoryId, merchant).changes;
 }
 
-// A category edit from the vendor, rather than from one plan. "vendor" moves
-// every charge and is only allowed when they already share a category and
-// the vendor has at most one plan. "plan" moves that plan's charges. "refused"
-// is a vendor-wide edit that would pull two houses into one bucket.
+// Houses under one vendor: several plans whose charges sit in more than one
+// category (Ben Franklin's Carmel and Lake plans). One category for the
+// vendor would pull them into one bucket. A stray one-off, or one plan whose
+// charges disagree, is not that: the vendor still moves as a whole.
+function plansDisagree(variants: string[]): boolean {
+  const ph = variants.map(() => "?").join(",");
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(DISTINCT recurringId) AS plans, COUNT(DISTINCT COALESCE(categoryId, -1)) AS categories
+       FROM transactions WHERE merchant IN (${ph}) AND recurringId IS NOT NULL AND excluded = 0`
+    )
+    .get(...variants) as { plans: number; categories: number };
+  return row.plans > 1 && row.categories > 1;
+}
+
+// A category edit, from the vendor or from one of its plans. "plan" moves
+// that plan's charges: a vendor with several plans recategorizes one at a
+// time. "vendor" moves every charge. "refused" is a vendor-wide edit that
+// would pull houses into one bucket, unless the user asked for exactly that
+// (`force`: Combine's "one category for both").
 export function applyRecategorize(
   merchant: string,
   categoryId: number | null,
-  recurringId?: number | null
+  recurringId?: number | null,
+  force = false
 ): "vendor" | "plan" | "refused" {
   const db = getDb();
   const variants = merchantVariants(merchant);
@@ -1167,20 +1176,11 @@ export function applyRecategorize(
       )
       .get(...variants) as { n: number }
   ).n;
-  const categories = (
-    db
-      .prepare(
-        `SELECT COUNT(DISTINCT COALESCE(categoryId, -1)) AS n FROM transactions
-         WHERE merchant IN (${ph}) AND excluded = 0`
-      )
-      .get(...variants) as { n: number }
-  ).n;
-  const whole = plans <= 1 && categories <= 1;
-  if (!whole) {
-    if (recurringId == null) return "refused";
+  if (plans > 1 && recurringId != null) {
     setSeriesCategory(recurringId, categoryId);
     return "plan";
   }
+  if (!force && plansDisagree(variants)) return "refused";
   for (const v of variants) setMerchantCategory(v, categoryId);
   if (recurringId != null)
     db.prepare("UPDATE recurrings SET categoryId = ? WHERE id = ?").run(categoryId, recurringId);
