@@ -34,6 +34,8 @@ export function BudgetBar({
   period?: "monthly" | "annual";
 }) {
   const span = period === "annual" ? "year" : "month";
+  // Said on hover, and to a screen reader, which can't see the line.
+  const paceLabel = pace == null ? "" : `Today: ${Math.round(pace * 100)}% through the ${span}. A bar short of this line is under pace.`;
   const over = spent > budget;
   const scale = over ? spent : budget;
   const pct = (v: number) => `${Math.max(0, Math.min(100, (v / scale) * 100))}%`;
@@ -47,9 +49,9 @@ export function BudgetBar({
         // Taller than the bar and ringed in the card colour, so it reads over
         // the fill and the track alike. Hovering says what it is; the hover
         // zone is wider than the line so it is easy to land on.
-        <span data-pace className="absolute -top-0.5 -translate-x-1/2" style={{ left: pct(pace * budget) }}>
+        <span data-pace role="img" aria-label={paceLabel} className="absolute -top-0.5 -translate-x-1/2" style={{ left: pct(pace * budget) }}>
           <Tooltip
-            label={`Today: ${Math.round(pace * 100)}% through the ${span}. A bar short of this line is under pace.`}
+            label={paceLabel}
             onlyIfTruncated={false}
             className="flex h-3 w-3 cursor-help justify-center"
           >
