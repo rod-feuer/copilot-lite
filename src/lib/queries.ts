@@ -1082,10 +1082,12 @@ export function listRecurrings(): (Recurring & {
   categoryName: string | null;
   categoryColor: string | null;
   categoryIcon: string | null;
+  categoryExcluded: 0 | 1;
 })[] {
   return getDb()
     .prepare(
-      `SELECT r.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon
+      `SELECT r.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon,
+              COALESCE(c.excludeFromTotals, 0) AS categoryExcluded
        FROM recurrings r LEFT JOIN categories c ON r.categoryId = c.id
        ORDER BY r.nextDate`
     )
@@ -1100,6 +1102,10 @@ export type RecurringForMonth = Recurring & {
   categoryName: string | null;
   categoryColor: string | null;
   categoryIcon: string | null;
+  // A plan in a category that is not counted (Transfers: a card autopay is
+  // money already spent on the card) is neither a bill nor income. The
+  // detector still tracks it; the lists and the digest leave it out.
+  categoryExcluded: 0 | 1;
   vendor: string; // the bank descriptor behind the series (= merchant unless split by day)
   expectedThisMonth: boolean;
   paid: boolean;
@@ -1356,7 +1362,7 @@ export function upcomingRecurringExpenses(
     .prepare(
       `SELECT r.*, c.name AS categoryName, c.color AS categoryColor, c.icon AS categoryIcon
        FROM recurrings r LEFT JOIN categories c ON r.categoryId = c.id
-       WHERE r.avgAmount < 0`
+       WHERE r.avgAmount < 0 AND COALESCE(c.excludeFromTotals, 0) = 0`
     )
     .all() as (Recurring & {
     categoryName: string | null;

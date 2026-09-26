@@ -196,13 +196,18 @@ export default function RecurringsPage() {
   // Upcoming only applies to the live month (a past month is already settled).
   const upcoming = (r: Rec) => !r.paid && r.expectedThisMonth && isActive(r);
 
-  const expenses = recs.filter((r) => r.avgAmount < 0);
+  // A plan in a category that is not counted (Transfers: a card autopay, or
+  // the card's "thank you" for it) is neither a bill nor income; it is named
+  // at the foot so it does not vanish.
+  const notCounted = recs.filter((r) => r.categoryExcluded && !r.ended);
+  const counted = recs.filter((r) => !r.categoryExcluded);
+  const expenses = counted.filter((r) => r.avgAmount < 0);
   const bills = [
     ...expenses.filter((r) => r.paid),
     ...(isCurrentMonth ? expenses.filter(upcoming) : []),
   ].sort(byDue);
 
-  const income = recs.filter((r) => r.avgAmount >= 0);
+  const income = counted.filter((r) => r.avgAmount >= 0);
   const incomeBills = [
     ...income.filter((r) => r.paid),
     ...(isCurrentMonth ? income.filter(upcoming) : []),
@@ -374,6 +379,13 @@ export default function RecurringsPage() {
           {noMatches && (
             <p className="card p-6 text-center text-[13px] text-[var(--muted)]">
               No recurrings match {ql ? `“${q}”` : "this filter"}.
+            </p>
+          )}
+
+          {!filtering && notCounted.length > 0 && (
+            <p className="px-1 text-xs text-[var(--muted)]" data-not-counted>
+              Not counted: {notCounted.map((r) => `${withoutAmountQualifier(r.displayName)} (${r.categoryName})`).join(" · ")}. A plan in a
+              category that isn&rsquo;t counted is neither a bill nor income.
             </p>
           )}
 

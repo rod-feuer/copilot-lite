@@ -149,6 +149,11 @@ and §3 carry over unchanged.
   (category, note, effective-date, recurring membership, exclude-from-totals,
   split). This is the deliberate answer to "Complete the verbs" for
   transactions; every overlay is reachable from the charge's shelf. *(Capable)*
+- **A category that isn't counted is not counted anywhere.** Transfers (a card
+  autopay and the card's "thank you" for it) leave every total, and a plan in
+  such a category is neither a bill nor income: the Recurrings lists and the
+  digest leave it out, and one line at the foot of the page names it so it
+  doesn't vanish. *(Honest, One-pattern)*
 
 ### The one page — scales and anatomies
 
